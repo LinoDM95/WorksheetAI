@@ -1,0 +1,196 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+/* Stabile Basis: gleiche Rem/Px-Logik für Bildschirm und Druck */
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+body {
+  margin: 0;
+  background: #eef2f7;
+  color: #111827;
+  font-family: Inter, ui-sans-serif, system-ui, Arial;
+}
+
+/* Kein Schatten: Papier wie gedruckt / PDF */
+.a4-page {
+  position: relative;
+  background: white;
+  box-shadow: none;
+  overflow: visible;
+  flex: none;
+  box-sizing: border-box;
+  height: var(--a4-page-height, 297mm);
+  min-height: var(--a4-page-height, 297mm);
+  /* Zeile 1 = Inhalt (füllt Höhe), Zeile 2 = Fuß — fest unten, kein „Hochrutschen“ */
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding-bottom: var(--page-margin-bottom, 12mm);
+}
+
+.page-content {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Inhalt endet über der Fußzeilen-Zeile (Grid); Überlauf abschneiden */
+.page-content.worksheet-page-frame {
+  overflow: hidden;
+}
+
+.worksheet-page-body {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.worksheet-page-footer {
+  position: relative;
+  z-index: 2;
+  width: auto;
+  margin-left: var(--page-margin-left, 12mm);
+  margin-right: var(--page-margin-right, 12mm);
+  box-sizing: border-box;
+  background: #fff;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-before: avoid;
+  page-break-before: avoid;
+}
+
+@media screen {
+  .worksheet-page-frame {
+    min-height: 0;
+  }
+
+  .worksheet-page-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .a4-page > .page-content.worksheet-page-frame {
+    min-height: 0;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .worksheet-page-frame {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+  }
+
+  .worksheet-page-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+  }
+
+  .a4-page {
+    box-shadow: none !important;
+    outline: none !important;
+    margin: 0;
+    page-break-after: always;
+    break-after: page;
+    overflow: visible;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(0, 1fr) auto !important;
+    height: var(--a4-page-height, 297mm) !important;
+    min-height: var(--a4-page-height, 297mm) !important;
+    max-height: var(--a4-page-height, 297mm) !important;
+  }
+
+  .a4-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .page-content.worksheet-page-frame {
+    overflow: hidden !important;
+    position: relative !important;
+  }
+
+  .margin-guide {
+    display: none;
+  }
+}
+
+.margin-guide {
+  position: absolute;
+  border: 1px dashed rgba(100, 116, 139, 0.5);
+  background: rgba(148, 163, 184, 0.06);
+  pointer-events: none;
+}
+
+.worksheet-block {
+  margin: 0 0 1.25rem 0;
+  padding: 0;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.answer-box {
+  display: inline-block;
+  min-width: 2.75rem;
+  height: 1.5rem;
+  border: 1px solid #64748b;
+  vertical-align: middle;
+}
+
+.writing-line {
+  border-bottom: 1px solid #6b7280;
+  height: 1.5rem;
+}
+
+/* Von useLayoutEffect gesetzt, wenn zu nah an der Fußzeile (Abstand < MIN_GAP) */
+.writing-line.writing-line--footer-trim {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+}
+
+.worksheet-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+}
+
+.worksheet-table th,
+.worksheet-table td {
+  border: 1px solid #737373;
+  padding: 6px 8px;
+}
+
+.worksheet-table th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.print-button {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+}
+
+/* Bildschirm: feine Kante pro Blatt (Druck/PDF: echte Seitenumbrüche, kein Zwischenraum) */
+@media screen {
+  .worksheet-paper-stack .a4-page {
+    box-shadow: 0 0 0 1px #e5e7eb;
+  }
+}
+
