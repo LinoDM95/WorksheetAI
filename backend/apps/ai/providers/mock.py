@@ -26,7 +26,7 @@ class MockWorksheetProvider:
                     'page_label': '',
                     'blocks': [
                         {'id': 'b1', 'type': 'task_grid', 'title': 'Rechne aus.', 'items': [{'label': str(i + 1), 'text': r'$%s+%s=$' % (a, b), 'answer': '$%s$' % (a + b)} for i, (a, b) in enumerate(pairs)]},
-                        {'id': 'b2', 'type': 'drawing_box', 'title': 'Bonus', 'instruction': 'Erfinde zwei eigene Plusaufgaben mit Ergebnis 20.'},
+                        {'id': 'b2', 'type': 'drawing_box', 'title': 'Bonus', 'instruction': 'Erfinde zwei eigene Plusaufgaben mit Ergebnis 20.', 'height_mm': 45, 'expand_to_page_bottom': False},
                     ],
                 }],
                 'solutions': [{'label': str(i + 1), 'answer': '$%s$' % (a + b)} for i, (a, b) in enumerate(pairs)],

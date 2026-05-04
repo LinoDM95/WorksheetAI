@@ -1,0 +1,44 @@
+---
+description: Design-System – Tokens, Tailwind-Konventionen, visuelle Konsistenz
+globs: frontend/src/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Design-System
+
+## Tokens (Pflichtquelle)
+
+Farben, Radien, Schatten, Schriftarten **kommen ausschließlich** aus den CSS-Custom-Properties in `frontend/src/styles.css`:
+
+- Farben: `--color-primary-*`, `--color-success-*`, `--color-accent-*`, `--color-warn-*`, `--color-ink-*`, `--color-bg-*`, `--color-border*`
+- Radien: `--radius-sm|md|lg|xl|2xl`
+- Schatten: `--shadow-xs|sm|md|lg|xl|paper`
+- Schrift: `--font-sans`, `--font-display`
+
+## Verbote
+
+- **Keine** rohen Hex/RGB-Farben in Komponenten (`bg-[#4f46e5]`, `text-[#0f172a]`). Stattdessen Tailwind-Token-Klassen (`bg-indigo-600`, `text-slate-900`) oder Var-Klasse (`bg-[var(--color-primary-600)]`).
+- **Keine** beliebigen Pixel-Schatten (`shadow-[0_2px_…]`) – nutze die `--shadow-*`-Tokens via Util-Klassen oder zentrale Style-Klassen.
+- **Keine** doppelten „Magic-Klassen“-Strings in Pages — die landen in `components/ui/`.
+- **Keine** neuen `.card`-Varianten in `styles.css` ohne Begründung. Stattdessen Komponenten-Variante in `<Card variant>`.
+
+## Vorhandene Style-Klassen (in `styles.css`)
+
+`btn`, `btn-primary|secondary|ghost|success|danger`, `btn-sm|lg`, `btn-icon`,
+`input`, `select`, `textarea`, `field-label`, `field-help`,
+`card`, `badge`, `badge-primary|success|accent|neutral|warn`, `badge-dot`,
+`chip`, `radio-card`, `nav-item`, `tab`, `stepper-dot`,
+`a4-paper`, `bg-grid`, `mock-banner`, `mock-overlay`, `loading-dots`.
+
+> Diese Klassen sind die **Atom-Schicht**. Komponenten in `components/ui/` sind die **Molekül-Schicht** und sollen die Atom-Klassen kapseln.
+
+## Animationen
+
+- Dauer 150–250 ms, Easing `ease-out` bzw. `cubic-bezier(0.33,1,0.68,1)`.
+- Nur mit klarem UX-Zweck (Erscheinen, Hover-Lift, Sidebar-Slide). Kein Springen, keine Endlos-Bounces.
+- Bevorzuge CSS-Transitions; framer-motion nur, wenn ein State-Übergang ohne Mount/Unmount nicht reicht.
+
+## Responsives Layout
+
+- **Mobile-first**: Klassen ohne Breakpoint sind die Mobile-Variante; `sm:`, `md:`, `lg:` skalieren auf.
+- Inhalte zentriert mit `mx-auto w-full max-w-[1180px|1280px]` — feste Werte einmalig pro Page-Family.

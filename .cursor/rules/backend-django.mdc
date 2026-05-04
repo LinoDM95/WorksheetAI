@@ -1,0 +1,53 @@
+---
+description: Django/DRF – Class-Based Views, Service-Klassen, DRY, Fehler-Mapper
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Backend – Django + DRF
+
+## Architektur
+
+- **Views** sind dünn: Argumente parsen, Service aufrufen, Response bauen, Fehler mappen.
+  Geschäftslogik gehört **nicht** in Views.
+- **Services** liegen in `apps/<app>/services/` — bevorzugt **klassenbasiert**, wenn ein Workflow > 1 Funktion und gemeinsamen Zustand/Helper braucht (z. B. Pipeline aus Validate → Repair → Reflow → Render).
+  Reine Hilfsfunktionen (1 Operation, kein Zustand) bleiben Funktionen.
+- **Serializers** für IO; keine manuelle Dict-Validierung, wenn ein Serializer reicht.
+- **ViewSets** + DRF-Routern bevorzugt; Custom Actions via `@decorators.action`.
+
+## Klassen-Pattern für Services (Pflicht ab > 1 Schritt)
+
+```python
+class WorksheetGenerator:
+    def __init__(self, user, payload):
+        self.user = resolve_worksheet_owner(user)
+        self.payload = payload
+        self.pattern = None
+        self.page_setup = None
+
+    def run(self) -> Worksheet:
+        self._resolve_pattern()
+        self._normalize_setup()
+        content = self._generate_with_provider()
+        content = self._post_process(content)
+        return self._persist(content)
+```
+
+Vorteile: Subklassen (`PageRegenerator(WorksheetGenerator)`) statt Copy-Paste, klare öffentliche `run()`-API, Tests einfach.
+
+## DRY
+
+- AI-Prompts ausschließlich über `apps/ai/prompt_loader.py` laden — keine Inline-Strings in Views/Services.
+- **Gemeinsame Konstanten** in einem Modul (`apps/<app>/constants.py` oder `settings.py`), nicht in mehreren Dateien doppelt.
+- **AI-Fehler → HTTP-Antwort** zentral in `apps/ai/error_mapper.py` (`AIErrorMapper`). Views rufen `AIErrorMapper.to_response(exc)` — keine eigene Status/Detail-Heuristik in jedem View.
+
+## Sicherheit & Qualität
+
+- ORM bevorzugen, **kein** rohes SQL ohne Not.
+- Owner-Checks via `apps/worksheets/owner.py::resolve_worksheet_owner`.
+- Validierungs-/Reparaturpfade müssen **idempotent** sein (mehrfaches Anwenden ändert nichts mehr).
+- Logging mit Modul-Logger (`logging.getLogger(__name__)`); kein `print`.
+
+## Tests
+
+- Tests neu nur wenn vom Nutzer verlangt — bestehende erweitern, nicht löschen.

@@ -1,3 +1,5 @@
+from .content_line_budget import compute_content_line_budget
+
 A4 = {'portrait': {'width_mm':210, 'height_mm':297}, 'landscape': {'width_mm':297, 'height_mm':210}}
 
 def normalize_page_setup(data: dict):
@@ -11,4 +13,10 @@ def normalize_page_setup(data: dict):
         'width_mm': max(10, size['width_mm'] - margins['left'] - margins['right']),
         'height_mm': max(10, size['height_mm'] - margins['top'] - margins['bottom']),
     }
-    return {'format':'A4','orientation':orientation,'unit':'mm','width_mm':size['width_mm'],'height_mm':size['height_mm'],'margins_mm':margins,'safe_area':safe,'renderer':'html'}
+    base = {
+        'format':'A4','orientation':orientation,'unit':'mm',
+        'width_mm':size['width_mm'],'height_mm':size['height_mm'],
+        'margins_mm':margins,'safe_area':safe,'renderer':'html',
+    }
+    base['content_line_budget'] = compute_content_line_budget(base)
+    return base

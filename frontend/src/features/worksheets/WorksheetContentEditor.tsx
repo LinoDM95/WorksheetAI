@@ -1,10 +1,25 @@
 import type { ChangeEvent, ReactNode } from 'react';
 
+import { ensureDraftBlockIds } from '../../lib/contentDraft';
+
+function clampTableRowHeightMm(raw: unknown): number | null {
+  if (raw === '' || raw === null || raw === undefined) return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 8) return null;
+  return Math.min(80, Math.max(8, Math.round(n * 2) / 2));
+}
+
 const MAX_ANSWER_LINES = 48;
+const MAX_TEXT_EXTRA_LINES = 40;
 
 export function normalizeContentForEdit(c: Record<string, unknown> | null | undefined): Record<string, unknown> {
   if (!c || typeof c !== 'object') {
-    return { title: '', subtitle: '', pages: [{ page_label: '', blocks: [] }], solutions: [] };
+    return ensureDraftBlockIds({
+      title: '',
+      subtitle: '',
+      pages: [{ page_label: '', blocks: [] }],
+      solutions: [],
+    });
   }
   const out = JSON.parse(JSON.stringify(c)) as Record<string, unknown>;
   const blocks = out.blocks as unknown[] | undefined;
@@ -16,7 +31,7 @@ export function normalizeContentForEdit(c: Record<string, unknown> | null | unde
     out.pages = [{ page_label: '', blocks: [] }];
   }
   if (!Array.isArray(out.solutions)) out.solutions = [];
-  return out;
+  return ensureDraftBlockIds(out);
 }
 
 function Field({
@@ -34,7 +49,7 @@ function Field({
   );
 }
 
-function BlockEditor({
+export function WorksheetBlockFields({
   block,
   onChange,
 }: {
@@ -45,6 +60,11 @@ function BlockEditor({
   const t = String(block.type || 'text');
 
   if (t === 'text') {
+    const linesRaw = block.lines;
+    const linesNum =
+      linesRaw != null && linesRaw !== ''
+        ? Math.min(MAX_TEXT_EXTRA_LINES, Math.max(0, Math.floor(Number(linesRaw) || 0)))
+        : 0;
     return (
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
         <span className="text-xs font-bold uppercase tracking-wide text-indigo-600">Text</span>
@@ -60,6 +80,22 @@ function BlockEditor({
             className="min-h-[120px] w-full rounded border border-slate-300 px-2 py-1.5 font-mono text-sm"
             value={String(block.content ?? '')}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => patch({ content: e.target.value })}
+          />
+        </Field>
+        <Field
+          label={`Zusätzliche Schreiblinien unter dem Text (0–${MAX_TEXT_EXTRA_LINES})`}
+        >
+          <input
+            type="number"
+            min={0}
+            max={MAX_TEXT_EXTRA_LINES}
+            className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+            value={linesNum}
+            onChange={(e) =>
+              patch({
+                lines: Math.min(MAX_TEXT_EXTRA_LINES, Math.max(0, parseInt(e.target.value, 10) || 0)),
+              })
+            }
           />
         </Field>
       </div>
@@ -200,7 +236,62 @@ function BlockEditor({
     );
   }
 
+  if (t === 'diagram') {
+    const specStr = JSON.stringify((block.spec as object) ?? { kind: 'unit_circle' }, null, 2);
+    return (
+      <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+        <span className="text-xs font-bold uppercase tracking-wide text-indigo-600">Diagramm (Maschinen-SVG)</span>
+        <Field label="Überschrift">
+          <input
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            value={String(block.title ?? '')}
+            onChange={(e) => patch({ title: e.target.value })}
+          />
+        </Field>
+        <Field label="Abbildungslabel (optional, z. B. Abb. 1)">
+          <input
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            value={String(block.figure_label ?? '')}
+            onChange={(e) => patch({ figure_label: e.target.value })}
+          />
+        </Field>
+        <Field label="Hinweis an Lernende (optional, LaTeX erlaubt)">
+          <textarea
+            className="min-h-[56px] w-full rounded border border-slate-300 px-2 py-1 text-sm"
+            value={String(block.instruction ?? '')}
+            onChange={(e) => patch({ instruction: e.target.value })}
+          />
+        </Field>
+        <Field label="spec (JSON): kind unit_circle | right_triangle | coordinate_axes">
+          <textarea
+            className="min-h-[160px] w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+            spellCheck={false}
+            defaultValue={specStr}
+            key={`diag-spec-${String(block.id ?? '')}`}
+            onBlur={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value) as Record<string, unknown>;
+                if (!parsed || typeof parsed !== 'object' || !String(parsed.kind || '').trim()) {
+                  return;
+                }
+                patch({ spec: parsed });
+              } catch {
+                /* ungültiges JSON — ignorieren bis nächste Korrektur */
+              }
+            }}
+          />
+        </Field>
+      </div>
+    );
+  }
+
   if (t === 'drawing_box') {
+    const hm =
+      typeof block.height_mm === 'number'
+        ? block.height_mm
+        : block.height_mm === '' || block.height_mm === undefined
+          ? 50
+          : Number(block.height_mm) || 50;
     return (
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
         <span className="text-xs font-bold uppercase tracking-wide text-indigo-600">Zeichenfeld</span>
@@ -214,6 +305,26 @@ function BlockEditor({
           value={String(block.instruction ?? '')}
           onChange={(e) => patch({ instruction: e.target.value })}
         />
+        <Field label="Mindesthöhe Zeichenfeld (mm)">
+          <input
+            type="number"
+            min={25}
+            max={190}
+            className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+            value={Math.min(190, Math.max(25, Math.round(Number(hm) || 50)))}
+            onChange={(e) =>
+              patch({ height_mm: Math.min(190, Math.max(25, Number(e.target.value) || 50)) })
+            }
+          />
+        </Field>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={Boolean(block.expand_to_page_bottom)}
+            onChange={(e) => patch({ expand_to_page_bottom: e.target.checked })}
+          />
+          Bis zum unteren Seitenrand (nur wenn letzter Block auf der Seite im Layout)
+        </label>
       </div>
     );
   }
@@ -227,14 +338,16 @@ function BlockEditor({
           value={String(block.title ?? '')}
           onChange={(e) => patch({ title: e.target.value })}
         />
-        <Field label="Anzahl Linien">
+        <Field label="Anzahl Linien (Schreibfläche)">
           <input
             type="number"
             min={0}
-            max={40}
+            max={MAX_ANSWER_LINES}
             className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
             value={Number(block.lines ?? 0)}
-            onChange={(e) => patch({ lines: Number(e.target.value) || 0 })}
+            onChange={(e) =>
+              patch({ lines: Math.min(MAX_ANSWER_LINES, Math.max(0, Number(e.target.value) || 0)) })
+            }
           />
         </Field>
       </div>
@@ -252,6 +365,30 @@ function BlockEditor({
       cols[ci] = { ...cols[ci], label };
       patch({ columns: cols, rows });
     };
+    const rowHm = clampTableRowHeightMm(block.row_height_mm);
+    const clearRowHeight = () => {
+      const next = { ...block };
+      delete next.row_height_mm;
+      onChange(next);
+    };
+    const setRowHeightFromInput = (s: string) => {
+      const t = s.trim();
+      if (t === '' || t === '0') {
+        clearRowHeight();
+        return;
+      }
+      const v = Number(t.replace(',', '.'));
+      if (!Number.isFinite(v) || v < 8) {
+        clearRowHeight();
+        return;
+      }
+      patch({ row_height_mm: Math.min(80, Math.max(8, Math.round(v * 2) / 2)) });
+    };
+    const handleRowHeightSlider = (v: number) => {
+      if (v < 8) clearRowHeight();
+      else patch({ row_height_mm: Math.min(80, Math.max(8, Math.round(v * 2) / 2)) });
+    };
+    const sliderDisplay = rowHm ?? 0;
     return (
       <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
         <span className="text-xs font-bold uppercase tracking-wide text-indigo-600">Tabelle</span>
@@ -260,18 +397,73 @@ function BlockEditor({
           value={String(block.title ?? '')}
           onChange={(e) => patch({ title: e.target.value })}
         />
+        <div className="space-y-2">
+          <span className="text-xs font-semibold text-slate-600">
+            Zeilenhöhe (mm) — ein Wert für alle Zellen (live)
+          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={80}
+              step={0.5}
+              className="h-2 min-w-[12rem] flex-1 cursor-pointer accent-indigo-600"
+              value={sliderDisplay}
+              aria-valuemin={0}
+              aria-valuemax={80}
+              aria-valuenow={sliderDisplay}
+              aria-valuetext={rowHm == null ? 'Automatisch' : `${rowHm} Millimeter`}
+              onChange={(e) => handleRowHeightSlider(Number(e.target.value))}
+            />
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={8}
+                max={80}
+                step={0.5}
+                placeholder="—"
+                title="Exakter Wert in mm (≥ 8) oder leer für automatisch"
+                className="w-[4.5rem] rounded border border-slate-300 px-1.5 py-1 text-sm tabular-nums"
+                value={rowHm != null ? rowHm : ''}
+                onChange={(e) => setRowHeightFromInput(e.target.value)}
+              />
+              <span className="text-xs text-slate-500">mm</span>
+            </div>
+            <button
+              type="button"
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              onClick={clearRowHeight}
+            >
+              Automatisch
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Regler unter 8&nbsp;mm: automatische Zeilenhöhe. Ab 8&nbsp;mm: Mindesthöhe pro Zelle — sofort sichtbar in
+            Sidebar und auf dem Blatt.
+          </p>
+        </div>
         <p className="text-xs text-slate-500">Spaltenbeschriftungen und Zellen — alles bearbeitbar.</p>
         <div className="overflow-x-auto">
-          <table className="min-w-full border border-slate-300 text-sm">
+          <table className="worksheet-table min-w-full text-sm">
             <thead>
               <tr>
                 {columns.map((c, ci) => (
-                  <th key={c.key} className="border border-slate-300 bg-white p-0">
-                    <input
-                      className="w-full px-1 py-1"
-                      value={c.label}
-                      onChange={(e) => setColumnLabel(ci, e.target.value)}
-                    />
+                  <th key={c.key} className="border border-slate-300 bg-white p-0 align-top">
+                    {rowHm != null ? (
+                      <div className="worksheet-table-cell-inner" style={{ minHeight: `${rowHm}mm` }}>
+                        <input
+                          className="w-full bg-transparent px-1 py-1"
+                          value={c.label}
+                          onChange={(e) => setColumnLabel(ci, e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        className="w-full px-1 py-1"
+                        value={c.label}
+                        onChange={(e) => setColumnLabel(ci, e.target.value)}
+                      />
+                    )}
                   </th>
                 ))}
               </tr>
@@ -280,17 +472,32 @@ function BlockEditor({
               {rows.map((row, ri) => (
                 <tr key={ri}>
                   {columns.map((c) => (
-                    <td key={c.key} className="border border-slate-200 p-0">
-                      <input
-                        className="w-full min-w-[80px] px-1 py-1"
-                        value={String(row[c.key] ?? '')}
-                        onChange={(e) => {
-                          const n = rows.map((r, j) =>
-                            j === ri ? { ...r, [c.key]: e.target.value } : r
-                          );
-                          setRows(n);
-                        }}
-                      />
+                    <td key={c.key} className="border border-slate-200 p-0 align-top">
+                      {rowHm != null ? (
+                        <div className="worksheet-table-cell-inner" style={{ minHeight: `${rowHm}mm` }}>
+                          <input
+                            className="w-full min-w-[80px] bg-transparent px-1 py-1"
+                            value={String(row[c.key] ?? '')}
+                            onChange={(e) => {
+                              const n = rows.map((r, j) =>
+                                j === ri ? { ...r, [c.key]: e.target.value } : r
+                              );
+                              setRows(n);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <input
+                          className="w-full min-w-[80px] px-1 py-1"
+                          value={String(row[c.key] ?? '')}
+                          onChange={(e) => {
+                            const n = rows.map((r, j) =>
+                              j === ri ? { ...r, [c.key]: e.target.value } : r
+                            );
+                            setRows(n);
+                          }}
+                        />
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -472,7 +679,7 @@ export function WorksheetContentEditor({
           </div>
           <div className="space-y-4">
             {(page.blocks || []).map((block, bi) => (
-              <BlockEditor
+              <WorksheetBlockFields
                 key={(block.id as string) || `${pi}-${bi}`}
                 block={block}
                 onChange={(nb) => setBlock(pi, bi, nb)}

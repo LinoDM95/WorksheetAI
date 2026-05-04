@@ -1,3 +1,5 @@
+import { arrayMove } from '@dnd-kit/sortable';
+
 export function updateDraftRoot(
   draft: Record<string, unknown>,
   patch: Record<string, unknown>,
@@ -50,6 +52,7 @@ export type WorksheetBlockKind =
   | 'task_grid'
   | 'writing_lines'
   | 'drawing_box'
+  | 'diagram'
   | 'checklist'
   | 'table';
 
@@ -58,12 +61,89 @@ function newWorksheetBlockId(): string {
   return `blk-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** Stabile IDs für Drag-and-Drop (fehlende `id` auf Blöcken setzen). */
+export function ensureDraftBlockIds(draft: Record<string, unknown>): Record<string, unknown> {
+  const next = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
+  const pages = next.pages as { blocks?: Record<string, unknown>[] }[] | undefined;
+  if (!pages) return next;
+  for (const p of pages) {
+    const blocks = p.blocks || [];
+    for (const b of blocks) {
+      if (b && typeof b === 'object' && !String((b as { id?: unknown }).id ?? '').trim()) {
+        (b as Record<string, unknown>).id = newWorksheetBlockId();
+      }
+    }
+  }
+  return next;
+}
+
+/** Blöcke auf einer Seite umsortieren (Indizes nach @dnd-kit/sortable). */
+export function reorderDraftBlocksOnPage(
+  draft: Record<string, unknown>,
+  pageIndex: number,
+  from: number,
+  to: number,
+): Record<string, unknown> {
+  const next = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
+  const pages = next.pages as { blocks?: Record<string, unknown>[] }[] | undefined;
+  const bl = pages?.[pageIndex]?.blocks;
+  if (!bl || from < 0 || from >= bl.length || to < 0 || to >= bl.length) return draft;
+  const moved = arrayMove(bl, from, to);
+  pages![pageIndex] = { ...pages![pageIndex], blocks: moved };
+  return next;
+}
+
+/** Teilaufgaben / Rasterzeilen / Checklistenpunkte innerhalb eines Blocks umsortieren. */
+export function reorderDraftBlockItems(
+  draft: Record<string, unknown>,
+  pageIndex: number,
+  blockIndex: number,
+  from: number,
+  to: number,
+): Record<string, unknown> {
+  const next = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
+  const block = (next.pages as { blocks?: Record<string, unknown>[] }[] | undefined)?.[pageIndex]?.blocks?.[
+    blockIndex
+  ];
+  if (!block) return draft;
+  const t = String(block.type || '');
+  if (!['task_list', 'task_grid', 'checklist'].includes(t)) return draft;
+  const itemsArr = block.items as unknown[] | undefined;
+  if (!itemsArr || from < 0 || from >= itemsArr.length || to < 0 || to >= itemsArr.length) return draft;
+  block.items = arrayMove([...itemsArr], from, to) as unknown;
+  return next;
+}
+
+/** Block von einer Seite auf eine andere verschieben (Index `toIndex` in aktueller Ziel-Liste vor dem Einfügen). */
+export function moveDraftBlockBetweenPages(
+  draft: Record<string, unknown>,
+  fromPage: number,
+  fromIndex: number,
+  toPage: number,
+  toIndex: number,
+): Record<string, unknown> {
+  const next = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
+  const pages = next.pages as { blocks?: Record<string, unknown>[] }[] | undefined;
+  if (!pages || fromPage < 0 || fromPage >= pages.length || toPage < 0 || toPage >= pages.length) return draft;
+  const fromBlocks = [...(pages[fromPage].blocks || [])];
+  if (fromIndex < 0 || fromIndex >= fromBlocks.length) return draft;
+  const [moved] = fromBlocks.splice(fromIndex, 1);
+  pages[fromPage] = { ...pages[fromPage], blocks: fromBlocks };
+  const toBlocks = [...(pages[toPage].blocks || [])];
+  const ins = Math.max(0, Math.min(toIndex, toBlocks.length));
+  toBlocks.splice(ins, 0, moved);
+  pages[toPage] = { ...pages[toPage], blocks: toBlocks };
+  next.pages = pages;
+  return next;
+}
+
 export const WORKSHEET_BLOCK_OPTIONS: { value: WorksheetBlockKind; label: string }[] = [
   { value: 'text', label: 'Abschnitt (Titel + Text)' },
   { value: 'task_list', label: 'Nummerierte Aufgaben' },
   { value: 'task_grid', label: 'Aufgaben-Raster' },
   { value: 'writing_lines', label: 'Schreiblinien' },
   { value: 'drawing_box', label: 'Zeichenfeld' },
+  { value: 'diagram', label: 'Diagramm (SVG)' },
   { value: 'checklist', label: 'Checkliste' },
   { value: 'table', label: 'Tabelle (2×2)' },
 ];
@@ -92,12 +172,30 @@ export function createDefaultWorksheetBlock(kind: WorksheetBlockKind): Record<st
       };
     case 'writing_lines':
       return { id, type: 'writing_lines', title: 'Schreibfläche', lines: 8 };
+    case 'diagram':
+      return {
+        id,
+        type: 'diagram',
+        title: 'Diagramm',
+        figure_label: 'Abb. 1',
+        instruction: '',
+        spec: {
+          kind: 'unit_circle',
+          angle_deg: 45,
+          show_angle_arc: true,
+          show_projections: true,
+          point_label: 'P',
+          radius_label: '1',
+        },
+      };
     case 'drawing_box':
       return {
         id,
         type: 'drawing_box',
         title: 'Skizze / Zeichnung',
         instruction: 'Zeichnen oder beschriften Sie im Kasten.',
+        height_mm: 50,
+        expand_to_page_bottom: false,
       };
     case 'checklist':
       return { id, type: 'checklist', title: 'Checkliste', items: [{ text: 'Neuer Punkt' }] };

@@ -1,12 +1,69 @@
 import json
+import logging
+import time
 from django.conf import settings
 from google import genai
 from google.genai import types
+
+logger = logging.getLogger(__name__)
 from apps.ai.prompt_loader import (
     build_page_regeneration_prompt,
-    build_worksheet_generation_prompt,
+    build_worksheet_generation_prompt_for_gemini,
     build_worksheet_review_prompt,
 )
+
+# Diagramm-spec: kind + kind-spezifische Felder (Modell setzt nur passende Untermenge).
+_DIAGRAM_SPEC_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Required when block type is diagram. kind = unit_circle | right_triangle | coordinate_axes; '
+        'only use fields valid for that kind. No LaTeX in numeric fields.'
+    ),
+    'properties': {
+        'kind': {'type': 'STRING', 'description': 'unit_circle | right_triangle | coordinate_axes'},
+        'angle_deg': {'type': 'NUMBER', 'description': 'unit_circle: angle alpha in degrees CCW from +x'},
+        'show_angle_arc': {'type': 'BOOLEAN'},
+        'show_projections': {'type': 'BOOLEAN'},
+        'point_label': {'type': 'STRING'},
+        'radius_label': {'type': 'STRING'},
+        'right_angle_at': {'type': 'STRING', 'description': 'right_triangle: vertex letter with right angle, e.g. C'},
+        'vertices': {
+            'type': 'OBJECT',
+            'description': 'right_triangle: A,B,C as [x,y] in diagram units 0-10',
+            'properties': {
+                'A': {'type': 'ARRAY', 'items': {'type': 'NUMBER'}, 'minItems': 2, 'maxItems': 2},
+                'B': {'type': 'ARRAY', 'items': {'type': 'NUMBER'}, 'minItems': 2, 'maxItems': 2},
+                'C': {'type': 'ARRAY', 'items': {'type': 'NUMBER'}, 'minItems': 2, 'maxItems': 2},
+            },
+        },
+        'angle_labels': {
+            'type': 'OBJECT',
+            'description': 'right_triangle: maps angle name to vertex letter, e.g. alpha -> A',
+            'properties': {
+                'alpha': {'type': 'STRING'},
+                'beta': {'type': 'STRING'},
+                'gamma': {'type': 'STRING'},
+            },
+        },
+        'side_labels': {
+            'type': 'OBJECT',
+            'properties': {
+                'AB': {'type': 'STRING'},
+                'BC': {'type': 'STRING'},
+                'CA': {'type': 'STRING'},
+                'AC': {'type': 'STRING'},
+                'BA': {'type': 'STRING'},
+                'CB': {'type': 'STRING'},
+            },
+        },
+        'x_min': {'type': 'NUMBER'},
+        'x_max': {'type': 'NUMBER'},
+        'y_min': {'type': 'NUMBER'},
+        'y_max': {'type': 'NUMBER'},
+        'grid': {'type': 'BOOLEAN'},
+    },
+    'required': ['kind'],
+}
 
 SCHEMA = {
   'type': 'OBJECT',
@@ -18,7 +75,7 @@ SCHEMA = {
     'Every task_grid/task_list item MUST contain a full student-facing task in "text" (never only a title). '
     'text blocks MUST have a non-empty "content" paragraph. For open-ended tasks: answer_lines on task_list '
     'and/or writing_lines with line counts that match expected length and remaining space — never end a page with '
-    'only questions and no lines.'
+    'only questions and no lines. For math diagrams use type diagram with a valid spec object (no TikZ/raw SVG). '
   ),
   'properties': {
     'title': {'type': 'STRING', 'description': 'Main worksheet title'},
@@ -58,11 +115,36 @@ SCHEMA = {
             'items': {
               'type': 'OBJECT',
               'properties': {
-                'type': {'type': 'STRING', 'description': 'Block kind: text, task_grid, task_list, table, checklist, drawing_box, writing_lines'},
+                'type': {
+                    'type': 'STRING',
+                    'description': (
+                        'Block kind: text, task_grid, task_list, table, checklist, drawing_box, writing_lines, '
+                        'diagram (machine-rendered SVG from spec)'
+                    ),
+                },
                 'id': {'type': 'STRING'},
-                'title': {'type': 'STRING', 'description': 'Section heading shown to students'},
+                'title': {'type': 'STRING', 'description': 'Section heading — for diagram: MUST match spec.kind (unit_circle→Einheitskreis not „Dreieck“)'},
                 'content': {'type': 'STRING', 'description': 'Full prose for text blocks (instructions, context).'},
-                'instruction': {'type': 'STRING', 'description': 'For drawing_box.'},
+                'instruction': {
+                    'type': 'STRING',
+                    'description': 'For drawing_box. Optional for diagram (hint for learners).',
+                },
+                'height_mm': {
+                    'type': 'NUMBER',
+                    'description': (
+                        'drawing_box only: minimum height of the dashed drawing area in mm (typical ~35–55 simple '
+                        'sketch; ~70–100 construction; ~110–140 complex). Always set from instruction difficulty.'
+                    ),
+                },
+                'expand_to_page_bottom': {
+                    'type': 'BOOLEAN',
+                    'description': (
+                        'drawing_box only: if true and this is the **last** block on the page, stretch the box to '
+                        'fill remaining vertical space on the A4 content area (still respect height_mm as minimum).'
+                    ),
+                },
+                'figure_label': {'type': 'STRING', 'description': 'Optional e.g. Abb. 1 for diagram'},
+                'spec': _DIAGRAM_SPEC_SCHEMA,
                 'lines': {
                     'type': 'INTEGER',
                     'description': (
@@ -127,6 +209,22 @@ PAGE_REGEN_SCHEMA = {
 }
 
 
+def _is_gemini_deadline_exceeded(exc: BaseException) -> bool:
+    """API-interne Frist überschritten (Google), nicht dasselbe wie Client-ReadTimeout."""
+    try:
+        from google.genai import errors as genai_errors
+    except ImportError:
+        genai_errors = None  # type: ignore
+    if genai_errors and isinstance(exc, genai_errors.APIError):
+        st = (getattr(exc, 'status', None) or '') or ''
+        msg = (getattr(exc, 'message', None) or '') or ''
+        blob = f'{st} {msg}'.upper()
+        if st == 'DEADLINE_EXCEEDED' or 'DEADLINE_EXCEEDED' in blob:
+            return True
+    s = str(exc).upper()
+    return 'DEADLINE_EXCEEDED' in s or ('504' in str(exc) and 'DEADLINE' in s)
+
+
 class GeminiWorksheetProvider:
     def __init__(self):
         if not settings.GEMINI_API_KEY:
@@ -136,9 +234,38 @@ class GeminiWorksheetProvider:
             api_key=settings.GEMINI_API_KEY,
             http_options=types.HttpOptions(timeout=timeout_ms),
         )
+
+    def _generate_content(self, *, model: str, contents, config: types.GenerateContentConfig):
+        retries = max(0, int(getattr(settings, 'GEMINI_DEADLINE_RETRIES', 0)))
+        delay_base = float(getattr(settings, 'GEMINI_DEADLINE_RETRY_DELAY_SECONDS', 60.0))
+        exponential = bool(getattr(settings, 'GEMINI_DEADLINE_RETRY_EXPONENTIAL', False))
+        total_attempts = retries + 1
+        last: BaseException | None = None
+        for attempt in range(total_attempts):
+            try:
+                return self.client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config,
+                )
+            except BaseException as exc:
+                last = exc
+                if attempt >= retries or not _is_gemini_deadline_exceeded(exc):
+                    raise
+                pause = delay_base * (2**attempt) if exponential else delay_base
+                logger.warning(
+                    'Gemini DEADLINE_EXCEEDED (Aufruf %s/%s), Pause %.0f s, dann erneuter Versuch',
+                    attempt + 1,
+                    total_attempts,
+                    pause,
+                )
+                time.sleep(pause)
+        assert last is not None
+        raise last
+
     def generate(self, payload: dict) -> dict:
         req = payload.get('request') or {}
-        prompt = build_worksheet_generation_prompt(
+        system_instr, user_content = build_worksheet_generation_prompt_for_gemini(
             req,
             payload.get('page_setup') or {},
             payload.get('pattern') or {},
@@ -149,9 +276,11 @@ class GeminiWorksheetProvider:
             'response_mime_type': 'application/json',
             'response_schema': SCHEMA,
         }
-        resp = self.client.models.generate_content(
+        if system_instr:
+            gen_cfg['system_instruction'] = system_instr
+        resp = self._generate_content(
             model=settings.GEMINI_MODEL,
-            contents=prompt,
+            contents=user_content,
             config=types.GenerateContentConfig(**gen_cfg),
         )
         text = resp.text or '{}'
@@ -171,7 +300,7 @@ class GeminiWorksheetProvider:
             'response_mime_type': 'application/json',
             'response_schema': SCHEMA,
         }
-        resp = self.client.models.generate_content(
+        resp = self._generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
@@ -187,7 +316,7 @@ class GeminiWorksheetProvider:
             'response_mime_type': 'application/json',
             'response_schema': PAGE_REGEN_SCHEMA,
         }
-        resp = self.client.models.generate_content(
+        resp = self._generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),

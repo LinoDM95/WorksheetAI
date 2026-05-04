@@ -8,6 +8,7 @@ const BLOCK_TYPES_WITHOUT_PANEL_LINES = new Set([
   'task_grid',
   'table',
   'drawing_box',
+  'diagram',
   'checklist',
   'writing_lines',
   'task_list',

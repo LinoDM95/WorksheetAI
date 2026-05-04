@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { Worksheet, PageSetup } from '../../types';
 import { LatexText } from '../../components/LatexText';
+import { WorksheetDiagramView, normalizeDiagramSpec } from './WorksheetDiagram';
 import {
   appendDraftPage,
   applyPlainMathHints,
@@ -129,6 +130,22 @@ function tableColumns(block: any) {
   );
 }
 
+function clampTableRowHeightMm(raw: unknown): number | null {
+  if (raw === '' || raw === null || raw === undefined) return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 8) return null;
+  return Math.min(80, Math.max(8, Math.round(n * 2) / 2));
+}
+
+function TableCellMinHeight({ rowMm, children }: { rowMm: number | null; children: ReactNode }) {
+  if (rowMm == null) return <>{children}</>;
+  return (
+    <div className="worksheet-table-cell-inner" style={{ minHeight: `${rowMm}mm` }}>
+      {children}
+    </div>
+  );
+}
+
 export const DEFAULT_TASK_LIST_ANSWER_LINES = 6;
 export const CAP_WRITING_LINES = 48;
 
@@ -223,15 +240,20 @@ function EditableBlockSection({
   editCtx,
   pageIndex,
   blockIndex,
+  sectionClassName,
   children,
 }: {
   editCtx?: ContentDraftEdit;
   pageIndex: number;
   blockIndex: number;
+  /** z. B. flex-1 für Zeichenfeld bis zum unteren Seitenrand */
+  sectionClassName?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={editCtx ? 'worksheet-block relative' : 'worksheet-block'}>
+    <section
+      className={`${editCtx ? 'worksheet-block relative' : 'worksheet-block'}${sectionClassName ? ` ${sectionClassName}` : ''}`}
+    >
       {editCtx ? (
         <InlineBlockToolbar pageIndex={pageIndex} blockIndex={blockIndex} editCtx={editCtx} />
       ) : null}
@@ -377,12 +399,16 @@ function Block({
   ty,
   pageIndex,
   blockIndex,
+  totalBlocksOnPage,
+  isLandscape,
   editCtx,
 }: {
   block: any;
   ty: ReturnType<typeof typography>;
   pageIndex: number;
   blockIndex: number;
+  totalBlocksOnPage: number;
+  isLandscape: boolean;
   editCtx?: ContentDraftEdit;
 }) {
   const d = draftBlockOr(editCtx, pageIndex, blockIndex, block as Record<string, any>);
@@ -478,6 +504,8 @@ function Block({
 
   if (block.type === 'table') {
     const cols = tableColumns(block);
+    const rowHm =
+      clampTableRowHeightMm(d.row_height_mm) ?? clampTableRowHeightMm(block.row_height_mm);
     return (
       <EditableBlockSection editCtx={editCtx} pageIndex={pageIndex} blockIndex={blockIndex}>
         <h3 className={`mb-2 ${ty.sectionTitle}`}>
@@ -491,8 +519,10 @@ function Block({
           <thead>
             <tr>
               {cols.map((c: any) => (
-                <th key={c.key}>
-                  <LatexText text={c.label} />
+                <th key={c.key} className="align-top">
+                  <TableCellMinHeight rowMm={rowHm}>
+                    <LatexText text={c.label} />
+                  </TableCellMinHeight>
                 </th>
               ))}
             </tr>
@@ -501,8 +531,10 @@ function Block({
             {block.rows?.map((r: any, i: number) => (
               <tr key={i}>
                 {cols.map((c: any) => (
-                  <td key={c.key}>
-                    <LatexText text={r[c.key]} />
+                  <td key={c.key} className="align-top">
+                    <TableCellMinHeight rowMm={rowHm}>
+                      <LatexText text={r[c.key]} />
+                    </TableCellMinHeight>
                   </td>
                 ))}
               </tr>
@@ -513,9 +545,25 @@ function Block({
     );
   }
 
-  if (block.type === 'drawing_box')
+  if (block.type === 'diagram') {
+    const specRaw = d.spec ?? block.spec;
+    const normalized = normalizeDiagramSpec(specRaw);
     return (
       <EditableBlockSection editCtx={editCtx} pageIndex={pageIndex} blockIndex={blockIndex}>
+        {(block.figure_label || d.figure_label) && String(block.figure_label || d.figure_label).trim() ? (
+          <p className={`mb-1 text-xs font-medium text-slate-600 ${ty.body}`}>
+            {edit ? (
+              <input
+                className={`w-full rounded border border-dashed border-indigo-400/80 bg-indigo-50/50 px-1 py-0.5 font-mono text-xs outline-none print:hidden`}
+                value={String(d.figure_label ?? block.figure_label ?? '')}
+                onChange={(e) => patch({ figure_label: e.target.value })}
+                aria-label="Abbildungslabel"
+              />
+            ) : (
+              String(block.figure_label || d.figure_label)
+            )}
+          </p>
+        ) : null}
         <h3 className={`mb-1 ${ty.sectionTitle}`}>
           {edit ? (
             <SheetInlineTitle className={ty.sectionTitle} value={String(d.title ?? '')} onChange={(v) => patch({ title: v })} />
@@ -527,6 +575,57 @@ function Block({
           {edit ? (
             <SheetInlineText
               className={ty.body}
+              value={String(d.instruction ?? block.instruction ?? '')}
+              onChange={(v) => patch({ instruction: v })}
+            />
+          ) : block.instruction || d.instruction ? (
+            <LatexText text={String(block.instruction || d.instruction)} as="span" />
+          ) : null}
+        </div>
+        <div className="flex justify-center rounded border border-slate-300 bg-white px-2 py-3">
+          {normalized ? (
+            <WorksheetDiagramView spec={normalized} />
+          ) : (
+            <p className={`text-center text-sm text-amber-800 ${ty.body}`}>Ungültiges oder fehlendes diagram.spec — bitte im Editor korrigieren.</p>
+          )}
+        </div>
+      </EditableBlockSection>
+    );
+  }
+
+  if (block.type === 'drawing_box') {
+    const hmRaw = d.height_mm ?? block.height_mm;
+    let heightMm = 48;
+    if (typeof hmRaw === 'number' && Number.isFinite(hmRaw)) {
+      heightMm = Math.min(190, Math.max(25, Math.round(hmRaw)));
+    } else if (typeof hmRaw === 'string' && hmRaw.trim() !== '') {
+      const n = Number(hmRaw);
+      if (Number.isFinite(n)) heightMm = Math.min(190, Math.max(25, Math.round(n)));
+    }
+    const expandRaw = d.expand_to_page_bottom ?? block.expand_to_page_bottom;
+    const expandToBottom =
+      !isLandscape &&
+      blockIndex === totalBlocksOnPage - 1 &&
+      (expandRaw === true || expandRaw === 'true');
+    const sectionGrow = expandToBottom ? 'flex min-h-0 flex-1 flex-col' : '';
+    return (
+      <EditableBlockSection
+        editCtx={editCtx}
+        pageIndex={pageIndex}
+        blockIndex={blockIndex}
+        sectionClassName={sectionGrow || undefined}
+      >
+        <h3 className={`shrink-0 mb-1 ${ty.sectionTitle}`}>
+          {edit ? (
+            <SheetInlineTitle className={ty.sectionTitle} value={String(d.title ?? '')} onChange={(v) => patch({ title: v })} />
+          ) : (
+            <LatexText text={block.title} />
+          )}
+        </h3>
+        <div className={`${ty.body} mb-2 shrink-0`}>
+          {edit ? (
+            <SheetInlineText
+              className={ty.body}
               value={String(d.instruction ?? '')}
               onChange={(v) => patch({ instruction: v })}
             />
@@ -534,9 +633,14 @@ function Block({
             <LatexText text={block.instruction} as="span" />
           )}
         </div>
-        <div className="h-36 border border-dashed border-slate-400 bg-white" aria-hidden />
+        <div
+          className={`border border-dashed border-slate-400 bg-white ${expandToBottom ? 'min-h-0 flex-1' : ''}`}
+          style={{ minHeight: mm(heightMm) }}
+          aria-hidden
+        />
       </EditableBlockSection>
     );
+  }
 
   if (block.type === 'checklist')
     return (
@@ -768,6 +872,15 @@ function PageAiWandButton({
   );
 }
 
+/** Layout-Messung (Bearbeitungsmodus): Inhalt ragt aus dem A4-Hauptbereich (overflow hidden). */
+export type PageLayoutOverflowInfo = {
+  pageIndex: number;
+  overflowsVertical: boolean;
+  overflowsHorizontal: boolean;
+  /** Geschätzter vertikaler Überstand in CSS-Pixeln (nur wenn overflowsVertical). */
+  overflowPxVertical: number;
+};
+
 function A4PageShell({
   page,
   pageIndex,
@@ -779,6 +892,8 @@ function A4PageShell({
   editCtx,
   onRequestRegeneratePage,
   regeneratePageBusyIndex,
+  overflowMeasureFingerprint,
+  onPageLayoutOverflow,
 }: {
   page: { page_label?: string; blocks: any[] };
   pageIndex: number;
@@ -790,8 +905,12 @@ function A4PageShell({
   editCtx?: ContentDraftEdit;
   onRequestRegeneratePage?: (pageIndex: number) => void;
   regeneratePageBusyIndex?: number | null;
+  /** Serialized page + Kopfdaten — bei Änderung neu messen. */
+  overflowMeasureFingerprint?: string;
+  onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
 }) {
   const mainRef = useRef<HTMLElement>(null);
+  const pageBodyRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLElement>(null);
   const pageSetup = rm.page_setup || worksheet.page_setup;
   const isLandscape = pageSetup.orientation === 'landscape';
@@ -808,6 +927,8 @@ function A4PageShell({
           t: b.type,
           lines: b.lines,
           il: Array.isArray(b.items) ? b.items.length : 0,
+          dh: b.type === 'drawing_box' ? b.height_mm : undefined,
+          dex: b.type === 'drawing_box' ? b.expand_to_page_bottom : undefined,
         })),
         edit: !!editCtx,
       }),
@@ -838,6 +959,60 @@ function A4PageShell({
     };
   }, [layoutFingerprint, footerPageLabel, footerLeft, showGuide]);
 
+  const overflowCallbackRef = useRef(onPageLayoutOverflow);
+  overflowCallbackRef.current = onPageLayoutOverflow;
+
+  useLayoutEffect(() => {
+    if (overflowMeasureFingerprint === undefined) return;
+    const main = mainRef.current;
+    if (!main) return;
+
+    const TOL = 2;
+    let raf0 = 0;
+    const measure = () => {
+      cancelAnimationFrame(raf0);
+      raf0 = requestAnimationFrame(() => {
+        const cb = overflowCallbackRef.current;
+        if (!cb) return;
+        const v = main.scrollHeight > main.clientHeight + TOL;
+        const h = main.scrollWidth > main.clientWidth + TOL;
+        const px = Math.max(0, main.scrollHeight - main.clientHeight);
+        cb({
+          pageIndex,
+          overflowsVertical: v,
+          overflowsHorizontal: h,
+          overflowPxVertical: px,
+        });
+      });
+    };
+
+    measure();
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            measure();
+          })
+        : null;
+    ro?.observe(main);
+    const body = pageBodyRef.current;
+    if (body) ro?.observe(body);
+
+    let mo: MutationObserver | null = null;
+    if (typeof MutationObserver !== 'undefined') {
+      mo = new MutationObserver(() => measure());
+      mo.observe(main, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
+
+    const fontsP = document.fonts?.ready;
+    if (fontsP && typeof fontsP.then === 'function') void fontsP.then(measure);
+
+    return () => {
+      cancelAnimationFrame(raf0);
+      ro?.disconnect();
+      mo?.disconnect();
+    };
+  }, [pageIndex, overflowMeasureFingerprint]);
+
   const metaTitle = String(editCtx?.draft.title ?? rm.title ?? worksheet.title ?? '');
   const metaSubtitle = String(
     (editCtx?.draft as { subtitle?: string })?.subtitle ?? rm.subtitle ?? worksheet.subject ?? '',
@@ -845,7 +1020,9 @@ function A4PageShell({
 
   return (
     <div
-      className="a4-page mb-10 print:mb-0"
+      className="a4-page"
+      data-a4-page-index={pageIndex}
+      data-a4-page-count={totalPages}
       style={{
         width: mm(pageSetup.width_mm),
         boxSizing: 'border-box',
@@ -906,22 +1083,29 @@ function A4PageShell({
             </>
           )}
     </header>
-        <div className="worksheet-page-body">
+        <div ref={pageBodyRef} className="worksheet-page-body min-h-0 flex flex-1 flex-col">
           <div
             className={
-              isLandscape ? 'grid grid-cols-2 gap-x-6 gap-y-0' : `${ty.gap} flex flex-col print:block`
+              isLandscape
+                ? 'grid min-h-0 flex-1 grid-cols-2 gap-x-6 gap-y-0'
+                : `${ty.gap} flex min-h-0 flex-1 flex-col print:flex print:min-h-0 print:flex-1 print:flex-col`
             }
           >
-            {page.blocks?.map((b: any, bi: number) => (
-              <Block
-                block={b}
-                ty={ty}
-                pageIndex={pageIndex}
-                blockIndex={bi}
-                editCtx={editCtx}
-                key={b.id || `p-${pageIndex}-b-${bi}`}
-              />
-            ))}
+            {(() => {
+              const n = page.blocks?.length ?? 0;
+              return page.blocks?.map((b: any, bi: number) => (
+                <Block
+                  block={b}
+                  ty={ty}
+                  pageIndex={pageIndex}
+                  blockIndex={bi}
+                  totalBlocksOnPage={n}
+                  isLandscape={isLandscape}
+                  editCtx={editCtx}
+                  key={b.id || `p-${pageIndex}-b-${bi}`}
+                />
+              ));
+            })()}
           </div>
         </div>
         {editCtx ? <PageEndEditStrip pageIndex={pageIndex} totalPages={totalPages} editCtx={editCtx} /> : null}
@@ -969,6 +1153,8 @@ type RendererProps = {
   onContentDraftChange?: Dispatch<SetStateAction<Record<string, unknown>>>;
   onRequestRegeneratePage?: (pageIndex: number) => void;
   regeneratePageBusyIndex?: number | null;
+  /** Nur Bearbeiten: Meldet pro Seite, ob der Inhalt aus dem A4-Hauptfenster überläuft (DOM-Messung). */
+  onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
 };
 
 export function A4WorksheetRenderer({
@@ -978,6 +1164,7 @@ export function A4WorksheetRenderer({
   onContentDraftChange,
   onRequestRegeneratePage,
   regeneratePageBusyIndex,
+  onPageLayoutOverflow,
 }: RendererProps) {
   const rm = worksheet.render_model || {};
   const tokens = rm.tokens || {};
@@ -990,7 +1177,50 @@ export function A4WorksheetRenderer({
 
   const pageSetup = (rm.page_setup || worksheet.page_setup) as PageSetup;
   const pageOrient = pageSetup?.orientation === 'landscape' ? 'landscape' : 'portrait';
-  const printPageCss = `@media print { @page { size: A4 ${pageOrient}; margin: 0; } }`;
+  const pageW = pageSetup?.width_mm ?? 210;
+  const pageH = pageSetup?.height_mm ?? 297;
+  const printPageCss = `
+@media print {
+  @page { size: A4 ${pageOrient}; margin: 0; }
+  html, body, #root {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .worksheet-paper-stack {
+    background: #fff !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .a4-page {
+    width: ${pageW}mm !important;
+    max-width: none !important;
+    height: ${pageH}mm !important;
+    min-height: ${pageH}mm !important;
+    max-height: ${pageH}mm !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    page-break-after: always;
+    break-after: page;
+    box-shadow: none !important;
+    border: none !important;
+    outline: none !important;
+  }
+  .a4-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}
+`;
 
   const editCtx =
     contentDraft && onContentDraftChange
@@ -1000,7 +1230,7 @@ export function A4WorksheetRenderer({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: printPageCss }} />
-      <div className="worksheet-paper-stack flex flex-col items-start text-black antialiased">
+      <div className="worksheet-paper-stack flex flex-col items-start gap-3 bg-[#eef2f7] print:bg-transparent print:gap-0 text-black antialiased">
         {pages.map((pg: any, i: number) => (
           <A4PageShell
             key={i}
@@ -1014,6 +1244,19 @@ export function A4WorksheetRenderer({
             editCtx={editCtx}
             onRequestRegeneratePage={onRequestRegeneratePage}
             regeneratePageBusyIndex={regeneratePageBusyIndex}
+            overflowMeasureFingerprint={
+              onPageLayoutOverflow
+                ? JSON.stringify({
+                    i,
+                    p: pg,
+                    title: rm.title,
+                    subtitle: rm.subtitle,
+                    subj: worksheet.subject,
+                    pres,
+                  })
+                : undefined
+            }
+            onPageLayoutOverflow={onPageLayoutOverflow}
           />
         ))}
  </div>

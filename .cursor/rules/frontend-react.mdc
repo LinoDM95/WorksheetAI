@@ -1,0 +1,52 @@
+---
+description: React/TS – Komponenten-Architektur, Props, Composition, DRY
+globs: frontend/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend – React / TypeScript
+
+## Komponenten
+
+- **Functional components** mit benannten `type Props = { ... }`. Inline-Typen nur bei <2 Properties.
+- **Bevorzuge Composition** (Children + Subkomponenten) statt Boolean-Wüste in einem Component.
+- **Render-as-Link / Render-as-Button:** nutze die `as`-Prop bei `<Button>` / `<IconButton>` (siehe `components/ui/Button.tsx`) — keine doppelten Komponenten für Link/Button mit gleicher Optik.
+- Für stark wiederverwendete Strukturen (Karten, Listen-Header) → in `components/ui/` extrahieren.
+
+## Pflicht-Primitives statt Ad-hoc-JSX
+
+| Statt … | Verwende |
+|---------|----------|
+| `<button className="btn btn-primary">…</button>` | `<Button variant="primary">…</Button>` |
+| `<button className="btn btn-ghost btn-sm btn-icon">` | `<IconButton variant="ghost" size="sm" aria-label="…">` |
+| `<div className="card …"><div className="border-b …">…</div>…</div>` | `<SectionCard title="…">…</SectionCard>` |
+| `<span className="badge badge-success">` | `<Badge tone="success">` |
+| Status-Badge für Worksheets | `<StatusBadge status={…} />` |
+| `<input className="input pl-9" /> + Search-Icon-Layout` | `<SearchInput />` |
+| Leere Liste / Fehler-Container mit „Lege X an“ | `<EmptyState title=… action=… />` |
+| `<h1 className="text-2xl font-bold …">…</h1>` Page-Titel | `<PageHeader title=… subtitle=… actions=… />` |
+| Roter/gelber Hinweisbalken | `<Alert tone="error|warn|info">` |
+
+> Es ist **verboten**, `className="btn btn-…"` direkt auf ein `<button>` / `<a>` zu setzen, wenn der `<Button>`-Wrapper passt. Ausnahmen nur für absolute Sonderfälle (z. B. exotisches Layout mit dynamischer Größe), kurz mit Kommentar belegen.
+
+## Event-Handler
+
+- Naming: `handleClick`, `handleSubmit`, `handleKeyDown`.
+- `const handleX = () => …` (Arrow). Keine inline-IIFE-Logik mit mehreren Statements im JSX.
+
+## State & Effects
+
+- **Lieber `useQuery`** als `useEffect + useState` für Daten vom Server.
+- `useEffect` ist nur für **Synchronisierung mit der Außenwelt** (DOM-Listener, Router-Side-Effects, Storage). Vermeide ihn als Daten-Lade-Mechanismus.
+- Memoize teure Berechnungen mit `useMemo`, Handler an Kinder mit `useCallback` — aber nicht jeden Trivial-Wert.
+
+## Imports
+
+- Reihenfolge: 1) externe Pakete (React zuerst), 2) interne `~/lib`, 3) interne `~/components`, 4) interne `~/features`, 5) Types am Schluss.
+- Keine Default-Exports für Utility-/UI-Primitives.
+
+## Accessibility (Pflicht für alle Bausteine)
+
+- Interaktive Elemente brauchen ein `aria-label` **wenn** sichtbares Label fehlt (z. B. Icon-Buttons).
+- `disabled` IMMER zusätzlich zur visuellen Disabled-Klasse setzen — `aria-disabled` dann automatisch.
+- Keyboard-Operability: Tab + Enter müssen alles Wichtige erreichen. Custom-`<div onClick>` ist verboten — nimm `<button>`.

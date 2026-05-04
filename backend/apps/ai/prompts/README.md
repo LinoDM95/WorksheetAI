@@ -1,20 +1,44 @@
-# Prompt-Vorlagen (`*.md`)
+# KI-Prompts (`apps/ai/prompts/`)
 
-Diese Markdown-Dateien sind **die zentrale Textquelle** für KI-Anweisungen. Sie werden zur Laufzeit eingelesen; **strukturierte Werte** (Thema, Niveau, Freitext der Lehrkraft, …) kommen aus dem **Frontend/API** und werden als JSON in Platzhalter eingefügt.
+Markdown-Vorlagen werden zur Laufzeit eingelesen; strukturierte Werte kommen aus API/Frontend und werden als JSON eingesetzt (**`prompt_loader`**).
 
-| Datei | Verwendung |
-|-------|------------|
-| `worksheet_generation.md` | Hauptprompt: **mehrseitige A4-Seiten** (`pages[]`), **`presentation`** (Schrift, Dichte, Register, Begründung Zeit/Niveau) |
-| `formulierung_schule_dach.md` | **Sprache & Didaktik D-A-CH:** Zielgruppen, Operatoren, inklusive Formulierung, Anforderungstiefe; wird vor dem LaTeX-Anhang eingefügt |
-| `latex_katex_schule_reference.md` | **LaTeX für KaTeX im Browser**: erlaubte Umgebungen, Schulkonventionen, typische Fehler; wird beim Generieren an den Hauptprompt angehängt |
+## Ordnerstruktur
 
-## Platzhalter
+```
+prompts/
+├── README.md                 ← dieses Dokument
+├── shared/                   ← formatübergreifend (werden je nach Funktion angehängt)
+│   ├── formulierung_schule_dach.md
+│   └── latex_katex_schule_reference.md
+└── formats/                  ← ein Unterordner pro Ausgabeformat
+    └── html_a4_worksheet/    ← MVP: mehrseitiges Arbeitsblatt, HTML/A4-Blocksystem
+        ├── generation.md     ← Hauptgenerierung (früher worksheet_generation.md)
+        ├── review.md         ← Qualitätsdurchgang
+        └── page_regenerate.md
+```
 
-In `worksheet_generation.md`:
+### Weitere Formate (geplant)
+
+Neues Format anlegen:
+
+1. Unter **`formats/`** einen Ordner anlegen, z. B. `latex_a4_worksheet` oder `flashcards_a6`.
+2. Darin dieselben **Dateinamen** wie oben (`generation.md`, `review.md`, `page_regenerate.md`), sofern der Workflow passt — oder nur die Teile, die ihr wirklich braucht (dann `prompt_loader` und ggf. Provider pro Format erweitern).
+3. In **`backend/.env`** setzen: `AI_PROMPT_WORKSHEET_FORMAT=<ordnername>` (Default: `html_a4_worksheet`).
+
+**`shared/`** bleibt für Sprach-/KaTeX-Regeln, die mehrere Formate nutzen. Format-spezifische Anhänge können zusätzlich im Format-Ordner liegen und im Loader eingebunden werden.
+
+## Platzhalter (`generation.md`)
 
 - `{{TEACHER_CONTEXT}}` — Freitext der Lehrperson
-- `{{REQUEST_JSON}}` — vollständiges Request-Objekt (alle Formularfelder)
+- `{{REQUEST_JSON}}` — vollständiges Request-Objekt
 - `{{PAGE_SETUP_JSON}}` — normiertes Seitenlayout
-- `{{PATTERN_JSON}}` — Blueprint der gewählten oder gematchten Vorlage
+- `{{PATTERN_JSON}}` — Blueprint der Vorlage
 
-Ersetzung erfolgt in `apps.ai.prompt_loader`.
+`review.md`: `{{WORKSHEET_JSON}}` zusätzlich.  
+`page_regenerate.md`: siehe Dateikopf / Platzhalter im Text.
+
+Ersetzung: **`apps.ai.prompt_loader`**.
+
+## Gemini-System/User-Split
+
+Für `generation.md` müssen die Anchors **`## Kontext vom Lehrenden`** und **`## Ausgabe-JSON (Kurzüberblick)`** vorhanden bleiben, damit `GEMINI_PROMPT_SPLIT_SYSTEM_USER` funktioniert.

@@ -50,72 +50,167 @@ def _normalize_page_labels(pages: list[dict]) -> list[dict]:
     return out
 
 def repair_incomplete_ai_blocks(content: dict) -> tuple[dict, list[str]]:
-    """Füllt leere KI-Felder mit sichtbaren Platzhaltern und protokolliert Hinweise."""
+    """Bereinigt Lücken nach der KI-Erzeugung.
+
+    Sichtbar für Lernende dürfen **keine** Metakommentare stehen (z. B. „KI-Antwort“, „bitte eintragen“).
+    Leere oder ungültige Blöcke bzw. Zeilen werden **entfernt**; technische Fallbacks nur dort, wo nötig
+    (Diagramm-spec, Zeichenfeld, neutrale Kurz-Anweisung ohne KI-Bezug).
+    """
     notes: list[str] = []
-    for pi, page in enumerate(content.get('pages') or []):
-        for bi, b in enumerate(page.get('blocks') or []):
-            t = b.get('type')
-            if t == 'text':
-                c = (b.get('content') or '').strip()
-                tit = (b.get('title') or '').strip()
-                if not c:
-                    b['content'] = (
-                        f'Hier sollte ein Informationstext zu „{tit or "diesem Abschnitt"}“ stehen '
-                        '(von der KI nicht ausgefüllt — bitte im Editor ergänzen).'
-                    )
-                    notes.append(f'Seite {pi + 1}, Block {bi + 1}: text.content war leer')
-            elif t in ('task_grid', 'task_list'):
-                items = b.get('items')
-                if not isinstance(items, list) or len(items) == 0:
-                    b['items'] = [
-                        {
-                            'label': '1',
-                            'text': 'Aufgaben fehlten in der KI-Antwort — bitte konkrete Aufgabenstellung eintragen.',
-                        }
-                    ]
-                    notes.append(f'Seite {pi + 1}, Block {bi + 1}: {t} ohne items')
-                    continue
-                fixed = []
-                for i, it in enumerate(items):
-                    if isinstance(it, dict):
-                        label = str(it.get('label', i + 1))
-                        text = (it.get('text') or '').strip()
-                        if not text:
-                            text = (
-                                f'Zu Teilaufgabe {label}: Formulierung fehlt — bitte die vollständige '
-                                'Aufgabenstellung einfügen.'
-                            )
-                            notes.append(f'Seite {pi + 1}, Block {bi + 1}: leerer Aufgabentext ({label})')
-                        row: dict = {'label': label, 'text': text}
-                        if 'answer_lines' in it and it['answer_lines'] is not None:
-                            row['answer_lines'] = it['answer_lines']
-                        fixed.append(row)
-                    else:
-                        s = str(it).strip()
-                        lab = str(i + 1)
-                        fixed.append({'label': lab, 'text': s or f'Aufgabe {lab} — bitte Formulierung ergänzen.'})
-                b['items'] = fixed
-            elif t == 'drawing_box':
-                if not (b.get('instruction') or '').strip():
-                    b['instruction'] = (
-                        'Zeichnen oder beschriften Sie im Kasten — die KI hat keinen Hinweistext geliefert.'
-                    )
-                    notes.append(f'Seite {pi + 1}, Block {bi + 1}: drawing_box.instruction leer')
-            elif t == 'checklist':
-                raw = b.get('items')
-                if not isinstance(raw, list):
-                    continue
-                for i, it in enumerate(raw):
-                    if isinstance(it, dict):
-                        tx = (it.get('text') or '').strip()
-                        if not tx:
-                            it['text'] = f'Listenpunkt {i + 1} — bitte Formulierung ergänzen.'
-                            notes.append(f'Seite {pi + 1}, Block {bi + 1}: checklist item leer')
-            elif t == 'table':
-                rows = b.get('rows')
-                if isinstance(rows, list) and len(rows) == 0 and (b.get('title') or '').strip():
-                    notes.append(f'Seite {pi + 1}, Block {bi + 1}: table ohne Zeilen')
+    pages = content.get('pages')
+    if not isinstance(pages, list):
+        return content, notes
+
+    for pi, page in enumerate(pages):
+        if not isinstance(page, dict):
+            continue
+        raw_blocks = page.get('blocks')
+        if not isinstance(raw_blocks, list):
+            continue
+        new_blocks: list[dict] = []
+        for bi, b in enumerate(raw_blocks):
+            if not isinstance(b, dict):
+                continue
+            repaired = _repair_or_drop_block(b, pi, bi, notes)
+            if repaired is not None:
+                new_blocks.append(repaired)
+        page['blocks'] = new_blocks
+
     return content, notes
+
+
+def _repair_or_drop_block(b: dict, pi: int, bi: int, notes: list[str]) -> dict | None:
+    """Gibt den Block zurück oder ``None``, wenn er ganz entfällt."""
+    loc = f'Seite {pi + 1}, Block {bi + 1}'
+    t = b.get('type')
+
+    if t == 'text':
+        c = (b.get('content') or '').strip()
+        if not c:
+            notes.append(f'{loc}: text ohne Inhalt — Block entfernt')
+            return None
+        return b
+
+    if t == 'task_list':
+        items = b.get('items')
+        if not isinstance(items, list):
+            notes.append(f'{loc}: task_list ohne items — Block entfernt')
+            return None
+        fixed: list[dict] = []
+        for i, it in enumerate(items):
+            if isinstance(it, dict):
+                text = (it.get('text') or '').strip()
+                if not text:
+                    continue
+                row = {'label': str(it.get('label', len(fixed) + 1)), 'text': text}
+                if 'answer_lines' in it and it['answer_lines'] is not None:
+                    row['answer_lines'] = it['answer_lines']
+                fixed.append(row)
+            else:
+                s = str(it).strip()
+                if not s:
+                    continue
+                fixed.append({'label': str(len(fixed) + 1), 'text': s})
+        if not fixed:
+            notes.append(f'{loc}: task_list ohne gültige Aufgaben — Block entfernt')
+            return None
+        for i, row in enumerate(fixed):
+            if not str(row.get('label', '')).strip():
+                row['label'] = str(i + 1)
+        b['items'] = fixed
+        return b
+
+    if t == 'task_grid':
+        items = b.get('items')
+        if not isinstance(items, list):
+            notes.append(f'{loc}: task_grid ohne items — Block entfernt')
+            return None
+        fixed: list[dict] = []
+        for i, it in enumerate(items):
+            if not isinstance(it, dict):
+                continue
+            text = (it.get('text') or '').strip()
+            if not text:
+                continue
+            label = str(it.get('label', i + 1))
+            row: dict = {'label': label, 'text': text}
+            if it.get('answer') is not None:
+                row['answer'] = it['answer']
+            fixed.append(row)
+        if not fixed:
+            notes.append(f'{loc}: task_grid ohne gültige Zeilen — Block entfernt')
+            return None
+        b['items'] = fixed
+        return b
+
+    if t == 'drawing_box':
+        if not (b.get('instruction') or '').strip():
+            b['instruction'] = 'Zeichnen und beschriften Sie im Kasten.'
+            notes.append(f'{loc}: drawing_box.instruction neutral gesetzt')
+        hm = b.get('height_mm')
+        try:
+            hm = float(hm)
+        except (TypeError, ValueError):
+            hm = None
+        if hm is None or hm < 20:
+            b['height_mm'] = 48
+            notes.append(f'{loc}: drawing_box.height_mm Fallback 48')
+        else:
+            b['height_mm'] = max(25.0, min(float(hm), 190.0))
+        return b
+
+    if t == 'diagram':
+        spec = b.get('spec')
+        if not isinstance(spec, dict) or not str(spec.get('kind') or '').strip():
+            b['spec'] = {
+                'kind': 'unit_circle',
+                'angle_deg': 40,
+                'show_angle_arc': True,
+                'show_projections': True,
+                'point_label': 'P',
+            }
+            notes.append(f'{loc}: diagram.spec fehlte — Fallback Einheitskreis')
+        return b
+
+    if t == 'checklist':
+        raw = b.get('items')
+        if not isinstance(raw, list):
+            return b
+        kept: list[dict] = []
+        for it in raw:
+            if isinstance(it, dict):
+                tx = (it.get('text') or '').strip()
+                if tx:
+                    kept.append({**it, 'text': tx})
+            else:
+                s = str(it).strip()
+                if s:
+                    kept.append({'text': s})
+        if not kept:
+            notes.append(f'{loc}: checklist ohne Punkte — Block entfernt')
+            return None
+        b['items'] = kept
+        return b
+
+    if t == 'table':
+        rows = b.get('rows')
+        if isinstance(rows, list) and len(rows) == 0 and (b.get('title') or '').strip():
+            notes.append(f'{loc}: table ohne Zeilen — Block entfernt')
+            return None
+        rh = b.get('row_height_mm')
+        if rh is not None and rh != '':
+            try:
+                rh = float(rh)
+                if rh <= 0:
+                    b.pop('row_height_mm', None)
+                else:
+                    rh = max(8.0, min(rh, 80.0))
+                    b['row_height_mm'] = round(rh * 2) / 2
+            except (TypeError, ValueError):
+                b.pop('row_height_mm', None)
+        return b
+
+    return b
 
 
 def iter_content_blocks(content: dict):
@@ -177,9 +272,30 @@ def estimate_block_units(b: dict) -> float:
             n = 10
         return 3.0 + max(0, n) * 1.06
     if t == 'drawing_box':
-        return 13.0
+        hm = b.get('height_mm')
+        try:
+            hm = float(hm)
+        except (TypeError, ValueError):
+            hm = 48.0
+        hm = max(25.0, min(hm, 190.0))
+        u = 5.0 + hm / 5.0
+        if b.get('expand_to_page_bottom'):
+            u = max(u, 22.0)
+        return min(u, 40.0)
+    if t == 'diagram':
+        return 15.0
     if t == 'table':
-        return 4.2 + len(b.get('rows') or []) * 2.0
+        n = len(b.get('rows') or [])
+        u = 4.2 + n * 2.0
+        rh = b.get('row_height_mm')
+        try:
+            rh = float(rh) if rh is not None and rh != '' else None
+        except (TypeError, ValueError):
+            rh = None
+        if rh is not None and rh > 0:
+            rh = max(8.0, min(rh, 80.0))
+            u = 4.2 + n * max(2.0, rh / 4.0)
+        return min(u, 48.0)
     if t == 'checklist':
         return 2.8 + len(b.get('items') or []) * 1.15
     return 4.5

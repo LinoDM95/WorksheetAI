@@ -1,0 +1,48 @@
+---
+description: Monorepo-Struktur, DRY, Komponenten-Orte, gemeinsame Prinzipien
+alwaysApply: true
+---
+
+# Projekt-Kern (Worksheet AI)
+
+## Stack
+
+- **Frontend:** Vite, React, TypeScript, Tailwind (`frontend/src/`)
+- **Backend:** Django, DRF (`backend/`)
+- **State/Server-Cache:** TanStack Query (`@tanstack/react-query`)
+- **Routing:** `react-router-dom`
+
+## DRY-Grundprinzip
+
+> Wiederholt sich Markup, Logik oder ein konstantes Mapping **mindestens zweimal** → in eine **gemeinsame Funktion / Komponente** ziehen.
+
+- Gemeinsame UI-Bausteine **nur** in `frontend/src/components/` (oder `components/ui/` für Primitives).
+- API-Hooks, Query-Keys, Fetcher: zentral in `frontend/src/lib/`.
+- Status → Label / Status → Farbton: **einmal** als Mapping-Funktion (`lib/worksheetStatus.ts`), nirgends inline.
+- Datums-/Relativ-Formatter: **einmal** in `lib/formatDate.ts`.
+- KEIN copy-paste von Klassenketten wie `'rounded-xl border border-slate-200 bg-white shadow-sm'` zwischen Pages — solche Strukturen gehören in `<Card>` / `<SectionCard>`.
+
+## Verzeichnis-Konvention
+
+| Ort | Inhalt |
+|-----|--------|
+| `frontend/src/components/ui/` | **UI-Primitives**: `Button`, `IconButton`, `Card`, `Badge`, `Field`, `EmptyState`, `PageHeader`, `Alert`, `Stat`, `SearchInput`, `MiniThumbnail` |
+| `frontend/src/components/` | App-spezifische, seitenübergreifende Bausteine (Shell, MockBadge, A4Preview, LatexText) |
+| `frontend/src/components/shell/` | Layout (`AppShell`, `Sidebar`, `Topbar`) |
+| `frontend/src/features/<bereich>/` | Feature-Screens, Wizard-Steps, größere zusammenhängende Blöcke |
+| `frontend/src/features/<bereich>/components.tsx` | Feature-private kleine Bausteine |
+| `frontend/src/lib/` | `cn`, API-Client, Queries, Formatter, reine Utilities |
+
+## Allgemein
+
+- Aufgaben **fokussiert** lösen: keine ungefragten Refactors in fremden Bereichen.
+- **README / neue Markdown-Docs** nur wenn der Nutzer es ausdrücklich verlangt.
+- **UI-Texte in der App: Deutsch.** (Code-Identifier und Doc-Strings dürfen englisch sein, aber konsistent.)
+- **Keine narrativen Code-Kommentare** (`// Setze X`, `// Fetch worksheets`). Kommentare nur bei **nicht-offensichtlicher** Absicht oder Trade-off.
+- Keine neue Top-Level-Datei für etwas, das in einer existierenden gut aufgehoben ist.
+
+## Skalierung & Erweiterbarkeit
+
+- **Pages bleiben dünn**: Daten-Hook, Daten-Transformation, Layout — den Rest komponieren aus Primitives + Feature-Komponenten.
+- **Neue Feature-Page** = 1) Daten via `useQuery` (Key in `lib/listQueries.ts`), 2) Layout mit `<PageHeader>` + `<SectionCard>` / `<EmptyState>`, 3) feature-spezifische Listen/Tabellen lokal in `features/<bereich>/`.
+- **Vor jeder neuen Komponente** kurz `components/ui/` und `components/` lesen — dann erst entscheiden.

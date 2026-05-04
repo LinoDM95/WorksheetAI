@@ -1,0 +1,31 @@
+---
+description: State-Management – TanStack Query, Effects, lokaler State, Cache
+globs: frontend/src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# State-Management
+
+## TanStack Query ist Standard für Server-Daten
+
+- Listen / Detail-Fetches: **immer** über `useQuery` (oder `useMutation` für Schreibzugriff).
+- **Query-Keys & Fetcher** zentral in `frontend/src/lib/listQueries.ts`. Neue Liste? Erst dort eintragen, dann konsumieren.
+- `staleTime` setzen (>= 60 s für ruhige Listen). `refetchOnWindowFocus` ist global aus (`main.tsx`).
+- Nach Mutationen, die eine Liste betreffen → `queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY })`.
+
+## useEffect-Regeln
+
+- **Kein** `useEffect(() => { fetch(...) }, [])` für „normale“ Ressourcen — das ist Aufgabe von Query.
+- `useEffect` ist OK für: DOM-Event-Listener, `window.matchMedia`, `localStorage`-Sync, Router-Side-Effects, `ResizeObserver`, Tastatur-Shortcuts.
+- Cleanup nicht vergessen (`return () => …`).
+
+## Lokaler State
+
+- `useState` für UI-Zustand (open/closed, Filter-Eingaben, Editier-Drafts).
+- Komplexer abhängiger State → `useReducer`.
+- **Refs** für nicht reaktiven Zustand (Undo-Stack, IDs, DOM-Refs, Scroll-Positionen). Re-Render bei Bedarf via `setState(n+1)`-Tick.
+
+## Mutationen
+
+- Schreib-Operationen über `axios`-Calls direkt aus dem Handler — bei wiederholtem Bedarf in eine Funktion in `lib/`.
+- Optimistisches UI nur dort, wo es die UX deutlich verbessert; sonst auf Erfolg warten und invalidieren.

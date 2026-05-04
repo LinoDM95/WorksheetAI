@@ -16,6 +16,8 @@ PATTERNS=[
 ]
 class Command(BaseCommand):
     def handle(self,*args,**kwargs):
-        for bp in PATTERNS:
-            WorksheetPattern.objects.update_or_create(key=bp['id'], defaults={'name':bp['name'],'description':bp.get('description',''),'status':'active','source_format':'json','blueprint':bp,'preview_svg':bp.get('preview_svg',''),'is_system':True,'quality_score':9})
+        for i, bp in enumerate(PATTERNS):
+            # Letzte Vorlage = Premium-Add-on (im UI freischaltbar / Demo-Kauf)
+            is_system = i < len(PATTERNS) - 1
+            WorksheetPattern.objects.update_or_create(key=bp['id'], defaults={'name':bp['name'],'description':bp.get('description',''),'status':'active','source_format':'json','blueprint':bp,'preview_svg':bp.get('preview_svg',''),'is_system':is_system,'quality_score':9})
         self.stdout.write(self.style.SUCCESS(f'Seeded {len(PATTERNS)} patterns.'))
