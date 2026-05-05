@@ -77,7 +77,10 @@ class AIErrorMapper:
         return self._format_generic()
 
     def _is_provider_config_missing(self) -> bool:
-        return isinstance(self.exc, RuntimeError) and "GEMINI_API_KEY" in str(self.exc)
+        if isinstance(self.exc, RuntimeError):
+            s = str(self.exc)
+            return 'GEMINI_API_KEY' in s or 'CLAUDE_API_KEY' in s
+        return False
 
     def _google_api_error(self):
         try:

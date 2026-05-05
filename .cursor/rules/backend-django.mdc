@@ -48,6 +48,10 @@ Vorteile: Subklassen (`PageRegenerator(WorksheetGenerator)`) statt Copy-Paste, k
 - Validierungs-/Reparaturpfade müssen **idempotent** sein (mehrfaches Anwenden ändert nichts mehr).
 - Logging mit Modul-Logger (`logging.getLogger(__name__)`); kein `print`.
 
-## Tests
+## Tests (TDD-freundlich)
 
-- Tests neu nur wenn vom Nutzer verlangt — bestehende erweitern, nicht löschen.
+- **Neue oder geänderte Geschäftslogik** (Services, Validatoren, Mapper, Sanitizer): dazu **Unittests** liefern — mindestens ein **Happy-Path** und bei Fehlerpfaden einen **repräsentativen Negativfall**.
+- **Views/APIs**: bei komplexer Autorisierung oder Verzweigung gezielte Tests; reine Durchreichende Endpunkte können über Service-Tests abgedeckt sein.
+- Bevorzugt **`SimpleTestCase`** ohne DB, wenn keine ORM-Daten nötig sind; **`TestCase`** nur wenn DB-Fixtures oder Integrationsfluss nötig ist.
+- Bestehende Tests **nicht** löschen, nur erweitern. Keine Tests nur für Prozentzahlen — nur wo Regression oder Vertrag wirklich hilft.
+- Ausführung: `python manage.py test` (alle Apps) oder `python manage.py test apps.<appname>`.

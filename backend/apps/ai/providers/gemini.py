@@ -7,6 +7,10 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 from apps.ai.prompt_loader import (
+    build_block_filling_page_prompt,
+    build_free_html_generation_prompt,
+    build_free_html_repair_prompt,
+    build_free_html_revision_prompt,
     build_page_regeneration_prompt,
     build_worksheet_generation_prompt_for_gemini,
     build_worksheet_review_prompt,
@@ -191,6 +195,21 @@ SCHEMA = {
     'slots': {'type': 'OBJECT'},
     'solutions': {'type': 'ARRAY', 'items': {'type': 'OBJECT'}},
     'design_notes': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+    'curriculum_alignment': {
+      'type': 'OBJECT',
+      'description': (
+        'Internal only: which curriculum aspects guided this worksheet. Not shown on the printed sheet. '
+        'Omit or use empty strings/arrays if no curriculum context was supplied.'
+      ),
+      'properties': {
+        'used_topic_area': {'type': 'STRING'},
+        'used_subtopics': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        'used_competency_goals': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        'used_task_types': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        'used_language_guidance': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        'notes': {'type': 'STRING'},
+      },
+    },
   },
   'required': ['title', 'pages', 'solutions', 'presentation'],
 }
@@ -206,6 +225,71 @@ PAGE_REGEN_SCHEMA = {
         'blocks': SCHEMA['properties']['pages']['items']['properties']['blocks'],
     },
     'required': ['blocks'],
+}
+
+
+FREE_HTML_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Free HTML5 smartboard fragment. No full documents. No external URLs in strings. '
+        'html = inner content only; wrap in .free-board. Vanilla JS only. '
+        'used_libraries / used_assets / used_datasets MUST list only IDs from the provided '
+        'resource registry — never invent IDs or external URLs.'
+    ),
+    'properties': {
+        'title': {'type': 'STRING'},
+        'description': {'type': 'STRING'},
+        'html': {'type': 'STRING'},
+        'css': {'type': 'STRING'},
+        'javascript': {'type': 'STRING'},
+        'teacher_notes': {'type': 'STRING'},
+        'usage_instructions': {
+            'type': 'ARRAY',
+            'items': {'type': 'STRING'},
+        },
+        'warnings': {
+            'type': 'ARRAY',
+            'items': {'type': 'STRING'},
+        },
+        'used_libraries': {
+            'type': 'ARRAY',
+            'description': 'Library IDs from the registry that the JS/HTML actually relies on.',
+            'items': {'type': 'STRING'},
+        },
+        'used_assets': {
+            'type': 'ARRAY',
+            'description': 'Asset IDs from the registry that the HTML/CSS references.',
+            'items': {'type': 'STRING'},
+        },
+        'used_datasets': {
+            'type': 'ARRAY',
+            'description': 'Dataset IDs from the registry that the JS fetches via fetch alternative or inline.',
+            'items': {'type': 'STRING'},
+        },
+    },
+    'required': ['title', 'html', 'css', 'javascript'],
+}
+
+
+BLOCK_SLOT_FILL_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Block mode: fill one content object per board slot. Keys and nesting must match each slot schema from the prompt.'
+    ),
+    'properties': {
+        'slot_contents': {
+            'type': 'ARRAY',
+            'items': {
+                'type': 'OBJECT',
+                'properties': {
+                    'instance_id': {'type': 'STRING'},
+                    'content': {'type': 'OBJECT'},
+                },
+                'required': ['instance_id', 'content'],
+            },
+        },
+    },
+    'required': ['slot_contents'],
 }
 
 
@@ -269,6 +353,7 @@ class GeminiWorksheetProvider:
             req,
             payload.get('page_setup') or {},
             payload.get('pattern') or {},
+            curriculum_context=payload.get('curriculum_context'),
         )
         gen_cfg = {
             'temperature': settings.GEMINI_TEMPERATURE,
@@ -315,6 +400,76 @@ class GeminiWorksheetProvider:
             'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
             'response_mime_type': 'application/json',
             'response_schema': PAGE_REGEN_SCHEMA,
+        }
+        resp = self._generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(**gen_cfg),
+        )
+        text = resp.text or '{}'
+        return json.loads(text)
+
+    def generate_block_contents(self, payload: dict) -> dict:
+        prompt = build_block_filling_page_prompt(payload or {})
+        gen_cfg = {
+            'temperature': float(getattr(settings, 'BOARDS_BLOCKS_FILLING_TEMPERATURE', 0.45)),
+            'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+            'response_mime_type': 'application/json',
+            'response_schema': BLOCK_SLOT_FILL_SCHEMA,
+        }
+        resp = self._generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(**gen_cfg),
+        )
+        text = resp.text or '{}'
+        return json.loads(text)
+
+    def generate_free_html_board(self, payload: dict) -> dict:
+        from apps.boards.services.free_html_prompt_context import build_resource_context
+
+        ctx = build_resource_context()
+        prompt = build_free_html_generation_prompt({**(payload or {}), **ctx})
+        gen_cfg = {
+            'temperature': float(getattr(settings, 'BOARDS_FREE_HTML_GENERATION_TEMPERATURE', 0.55)),
+            'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+            'response_mime_type': 'application/json',
+            'response_schema': FREE_HTML_SCHEMA,
+        }
+        resp = self._generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(**gen_cfg),
+        )
+        text = resp.text or '{}'
+        return json.loads(text)
+
+    def revise_free_html_board(self, payload: dict) -> dict:
+        from apps.boards.services.free_html_prompt_context import build_resource_context
+
+        ctx = build_resource_context()
+        prompt = build_free_html_revision_prompt({**(payload or {}), **ctx})
+        gen_cfg = {
+            'temperature': float(getattr(settings, 'BOARDS_FREE_HTML_REVISION_TEMPERATURE', 0.4)),
+            'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+            'response_mime_type': 'application/json',
+            'response_schema': FREE_HTML_SCHEMA,
+        }
+        resp = self._generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(**gen_cfg),
+        )
+        text = resp.text or '{}'
+        return json.loads(text)
+
+    def repair_free_html_board(self, payload: dict) -> dict:
+        prompt = build_free_html_repair_prompt(payload or {})
+        gen_cfg = {
+            'temperature': float(getattr(settings, 'BOARDS_FREE_HTML_REPAIR_TEMPERATURE', 0.25)),
+            'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+            'response_mime_type': 'application/json',
+            'response_schema': FREE_HTML_SCHEMA,
         }
         resp = self._generate_content(
             model=settings.GEMINI_MODEL,

@@ -1,0 +1,61 @@
+{
+  "id": "europe_ww2_demo",
+  "label": "Europa im Zweiten Weltkrieg — schematische Unterrichtsdarstellung",
+  "warning": "Vereinfachte Unterrichtsdarstellung, keine amtliche historische Grenzkarte.",
+  "viewBox": "0 0 600 360",
+  "regions": [
+    { "id": "DE", "name": "Deutschland", "polygon": "M 280 150 L 330 130 L 360 170 L 340 210 L 290 215 L 270 185 Z" },
+    { "id": "AT", "name": "Österreich", "polygon": "M 320 215 L 360 215 L 360 245 L 320 245 Z" },
+    { "id": "PL", "name": "Polen", "polygon": "M 365 130 L 420 140 L 420 200 L 360 200 Z" },
+    { "id": "FR", "name": "Frankreich", "polygon": "M 200 195 L 270 195 L 270 260 L 210 270 Z" },
+    { "id": "GB", "name": "Vereinigtes Königreich", "polygon": "M 200 100 L 240 95 L 240 150 L 195 155 Z" },
+    { "id": "CZ", "name": "Tschechoslowakei", "polygon": "M 330 175 L 380 175 L 380 210 L 340 210 Z" },
+    { "id": "IT", "name": "Italien", "polygon": "M 290 240 L 330 250 L 320 320 L 280 310 Z" },
+    { "id": "SU", "name": "Sowjetunion", "polygon": "M 425 110 L 590 110 L 590 270 L 425 260 Z" },
+    { "id": "CH", "name": "Schweiz", "polygon": "M 270 220 L 305 220 L 305 240 L 270 240 Z" },
+    { "id": "ES", "name": "Spanien", "polygon": "M 130 245 L 200 245 L 200 305 L 130 305 Z" }
+  ],
+  "alignment": {
+    "axis": "#dc2626",
+    "allied": "#2563eb",
+    "neutral": "#94a3b8"
+  },
+  "steps": [
+    {
+      "year": 1938,
+      "label": "1938 — Vorabend des Krieges",
+      "states": {
+        "DE": "axis", "AT": "axis", "PL": "neutral", "FR": "allied",
+        "GB": "allied", "CZ": "neutral", "IT": "axis", "SU": "neutral",
+        "CH": "neutral", "ES": "neutral"
+      }
+    },
+    {
+      "year": 1939,
+      "label": "1939 — Kriegsbeginn",
+      "states": {
+        "DE": "axis", "AT": "axis", "PL": "allied", "FR": "allied",
+        "GB": "allied", "CZ": "axis", "IT": "axis", "SU": "neutral",
+        "CH": "neutral", "ES": "neutral"
+      }
+    },
+    {
+      "year": 1941,
+      "label": "1941 — Höhepunkt der Achsenausdehnung",
+      "states": {
+        "DE": "axis", "AT": "axis", "PL": "axis", "FR": "axis",
+        "GB": "allied", "CZ": "axis", "IT": "axis", "SU": "allied",
+        "CH": "neutral", "ES": "neutral"
+      }
+    },
+    {
+      "year": 1945,
+      "label": "1945 — Kriegsende in Europa",
+      "states": {
+        "DE": "allied", "AT": "allied", "PL": "allied", "FR": "allied",
+        "GB": "allied", "CZ": "allied", "IT": "allied", "SU": "allied",
+        "CH": "neutral", "ES": "neutral"
+      }
+    }
+  ]
+}

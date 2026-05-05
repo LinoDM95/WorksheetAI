@@ -1,0 +1,74 @@
+---
+description: Bausteinmodus für interaktive Tafelbilder — Architektur, Pflichten, Limits
+alwaysApply: true
+---
+
+# Bausteinmodus interaktiver Tafelbilder
+
+Der Bausteinmodus ist die **strukturierte** Alternative zum freien KI-Modus. Die Lehrkraft gibt **nur** Titel/Fach/Klasse/optionale Stilrichtung an und pro Seite **stichpunktartige Themen** sowie die gewünschten **Bausteine** (Typen, keine Inhalte). Die KI füllt die Bausteine inhaltlich; gerendert wird strikt deterministisch über geprüfte Templates.
+
+## Goldene Regeln
+
+1. **Eingabe ist ein Plan, kein Inhalt.**  
+   Der Wizard sendet einen `CompositionPlan`:
+   - global: `subject`, `grade`, `topic`, `title`, `style_hint`, `theme_id`
+   - pro Seite: `title`, `bullets: string[]`, `block_slots: { instance_id, block_id, hint }[]`  
+   Lehrer befüllen **keine** Block-Inhalte selbst; es gibt keine Inhalts-Felder im UI.
+
+2. **KI füllt Inhalt, Templates rendern Code.**  
+   - `backend/apps/boards/services/blocks/content_filling.py` schickt pro Seite Stichpunkte + Schema je Slot an den Provider (`generate_block_contents`) und normalisiert `slot_contents` oder flache Map zu `{instance_id: content_dict}`.  
+   - Antworten werden gegen das Pydantic-Schema des Bausteins validiert. Ungültige/fehlende Antworten → Heuristik aus den Bullets, sonst `default_content`.  
+   - Anschließend rendert `compose_board(spec, theme)` deterministisch — die KI darf weiterhin **keinen Code** generieren. `blocks_finishing.py` entfernt strikt alle Code-Schlüssel (`html, css, javascript, js, script, style`).
+
+3. **Jeder neue Baustein braucht vier Dinge — sonst kein Merge:**
+   1. Pydantic-Schema (`backend/apps/boards/services/blocks/blocks_*.py`)
+   2. Render-Funktion `render(content, theme) -> {html, css, js, used_libraries}`
+   3. Eintrag in `BLOCKS` (`registry.py`) mit `id, label, category, size_weight, help_text, default_content`
+   4. Heuristik-Filler in `content_filling.py` (mind. ein sinnvoller Default aus Bullets) **+** Tests:
+      - `test_per_block_schema.py` (Default-Content rendert + validiert)
+      - `test_content_filling.py` (Heuristik liefert valides Schema aus Bullets)
+
+4. **Limits sind hart und serverseitig erzwungen** (`validators.py`):
+   - `MAX_PAGES = 12`
+   - `PAGE_BLOCK_LIMIT = 6` Bausteine pro Seite
+   - `PAGE_UNIT_BUDGET = 10` (Summe der `size_weight`)
+   - `MAX_PAGE_BULLETS = 20`, `MAX_BULLET_LEN = 300`, `MAX_HINT_LEN = 200`  
+   Eine Seite **muss** entweder Bullets ODER ein globales Thema/Titel haben — sonst Fehler.  
+   Das Frontend darf darüber hinaus nichts zulassen.
+
+5. **Kein neues `Board`-Feld.** Der Plan landet in `Board.generation_input['composition_plan']`, die intern befüllte Spec in `composition_spec`. `composition_mode = 'blocks'`. `html/css/javascript` bleiben die einzige Wahrheit für die Anzeige.
+
+6. **Eine Bühne, mehrere Slides.** Alle Seiten landen in **einem** 1280×720-iframe; Slide-Navigation kommt aus `compose.py`.
+
+7. **Keine Vorschau im Builder.** Der Builder zeigt nur Plan-Struktur (Bullets + Slot-Liste). Lehrer sehen das fertige Tafelbild erst nach dem Generieren — das hält den Builder schnell und entkoppelt ihn vom Render-Code.
+
+## Wo liegt was?
+
+| Schicht | Pfad | Inhalt |
+|---|---|---|
+| Backend (Bausteine) | `backend/apps/boards/services/blocks/` | `registry`, `themes`, `compose`, `validators`, `content_filling`, `_helpers`, `blocks_universal`, `blocks_visual` |
+| Backend (Service) | `backend/apps/boards/services/free_html_block_generation.py` | `FreeHtmlBlockBoardGenerationService` (Plan → Fill → Compose → Sandbox) |
+| Backend (KI-Filling) | `backend/apps/ai/prompts/formats/interactive_board/blocks_filling.md` + `build_block_filling_page_prompt` + `generate_block_contents` auf Gemini/Claude/Mock | siehe [blocks-mode-ai.mdc](mdc:.cursor/rules/blocks-mode-ai.mdc) |
+| Backend (KI-Feinschliff) | `backend/apps/boards/services/blocks_finishing.py` + `prompts/.../blocks_finishing.md` | nur Theme-Wahl & Mikrotexte, nie Code |
+| Backend (API) | `backend/apps/boards/views.py` | `GET /api/boards/blocks/`, `POST /api/boards/generate-blocks/` (akzeptiert Plan) |
+| Frontend (Builder) | `frontend/src/features/boards/builder/` | `BoardBuilderModal`, `BlockLibraryPanel`, `PageEditor`, `PagesRail`, `useBoardBuilderState` |
+| Frontend (API/Types) | `frontend/src/features/boards/boardsApi.ts`, `types.ts`, `lib/listQueries.ts` (`BOARDS_BLOCKS_QUERY_KEY`) | `fetchBlockRegistry`, `generateBoardFromBlocks`, `CompositionPlan`, `PagePlan`, `BlockSlot`, `BlockRegistryEntry` |
+
+## Tests
+
+- Backend: `backend/apps/boards/tests/blocks/` — `test_per_block_schema.py`, `test_compose.py`, `test_validators.py` (Plan + Spec), `test_finishing.py`, `test_content_filling.py`, `test_block_generation_service.py`, `test_blocks_api.py`.
+- Frontend: `useBoardBuilderState.test.ts` (Reducer + Limits + Bullet-Capping). Keine DOM-Snapshot-Tests für den Builder; bei Bug-Fixes punktuell mit Testing Library.
+
+## Wann darfst Du **keinen** neuen Baustein erfinden?
+
+- Wenn er **externe Bilder/Audio/Video** braucht — geht erst, wenn die Asset-Pipeline existiert.
+- Wenn er **freies Drag&Drop** über die ganze Bühne benötigt — wir bleiben Touch-first per Tap-Pair.
+- Wenn er ein **eigenes Datenmodell** außerhalb der CompositionSpec verlangt — dann ist es ein Architektur-Folgeplan, kein Baustein.
+
+## UX-Pflichten im Builder
+
+- Bausteinmodus öffnet sich über die Tabs im `NewBoardModal` (Kreativ / Bausteine).
+- Layout: Library **links**, Page-Editor **mittig** (Seitentitel + Bullets-Textarea + sortierbare Slot-Liste mit optionalem Hint), `PagesRail` **unten**.
+- Tastatur (außerhalb von Inputs): `←`/`→` Seite wechseln, `Esc` Modal schließen.
+- Animationen mit `framer-motion`, max. 200 ms, klarer UX-Zweck (Slot-Add/Remove, Reorder).
+- Lehrer kann Bullets als Plain-Text-Liste tippen; das Frontend trimmt führende Marker (`-`, `•`, `*`) und cappt auf `MAX_PAGE_BULLETS`.

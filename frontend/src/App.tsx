@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Construction, LogIn } from 'lucide-react';
 import { api } from './lib/api';
 import { AppShell } from './components/shell/AppShell';
@@ -8,9 +8,12 @@ import { MockBadge } from './components/MockBadge';
 import { Alert, Button, Card, Field, TextInput } from './components/ui';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { WizardPage } from './features/wizard/WizardPage';
-import { WorksheetPage } from './features/worksheets/WorksheetPage';
-import { MyWorksheetsPage } from './features/worksheets/MyWorksheetsPage';
+import { WorksheetWorkspacePage, WorksheetEditorPlaceholder, WorksheetPageOutlet } from './features/worksheets/WorksheetWorkspacePage';
 import { PatternLibraryPage } from './features/patterns/PatternLibraryPage';
+import { CurriculaRoutes } from './features/curricula/CurriculaRoutes';
+import { BoardsRoutes } from './features/boards/BoardsRoutes';
+import { BoardPlayPage } from './features/boards/pages/BoardPlayPage';
+import { StudentBoardPage } from './features/boards/pages/StudentBoardPage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
 
@@ -136,14 +139,31 @@ const ShellRoute = ({
   </AppShell>
 );
 
-const WorksheetEditorRoute = () => {
-  const { id } = useParams();
-  return (
-    <ShellRoute fullBleed layoutVariant="focus">
-      <WorksheetPage key={id} />
-    </ShellRoute>
-  );
-};
+const WorksheetWorkspaceShell = () => (
+  <ShellRoute
+    fullBleed
+    layoutVariant="focus"
+    topbar={{
+      title: 'Meine Arbeitsblätter',
+      subtitle: 'Links Ordner durchsuchen — rechts Blatt bearbeiten (Galerie gleich wie Smartboard)',
+    }}
+  >
+    <WorksheetWorkspacePage />
+  </ShellRoute>
+);
+
+const BoardWorkspaceShell = () => (
+  <ShellRoute
+    fullBleed
+    layoutVariant="focus"
+    topbar={{
+      title: 'Smartboard',
+      subtitle: 'Ordner und Tafelbilder links — Bearbeitung in der Mitte, Werkzeuge in der Kopfzeile',
+    }}
+  >
+    <BoardsRoutes />
+  </ShellRoute>
+);
 
 /* ------------------------- App ------------------------- */
 const Protected = ({ children }: { children: React.ReactNode }) => {
@@ -169,15 +189,10 @@ const AppRoutes = () => (
         </ShellRoute>
       }
     />
-    <Route
-      path="worksheets"
-      element={
-        <ShellRoute topbar={{ title: 'Meine Arbeitsblätter' }}>
-          <MyWorksheetsPage />
-        </ShellRoute>
-      }
-    />
-    <Route path="worksheets/:id" element={<WorksheetEditorRoute />} />
+    <Route path="worksheets" element={<WorksheetWorkspaceShell />}>
+      <Route index element={<WorksheetEditorPlaceholder />} />
+      <Route path=":id" element={<WorksheetPageOutlet />} />
+    </Route>
     <Route
       path="patterns"
       element={
@@ -187,20 +202,19 @@ const AppRoutes = () => (
       }
     />
     <Route
-      path="curriculum"
+      path="curricula/*"
       element={
-        <ShellRoute topbar={{ title: 'Lehrpläne' }}>
-          <ComingSoon title="Lehrpläne" />
+        <ShellRoute topbar={{ title: 'Lehrplanverwaltung', breadcrumbs: ['Dashboard', 'Lehrpläne'] }}>
+          <CurriculaRoutes />
         </ShellRoute>
       }
     />
+    <Route path="curriculum" element={<Navigate to="/app/curricula/sources" replace />} />
+    <Route path="boards/:id/play" element={<BoardPlayPage />} />
+    <Route path="boards/*" element={<BoardWorkspaceShell />} />
     <Route
       path="library"
-      element={
-        <ShellRoute topbar={{ title: 'Bibliothek & Teilen' }}>
-          <ComingSoon title="Bibliothek & Teilen" />
-        </ShellRoute>
-      }
+      element={<Navigate to="/app/boards/library" replace />}
     />
     <Route
       path="settings"
@@ -218,6 +232,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/s/:token" element={<StudentBoardPage />} />
       <Route
         path="/app/*"
         element={

@@ -99,6 +99,11 @@ export function WizardPage() {
       await new Promise((res) => window.setTimeout(res, 200));
       const ws = r.data as Worksheet;
       void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      try {
+        sessionStorage.setItem(`worksheet-curriculum-hint:${ws.id}`, '1');
+      } catch {
+        /* ignore quota / private mode */
+      }
       navigate(`/app/worksheets/${ws.id}`);
     } catch (err) {
       progressStop.current = true;

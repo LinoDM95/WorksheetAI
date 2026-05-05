@@ -1,0 +1,38 @@
+---
+description: KI-Verhalten im Bausteinmodus (Block-Filling) — Prompt, Provider, Sicherheit
+alwaysApply: true
+---
+
+# Bausteinmodus — KI-Ruleset (Block-Filling)
+
+Wenn Code oder Prompts den **Bausteinmodus** betreffen (`CompositionPlan` → `fill_plan_with_ai` → `compose_board`), gilt dieses Regelwerk **zusätzlich** zu [blocks-mode.mdc](mdc:.cursor/rules/blocks-mode.mdc).
+
+## Auftrag der KI
+
+- Die KI **generiert keinen** HTML-, CSS- oder JS-Code für die Bühne. Sie liefert **nur** JSON-`content`-Objekte pro Baustein-Slot, die zum **mitgelieferten JSON-Schema** des jeweiligen `block_id` passen.
+- Der Aufruf erfolgt **pro Seite** über `generate_block_contents(payload)` auf dem gewählten `AI_PROVIDER` (Gemini, Claude, Mock).
+- Prompt-Basis: `backend/apps/ai/prompts/formats/interactive_board/blocks_filling.md`, gebunden durch `build_block_filling_page_prompt` in `apps/ai/prompt_loader.py`.
+
+## Erwartetes Modell-Output
+
+- **Gemini:** strukturierte Antwort per `response_schema` `BLOCK_SLOT_FILL_SCHEMA` — Feld `slot_contents[]` mit `instance_id` + `content`.
+- **Claude / freies JSON:** gleiches logisches Format; `content_filling._normalize_provider_block_fill` akzeptiert auch eine **flache Map** `{ "<instance_id>": { ... } }` als Fallback.
+- Nach der Normalisierung: **Pydantic-Validierung** pro Baustein; bei Verstoß → Heuristik / `default_content` (nie silently kaputtes HTML).
+
+## Provider-Pflicht
+
+- Jeder neue Anbieter in `apps/ai/providers/` **muss** `generate_block_contents(self, payload: dict) -> dict` implementieren oder bewusst dokumentiert fehlen lassen (dann greift nur die Heuristik).
+- **Mock** darf `{}` zurückgeben (Tests, Offline).
+
+## Temperatur
+
+- Optional: `BOARDS_BLOCKS_FILLING_TEMPERATURE` in Django-`settings` (Standard **0.45**).
+
+## Sicherheit
+
+- Filling-JSON darf **keine** Code-Keys enthalten; zusätzlich schützt `blocks_finishing` vor eingeschleustem Code in Theme/Hilfstexten.
+- Keine URLs / keine eingebetteten Medien in Filling-Strings — konsistent mit Sandbox-Regeln.
+
+## Änderungen am Prompt
+
+- `blocks_filling.md` nur anpassen, wenn Schema-/Slot-Verhalten klar bleibt; nach Änderungen **Provider-Tests** und mindestens einen **Integrationsschritt** mit Mock prüfen.

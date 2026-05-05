@@ -9,6 +9,8 @@ urlpatterns = [
     path('api/auth/', include('apps.accounts.urls')),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/curriculum/', include('apps.curriculum.urls')),
+    path('api/curricula/', include('apps.curricula.urls')),
     path('api/patterns/', include('apps.patterns.urls')),
     path('api/worksheets/', include('apps.worksheets.urls')),
+    path('api/boards/', include('apps.boards.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

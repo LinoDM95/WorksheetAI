@@ -15,7 +15,8 @@ type AppShellProps = {
   /** "fullBleed" entfernt das innere Padding — z. B. für Editor / Wizard. */
   fullBleed?: boolean;
   /**
-   * focus: Viewport-Höhe (h-svh), kein Seiten-Scroll; Kinder steuern internes Scrollen (Worksheet-Editor).
+   * focus: Hauptspalte ohne eigenes Scroll; Kinder (z. B. Split-Editor) scrollen intern.
+   * default: gleiche Shell-Höhe; nur `main` scrollt vertikal — Sidebar bleibt links stehen.
    */
   layoutVariant?: 'default' | 'focus';
   children: ReactNode;
@@ -64,10 +65,7 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
   return (
     <div
       className={cn(
-        'flex items-stretch bg-[var(--color-bg-app)] text-slate-800 print:min-h-0 print:bg-white',
-        isFocusLayout
-          ? 'h-svh max-h-[100dvh] overflow-hidden print:h-auto print:max-h-none print:overflow-visible'
-          : 'h-svh max-h-[100dvh] min-h-0 overflow-hidden print:h-auto print:max-h-none print:overflow-visible',
+        'flex h-svh max-h-[100dvh] items-stretch overflow-hidden bg-[var(--color-bg-app)] text-slate-800 print:h-auto print:max-h-none print:min-h-0 print:overflow-visible print:bg-white',
       )}
     >
       <Sidebar
@@ -78,10 +76,7 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
       />
       <div
         className={cn(
-          'flex min-w-0 flex-1 flex-col self-stretch print:min-h-0 print:w-full',
-          isFocusLayout
-            ? 'relative z-0 min-h-0 overflow-hidden print:h-auto print:max-h-none print:overflow-visible'
-            : 'min-h-0 print:min-h-0',
+          'relative z-0 flex min-h-0 min-w-0 flex-1 flex-col self-stretch overflow-hidden print:h-auto print:max-h-none print:min-h-0 print:overflow-visible print:w-full',
         )}
       >
         {topbar && (
@@ -99,7 +94,8 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
               'flex min-h-0 min-w-0 flex-1 flex-col bg-transparent print:m-0 print:min-h-0 print:w-full print:max-w-none print:flex-none print:overflow-visible print:bg-white print:p-0',
               !fullBleed && 'p-4 sm:p-6 lg:p-8',
               isFocusLayout && 'overflow-hidden print:overflow-visible',
-              !isFocusLayout && 'overflow-y-auto overflow-x-hidden overscroll-contain print:overflow-visible',
+              !isFocusLayout &&
+                'overflow-y-auto overflow-x-hidden overscroll-contain print:overflow-visible',
             )}
           >
             {children}

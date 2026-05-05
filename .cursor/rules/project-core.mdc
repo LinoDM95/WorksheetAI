@@ -41,8 +41,20 @@ alwaysApply: true
 - **Keine narrativen Code-Kommentare** (`// Setze X`, `// Fetch worksheets`). Kommentare nur bei **nicht-offensichtlicher** Absicht oder Trade-off.
 - Keine neue Top-Level-Datei für etwas, das in einer existierenden gut aufgehoben ist.
 
+## Tests (Frontend)
+
+- **Vitest** (`npm test` / `npm run test:watch`) — reine Logik in `src/lib/**`, Parser, Mapper, Hooks-Logik (ohne DOM) bevorzugen.
+- Neue **`lib/*`-Hilfen** oder nicht-triviale **reine Funktionen**: begleitende **`.test.ts`**-Datei neben dem Modul oder unter `src/lib/__tests__/` — konsistent zum bestehenden Muster halten.
+- Komponenten: sparsam mit DOM-Tests; Fokus auf **regressive Bugs** und **kritische Interaktion**, nicht auf Snapshot-Spam.
+
 ## Skalierung & Erweiterbarkeit
 
 - **Pages bleiben dünn**: Daten-Hook, Daten-Transformation, Layout — den Rest komponieren aus Primitives + Feature-Komponenten.
 - **Neue Feature-Page** = 1) Daten via `useQuery` (Key in `lib/listQueries.ts`), 2) Layout mit `<PageHeader>` + `<SectionCard>` / `<EmptyState>`, 3) feature-spezifische Listen/Tabellen lokal in `features/<bereich>/`.
 - **Vor jeder neuen Komponente** kurz `components/ui/` und `components/` lesen — dann erst entscheiden.
+
+## Tafelbild-Erstellung
+
+Tafelbilder können in **zwei Modi** erzeugt werden — siehe [blocks-mode.mdc](mdc:.cursor/rules/blocks-mode.mdc) und für KI-Filling [blocks-mode-ai.mdc](mdc:.cursor/rules/blocks-mode-ai.mdc).
+- **Kreativ**: KI baut HTML/CSS/JS frei aus dem Lehrkraft-Prompt (`/api/boards/generate/`).
+- **Bausteine**: Lehrkraft wählt pro Seite Bausteine + Stichpunkte (CompositionPlan); KI füllt die Bausteine inhaltlich, gerendert wird deterministisch aus geprüften Templates (`/api/boards/generate-blocks/`).

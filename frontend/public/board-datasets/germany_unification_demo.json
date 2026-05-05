@@ -1,0 +1,37 @@
+{
+  "id": "germany_unification_demo",
+  "label": "Deutsche Einheit 1989/1990 — schematisch",
+  "warning": "Stark vereinfachte Unterrichtsdarstellung, keine amtliche Karte.",
+  "viewBox": "0 0 400 300",
+  "regions": [
+    { "id": "FRG", "name": "Bundesrepublik Deutschland", "polygon": "M 60 60 L 220 60 L 220 240 L 60 240 Z" },
+    { "id": "GDR", "name": "Deutsche Demokratische Republik", "polygon": "M 220 60 L 320 60 L 320 200 L 220 200 Z" },
+    { "id": "WB", "name": "West-Berlin (Insel)", "polygon": "M 280 110 L 295 110 L 295 130 L 280 130 Z" }
+  ],
+  "alignment": {
+    "frg": "#0ea5e9",
+    "gdr": "#dc2626",
+    "neutral": "#94a3b8",
+    "unified": "#16a34a"
+  },
+  "steps": [
+    {
+      "id": "1989_october",
+      "label": "Oktober 1989 — Massenproteste in der DDR",
+      "states": { "FRG": "frg", "GDR": "gdr", "WB": "frg" },
+      "description": "Friedliche Demonstrationen in Leipzig und anderen Städten der DDR."
+    },
+    {
+      "id": "1989_november",
+      "label": "9. November 1989 — Mauerfall",
+      "states": { "FRG": "frg", "GDR": "gdr", "WB": "frg" },
+      "description": "Die innerdeutsche Grenze wird geöffnet."
+    },
+    {
+      "id": "1990_october",
+      "label": "3. Oktober 1990 — Deutsche Einheit",
+      "states": { "FRG": "unified", "GDR": "unified", "WB": "unified" },
+      "description": "BRD und DDR werden vereinigt."
+    }
+  ]
+}

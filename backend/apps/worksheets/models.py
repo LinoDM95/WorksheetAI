@@ -15,6 +15,7 @@ class Worksheet(models.Model):
     content=models.JSONField(default=dict)
     render_model=models.JSONField(default=dict)
     status=models.CharField(max_length=20, default='draft')
+    generation_meta=models.JSONField(default=dict)
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
     def __str__(self): return self.title

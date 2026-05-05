@@ -1,0 +1,42 @@
+{
+  "id": "water_cycle_scene",
+  "label": "Wasserkreislauf — Szenenbeschreibung",
+  "warning": "Didaktische Vereinfachung — keine reale Skala.",
+  "scene": {
+    "viewBox": "0 0 600 360",
+    "background": "#cfe7ff",
+    "elements": [
+      { "type": "sun", "x": 70, "y": 70, "r": 32 },
+      { "type": "cloud", "x": 360, "y": 70 },
+      { "type": "mountain", "x": 480, "y": 220, "h": 160, "color": "#6b7280" },
+      { "type": "sea", "y": 280, "color": "#2a7fbf" },
+      { "type": "tree", "x": 256, "y": 270 }
+    ]
+  },
+  "phases": [
+    {
+      "id": "evaporation",
+      "label": "Verdunstung",
+      "description": "Wasser verdunstet vom Meer und steigt als Wasserdampf nach oben.",
+      "arrow": { "from": [80, 270], "control": [180, 200], "to": [320, 100] }
+    },
+    {
+      "id": "condensation",
+      "label": "Kondensation",
+      "description": "Wasserdampf kondensiert in der Atmosphäre zu Wolken.",
+      "arrow": { "from": [320, 90], "control": [350, 60], "to": [380, 70] }
+    },
+    {
+      "id": "precipitation",
+      "label": "Niederschlag",
+      "description": "Tropfen fallen als Regen oder Schnee zur Erde.",
+      "arrow": { "from": [380, 95], "to": [420, 200] }
+    },
+    {
+      "id": "runoff",
+      "label": "Abfluss",
+      "description": "Das Wasser fließt über Flüsse und das Grundwasser zurück ins Meer.",
+      "arrow": { "from": [460, 220], "control": [220, 280], "to": [80, 280] }
+    }
+  ]
+}

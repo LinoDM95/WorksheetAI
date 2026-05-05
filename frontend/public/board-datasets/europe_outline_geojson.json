@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "name": "europe_outline_geojson",
+  "metadata": {
+    "accuracy": "schematic_demo",
+    "crs": "EPSG:4326",
+    "note": "Extrem vereinfachter Umriss nur für D3-Demos — keine Grenzkarte."
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "label": "Europa (schematisch)" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-11, 36],
+            [42, 35],
+            [48, 46],
+            [40, 71],
+            [22, 72],
+            [-6, 60],
+            [-11, 48],
+            [-11, 36]
+          ]
+        ]
+      }
+    }
+  ]
+}

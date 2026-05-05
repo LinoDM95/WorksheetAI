@@ -5,7 +5,7 @@ from apps.ai.error_mapper import AIErrorMapper
 from apps.patterns.models import WorksheetPattern
 
 from .models import Worksheet
-from .serializers import WorksheetSerializer
+from .serializers import WorksheetSerializer, build_curriculum_usage_payload
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.generation import generate_worksheet
 from .services.page_regenerate import regenerate_worksheet_page
@@ -20,7 +20,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Worksheet.objects.filter(
             owner=resolve_worksheet_owner(self.request.user),
-        ).order_by('-created_at')
+        ).select_related('pattern').prefetch_related('curriculum_usages').order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(owner=resolve_worksheet_owner(self.request.user))
@@ -51,6 +51,11 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             )
         except Exception as exc:
             return AIErrorMapper.to_response(exc)
+
+    @decorators.action(detail=True, methods=['get'], url_path='curriculum-usage')
+    def curriculum_usage(self, request, pk=None):
+        ws = self.get_object()
+        return response.Response(build_curriculum_usage_payload(ws))
 
     @decorators.action(detail=True, methods=['post'], url_path='regenerate-page')
     def regenerate_page_view(self, request, pk=None):

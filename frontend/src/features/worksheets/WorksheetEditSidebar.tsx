@@ -147,6 +147,8 @@ type SidebarProps = {
   pageLayoutOverflow?: Record<number, { vertical: boolean; horizontal: boolean; px: number }>;
   /** Schließt die angedockte Sidebar (z. B. Toolbar / Rand-Tab). */
   onRequestClose?: () => void;
+  /** Im ResizableEditorDock kein verschachteltes <aside> */
+  rootElement?: 'aside' | 'div';
 };
 
 export function WorksheetEditSidebar({
@@ -158,6 +160,7 @@ export function WorksheetEditSidebar({
   regeneratePageBusyIndex,
   pageLayoutOverflow = {},
   onRequestClose,
+  rootElement = 'aside',
 }: SidebarProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -183,11 +186,14 @@ export function WorksheetEditSidebar({
     ([, v]) => v.vertical || v.horizontal,
   );
 
+  const Root = rootElement;
+
   return (
-    <aside
+    <Root
       id="worksheet-edit-sidebar"
       className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--color-bg-card)]"
       aria-label="Struktur bearbeiten"
+      {...(rootElement === 'div' ? { role: 'complementary' as const } : {})}
     >
       <div className="shrink-0 space-y-2 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-3">
         <div className="flex items-center justify-between gap-2">
@@ -634,6 +640,6 @@ export function WorksheetEditSidebar({
           </div>
         </details>
       </div>
-    </aside>
+    </Root>
   );
 }

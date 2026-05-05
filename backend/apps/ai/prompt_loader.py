@@ -61,19 +61,41 @@ def _teacher_block(request: dict) -> str:
     return teacher
 
 
+def _curriculum_context_markdown(curriculum_context: dict | None) -> str:
+    if not curriculum_context:
+        return (
+            '*Für diese Generierung liegt **kein** aktiver Lehrplan-Kontext vor.* '
+            'Erstelle das Arbeitsblatt wie gewohnt aus den strukturierten Parametern und dem Lehrer-Prompt.'
+        )
+    return (
+        'Nutze folgenden **Curriculum-Kontext** als fachliche und didaktische Leitplanke. '
+        'Erstelle Aufgaben nur passend zu Fach, Klassenband, Themenfeld, Unterthemen, Kompetenzen, '
+        'erlaubten Aufgabentypen, sprachlichen Hinweisen und Validierungsregeln — keine offensichtlich '
+        'passungslosen Inhalte, außer der Nutzer fordert ausdrücklich ein abweichendes Niveau oder andere Schwerpunkte.\n\n'
+        '```json\n'
+        + _json_block(curriculum_context)
+        + '\n```\n\n'
+        'Im Ausgabe-JSON: fülle optional das Feld **`curriculum_alignment`** (nur für die Software sichtbar, '
+        'nicht für Schüler:innen auf dem Druckblatt): kurz welche Bereiche du aus diesem Kontext genutzt hast.'
+    )
+
+
 def build_worksheet_generation_prompt(
     request: dict,
     page_setup: dict,
     pattern: dict,
+    curriculum_context: dict | None = None,
 ) -> str:
     path = _worksheet_format_dir() / 'generation.md'
     md = path.read_text(encoding='utf-8')
     teacher = _teacher_block(request)
+    cc_block = _curriculum_context_markdown(curriculum_context)
     base = (
         md.replace('{{TEACHER_CONTEXT}}', teacher)
         .replace('{{REQUEST_JSON}}', _json_block(request))
         .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
         .replace('{{PATTERN_JSON}}', _json_block(pattern))
+        .replace('{{CURRICULUM_CONTEXT_BLOCK}}', cc_block)
     )
     return _append_ref_material(base)
 
@@ -82,6 +104,7 @@ def build_worksheet_generation_prompt_for_gemini(
     request: dict,
     page_setup: dict,
     pattern: dict,
+    curriculum_context: dict | None = None,
 ) -> tuple[str | None, str]:
     """Liefert (system_instruction_oder_None, user_inhalt).
 
@@ -89,7 +112,7 @@ def build_worksheet_generation_prompt_for_gemini(
     in ``system_instruction`` gelegt, Lehrer-Kontext + JSON-Parameter in die Nutzer-Nachricht
     — spart bei langen Aufträgen Kontext und entspricht der API-Empfehlung.
     """
-    mono = build_worksheet_generation_prompt(request, page_setup, pattern)
+    mono = build_worksheet_generation_prompt(request, page_setup, pattern, curriculum_context)
     if not getattr(settings, 'GEMINI_PROMPT_SPLIT_SYSTEM_USER', True):
         return None, mono
 
@@ -105,11 +128,13 @@ def build_worksheet_generation_prompt_for_gemini(
     foot = md[io:].strip()
 
     teacher = _teacher_block(request)
+    cc_block = _curriculum_context_markdown(curriculum_context)
     user_text = (
         variable_mid.replace('{{TEACHER_CONTEXT}}', teacher)
         .replace('{{REQUEST_JSON}}', _json_block(request))
         .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
         .replace('{{PATTERN_JSON}}', _json_block(pattern))
+        .replace('{{CURRICULUM_CONTEXT_BLOCK}}', cc_block)
     )
 
     system_core = _append_ref_material(head + '\n\n---\n\n' + foot)
@@ -130,6 +155,86 @@ def build_worksheet_review_prompt(
         .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
         .replace('{{PATTERN_JSON}}', _json_block(pattern))
         .replace('{{WORKSHEET_JSON}}', _json_block(content))
+    )
+
+
+_BOARD_FORMAT_DIR = _FORMATS_DIR / 'interactive_board'
+
+
+def _board_format_dir() -> Path:
+    if _BOARD_FORMAT_DIR.is_dir():
+        return _BOARD_FORMAT_DIR
+    logger.warning('interactive_board prompt dir fehlt: %s', _BOARD_FORMAT_DIR)
+    return _BOARD_FORMAT_DIR
+
+
+def _truncate_block(s: str, max_chars: int = 14_000) -> str:
+    t = s or ''
+    if len(t) <= max_chars:
+        return t
+    return t[:max_chars] + '\n\n… (gekürzt für Prompt-Länge)'
+
+
+def build_block_filling_page_prompt(payload: dict) -> str:
+    """Prompt für eine einzelne Tafelbild-Seite: Slots mit Stichpunkten → JSON contents."""
+    md = (_board_format_dir() / 'blocks_filling.md').read_text(encoding='utf-8')
+    return md.replace('{{PAGE_PAYLOAD_JSON}}', _json_block(payload))
+
+
+def build_free_html_generation_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'free_html_generation.md').read_text(encoding='utf-8')
+    prompt = (payload.get('prompt') or '').strip() or '*(Kein Freitext.)*'
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ board_type }}', str(payload.get('board_type') or 'interactive_board'))
+        .replace('{{ duration_minutes }}', str(payload.get('duration_minutes') or 10))
+        .replace('{{ creativity }}', str(payload.get('creativity') or 'experimentell'))
+        .replace('{{ visual_style }}', str(payload.get('visual_style') or 'auto'))
+        .replace('{{ target_device }}', str(payload.get('target_device') or 'smartboard'))
+        .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
+        .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
+        .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+        .replace('{{ prompt }}', prompt)
+    )
+
+
+def build_free_html_revision_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'free_html_revision.md').read_text(encoding='utf-8')
+    user_prompt = (payload.get('user_prompt') or '').strip() or '*(Kein Änderungswunsch.)*'
+    return (
+        md.replace('{{ html }}', _truncate_block(str(payload.get('html') or '')))
+        .replace('{{ css }}', _truncate_block(str(payload.get('css') or '')))
+        .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or '')))
+        .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
+        .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
+        .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+        .replace('{{ prompt }}', user_prompt)
+    )
+
+
+def build_free_html_repair_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'free_html_repair.md').read_text(encoding='utf-8')
+    errs = payload.get('validation_errors') or []
+    if isinstance(errs, list) and errs:
+        err_block = '\n'.join(f'{i + 1}. {str(e).strip()}' for i, e in enumerate(errs))
+    elif errs:
+        err_block = str(errs)
+    else:
+        err_block = '*(Keine Fehlerliste übermittelt — prüfe den Code dennoch auf Sandbox-Konformität.)*'
+    ctx = str(payload.get('context_hint') or '').strip() or '*(Kein Zusatzkontext.)*'
+    return (
+        md.replace('{{ validation_errors }}', err_block)
+        .replace('{{ repair_attempt }}', str(int(payload.get('repair_attempt') or 1)))
+        .replace('{{ repair_attempt_max }}', str(int(payload.get('repair_attempt_max') or 1)))
+        .replace('{{ context_hint }}', ctx)
+        .replace('{{ html }}', _truncate_block(str(payload.get('html') or '')))
+        .replace('{{ css }}', _truncate_block(str(payload.get('css') or '')))
+        .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or '')))
+        .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
+        .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
+        .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
     )
 
 

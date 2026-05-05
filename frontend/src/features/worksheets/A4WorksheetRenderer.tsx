@@ -892,7 +892,6 @@ function A4PageShell({
   editCtx,
   onRequestRegeneratePage,
   regeneratePageBusyIndex,
-  overflowMeasureFingerprint,
   onPageLayoutOverflow,
 }: {
   page: { page_label?: string; blocks: any[] };
@@ -905,8 +904,6 @@ function A4PageShell({
   editCtx?: ContentDraftEdit;
   onRequestRegeneratePage?: (pageIndex: number) => void;
   regeneratePageBusyIndex?: number | null;
-  /** Serialized page + Kopfdaten — bei Änderung neu messen. */
-  overflowMeasureFingerprint?: string;
   onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
 }) {
   const mainRef = useRef<HTMLElement>(null);
@@ -917,6 +914,11 @@ function A4PageShell({
   const footerPageLabel =
     (page.page_label || '').trim() || `Seite ${pageIndex + 1} von ${totalPages}`;
   const footerLeft = (rm.title || worksheet.title || '').trim();
+
+  const metaTitle = String(editCtx?.draft.title ?? rm.title ?? worksheet.title ?? '');
+  const metaSubtitle = String(
+    (editCtx?.draft as { subtitle?: string })?.subtitle ?? rm.subtitle ?? worksheet.subject ?? '',
+  );
 
   const layoutFingerprint = useMemo(
     () =>
@@ -934,6 +936,41 @@ function A4PageShell({
       }),
     [page.blocks, pageIndex, editCtx],
   );
+
+  const overflowEffectKey = useMemo(() => {
+    if (!onPageLayoutOverflow) return '';
+    return JSON.stringify({
+      i: pageIndex,
+      blocks: (page.blocks || []).map((b: any) => ({
+        id: b.id,
+        t: b.type,
+        lines: b.lines,
+        il: Array.isArray(b.items) ? b.items.length : 0,
+        dh: b.type === 'drawing_box' ? b.height_mm : undefined,
+        dex: b.type === 'drawing_box' ? b.expand_to_page_bottom : undefined,
+      })),
+      edit: !!editCtx,
+      metaTitle,
+      metaSubtitle,
+      footerPageLabel,
+      footerLeft,
+      pageLabel: (page.page_label || '').trim(),
+      textScale: String((rm.presentation?.text_scale as string) || 'md'),
+      worksheetSubject: String(worksheet.subject ?? ''),
+    });
+  }, [
+    onPageLayoutOverflow,
+    pageIndex,
+    page.blocks,
+    editCtx,
+    metaTitle,
+    metaSubtitle,
+    footerPageLabel,
+    footerLeft,
+    page.page_label,
+    rm.presentation?.text_scale,
+    worksheet.subject,
+  ]);
 
   useLayoutEffect(() => {
     const main = mainRef.current;
@@ -961,12 +998,14 @@ function A4PageShell({
 
   const overflowCallbackRef = useRef(onPageLayoutOverflow);
   overflowCallbackRef.current = onPageLayoutOverflow;
+  const lastEmittedOverflowRef = useRef<{ v: boolean; h: boolean; px: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (overflowMeasureFingerprint === undefined) return;
+    if (!onPageLayoutOverflow || overflowEffectKey === '') return;
     const main = mainRef.current;
     if (!main) return;
 
+    lastEmittedOverflowRef.current = null;
     const TOL = 2;
     let raf0 = 0;
     const measure = () => {
@@ -977,6 +1016,10 @@ function A4PageShell({
         const v = main.scrollHeight > main.clientHeight + TOL;
         const h = main.scrollWidth > main.clientWidth + TOL;
         const px = Math.max(0, main.scrollHeight - main.clientHeight);
+        const pxR = Math.round(px);
+        const prev = lastEmittedOverflowRef.current;
+        if (prev && prev.v === v && prev.h === h && Math.abs(prev.px - pxR) <= 1) return;
+        lastEmittedOverflowRef.current = { v, h, px: pxR };
         cb({
           pageIndex,
           overflowsVertical: v,
@@ -1000,7 +1043,7 @@ function A4PageShell({
     let mo: MutationObserver | null = null;
     if (typeof MutationObserver !== 'undefined') {
       mo = new MutationObserver(() => measure());
-      mo.observe(main, { subtree: true, childList: true, characterData: true, attributes: true });
+      mo.observe(main, { subtree: true, childList: true, characterData: true, attributes: false });
     }
 
     const fontsP = document.fonts?.ready;
@@ -1010,13 +1053,9 @@ function A4PageShell({
       cancelAnimationFrame(raf0);
       ro?.disconnect();
       mo?.disconnect();
+      lastEmittedOverflowRef.current = null;
     };
-  }, [pageIndex, overflowMeasureFingerprint]);
-
-  const metaTitle = String(editCtx?.draft.title ?? rm.title ?? worksheet.title ?? '');
-  const metaSubtitle = String(
-    (editCtx?.draft as { subtitle?: string })?.subtitle ?? rm.subtitle ?? worksheet.subject ?? '',
-  );
+  }, [onPageLayoutOverflow, overflowEffectKey, pageIndex]);
 
   return (
     <div
@@ -1244,18 +1283,6 @@ export function A4WorksheetRenderer({
             editCtx={editCtx}
             onRequestRegeneratePage={onRequestRegeneratePage}
             regeneratePageBusyIndex={regeneratePageBusyIndex}
-            overflowMeasureFingerprint={
-              onPageLayoutOverflow
-                ? JSON.stringify({
-                    i,
-                    p: pg,
-                    title: rm.title,
-                    subtitle: rm.subtitle,
-                    subj: worksheet.subject,
-                    pres,
-                  })
-                : undefined
-            }
             onPageLayoutOverflow={onPageLayoutOverflow}
           />
         ))}

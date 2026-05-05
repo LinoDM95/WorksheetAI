@@ -9,8 +9,27 @@ import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetR
 import { normalizeContentForEdit } from './WorksheetContentEditor';
 import { WorksheetEditSidebar } from './WorksheetEditSidebar';
 import { EditorToolbar } from './EditorToolbar';
+import { Alert, IconButton, SectionCard } from '../../components/ui';
+import { ResizableEditorDock } from '../../components/ResizableEditorDock';
+import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
 
 const MAX_DRAFT_UNDO = 10;
+
+const StringList = ({ label, items }: { label: string; items?: unknown }) => {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const strings = items.filter((x): x is string => typeof x === 'string');
+  if (strings.length === 0) return null;
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-700">{label}</p>
+      <ul className="mt-1 list-inside list-disc text-xs text-slate-600">
+        {strings.map((s, i) => (
+          <li key={`${i}-${s.slice(0, 48)}`}>{s}</li>
+        ))}
+      </ul>
+    </div>
+  );
+};
 
 function useDominantA4PageInScroll(
   scrollRef: RefObject<HTMLDivElement | null>,
@@ -104,6 +123,7 @@ export function WorksheetPage() {
   const [pageLayoutOverflow, setPageLayoutOverflow] = useState<
     Record<number, { vertical: boolean; horizontal: boolean; px: number }>
   >({});
+  const [showCurriculumWizardHint, setShowCurriculumWizardHint] = useState(false);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -122,7 +142,7 @@ export function WorksheetPage() {
     dominantPageMountKey,
   );
 
-  const [editSidebarOpen, setEditSidebarOpen] = useState(() => {
+  const [mobileEditOpen, setMobileEditOpen] = useState(() => {
     try {
       return localStorage.getItem('worksheetEditSidebarOpen') !== '0';
     } catch {
@@ -130,13 +150,43 @@ export function WorksheetPage() {
     }
   });
 
+  const editDock = useResizableEditorDock({
+    widthStorageKey: 'worksheet-edit-dock-width',
+    collapsedStorageKey: 'worksheet-edit-dock-collapsed',
+    minWidth: 280,
+    maxWidth: 640,
+    defaultWidth: 400,
+    initialCollapsed:
+      typeof window !== 'undefined' && localStorage.getItem('worksheetEditSidebarOpen') === '0',
+  });
+
+  const sidebarChromeOpen = editDock.isLgViewport ? !editDock.collapsed : mobileEditOpen;
+  const [previewScrollPadTransition, setPreviewScrollPadTransition] = useState(false);
+  const prevEditSidebarOpenRef = useRef(sidebarChromeOpen);
+
+  useEffect(() => {
+    if (prevEditSidebarOpenRef.current === sidebarChromeOpen) return;
+    prevEditSidebarOpenRef.current = sidebarChromeOpen;
+    setPreviewScrollPadTransition(true);
+    const t = window.setTimeout(() => setPreviewScrollPadTransition(false), 320);
+    return () => window.clearTimeout(t);
+  }, [sidebarChromeOpen]);
+
   useEffect(() => {
     try {
-      localStorage.setItem('worksheetEditSidebarOpen', editSidebarOpen ? '1' : '0');
+      localStorage.setItem('worksheetEditSidebarOpen', mobileEditOpen ? '1' : '0');
     } catch {
       /* ignore */
     }
-  }, [editSidebarOpen]);
+  }, [mobileEditOpen]);
+
+  const handleToggleEditSidebar = () => {
+    if (editDock.isLgViewport) {
+      editDock.setCollapsed((c) => !c);
+    } else {
+      setMobileEditOpen((o) => !o);
+    }
+  };
 
   const draftUndoStackRef = useRef<Record<string, unknown>[]>([]);
   const [, setDraftUndoRerender] = useState(0);
@@ -147,13 +197,19 @@ export function WorksheetPage() {
   }, []);
 
   useEffect(() => {
-    if (!editSidebarOpen || regenModalPage !== null) return;
+    if (regenModalPage !== null) return;
+    if (!sidebarChromeOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setEditSidebarOpen(false);
+      if (e.key !== 'Escape') return;
+      if (editDock.isLgViewport) {
+        editDock.setCollapsed(true);
+      } else {
+        setMobileEditOpen(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [editSidebarOpen, regenModalPage]);
+  }, [sidebarChromeOpen, regenModalPage, editDock.isLgViewport]);
 
   useEffect(() => {
     if (!id) {
@@ -193,6 +249,19 @@ export function WorksheetPage() {
         if (fetchGen.current === gen) setLoading(false);
       });
   }, [id, clearDraftUndoStack]);
+
+  useEffect(() => {
+    if (!id || !ws) return;
+    const k = `worksheet-curriculum-hint:${id}`;
+    try {
+      if (sessionStorage.getItem(k)) {
+        sessionStorage.removeItem(k);
+        setShowCurriculumWizardHint(true);
+      }
+    } catch {
+      /* ignore storage errors */
+    }
+  }, [id, ws]);
 
   useEffect(() => {
     if (!draft || !id) return;
@@ -326,14 +395,27 @@ export function WorksheetPage() {
   }, [handleDraftUndo]);
 
   const handlePageLayoutOverflow = useCallback((info: PageLayoutOverflowInfo) => {
-    setPageLayoutOverflow((prev) => ({
-      ...prev,
-      [info.pageIndex]: {
-        vertical: info.overflowsVertical,
-        horizontal: info.overflowsHorizontal,
-        px: info.overflowPxVertical,
-      },
-    }));
+    const pxTol = 1;
+    setPageLayoutOverflow((prev) => {
+      const cur = prev[info.pageIndex];
+      const nextPx = Math.round(info.overflowPxVertical);
+      if (
+        cur &&
+        cur.vertical === info.overflowsVertical &&
+        cur.horizontal === info.overflowsHorizontal &&
+        Math.abs(Math.round(cur.px) - nextPx) <= pxTol
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [info.pageIndex]: {
+          vertical: info.overflowsVertical,
+          horizontal: info.overflowsHorizontal,
+          px: info.overflowPxVertical,
+        },
+      };
+    });
   }, []);
 
   const hasUnsavedChanges = useMemo(() => {
@@ -384,6 +466,9 @@ export function WorksheetPage() {
         ? (ws.content as { validation_errors: unknown[] }).validation_errors
         : [];
 
+  const curriculumShow = ws.curriculum_show_usage !== false;
+  const curriculumPanel = ws.curriculum_usage_panel;
+
   const handleOpenRegenPage = (pageIndex: number) => {
     setRegenInstruction('');
     setRegenModalPage(pageIndex);
@@ -419,7 +504,7 @@ export function WorksheetPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] print:h-auto print:min-h-0 print:flex-none print:bg-white print:overflow-visible">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0 lg:flex-row print:h-auto print:min-h-0 print:flex-none print:bg-white print:overflow-visible">
       {regenModalPage !== null ? (
         <div
           className="no-print fixed inset-0 z-[100] flex items-end justify-center bg-slate-900/45 p-3 sm:items-center"
@@ -481,23 +566,26 @@ export function WorksheetPage() {
         </div>
       ) : null}
 
-      <div className="no-print relative z-[45] shrink-0">
-        <EditorToolbar
-          title={String(draft.title ?? ws.title)}
-          subject={ws.subject}
-          grade={ws.grade}
-          saving={saving}
-          hasUnsavedChanges={hasUnsavedChanges}
-          onSave={() => void save()}
-          editSidebarOpen={editSidebarOpen}
-          onToggleEditSidebar={() => setEditSidebarOpen((o) => !o)}
-          onUndo={handleDraftUndo}
-          canUndo={canDraftUndo}
-          statusLabel={
-            ws.updated_at ? `Zuletzt geändert ${new Date(String(ws.updated_at)).toLocaleString('de-DE')}` : undefined
-          }
-        />
-      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col print:min-h-0 print:flex-none">
+        <div className="no-print relative z-[45] shrink-0">
+          <EditorToolbar
+            title={String(draft.title ?? ws.title)}
+            subject={ws.subject}
+            grade={ws.grade}
+            saving={saving}
+            hasUnsavedChanges={hasUnsavedChanges}
+            onSave={() => void save()}
+            editSidebarOpen={sidebarChromeOpen}
+            onToggleEditSidebar={handleToggleEditSidebar}
+            onUndo={handleDraftUndo}
+            canUndo={canDraftUndo}
+            statusLabel={
+              ws.updated_at
+                ? `Zuletzt geändert ${new Date(String(ws.updated_at)).toLocaleString('de-DE')}`
+                : undefined
+            }
+          />
+        </div>
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col print:h-auto print:min-h-0 print:overflow-visible">
         <div
@@ -508,10 +596,92 @@ export function WorksheetPage() {
           <div
             ref={previewScrollRef}
             className={cn(
-              'min-h-0 flex-1 overflow-y-auto overflow-x-auto overscroll-contain px-3 pb-16 pt-4 sm:px-5 print:overflow-visible print:pb-0 print:pt-0 transition-[padding] duration-300 ease-out',
-              editSidebarOpen && 'lg:pr-[min(40rem,calc(100vw-0.5rem))]',
+              'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-16 pt-4 sm:px-5 print:overflow-visible print:pb-0 print:pt-0',
+              previewScrollPadTransition && 'transition-[padding] duration-300 ease-out',
             )}
           >
+            {curriculumShow ? (
+              <div className="no-print mx-auto mb-5 w-full max-w-4xl space-y-3">
+                {showCurriculumWizardHint ? (
+                  <Alert tone="info">
+                    Unter „Lehrplanbezug“ siehst du, welche Leitplanken bei der Erstellung berücksichtigt wurden —
+                    nur in dieser App sichtbar, nicht im gedruckten PDF.
+                  </Alert>
+                ) : null}
+                <SectionCard
+                  title="Lehrplanbezug"
+                  description="Orientierung an importierten und geprüften Lehrplan-Kontexten. Keine rechtsverbindliche oder vollständige Abbildung des Rahmenlehrplans."
+                  bodyClassName="space-y-3 px-5 py-4"
+                >
+                  {ws.curriculum_warning ? <Alert tone="warn">{ws.curriculum_warning}</Alert> : null}
+                  {curriculumPanel?.has_curriculum_context && curriculumPanel.usage ? (
+                    <>
+                      <dl className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2">
+                        {curriculumPanel.usage.title ? (
+                          <>
+                            <dt className="font-medium text-slate-500">Bezeichnung</dt>
+                            <dd>{curriculumPanel.usage.title}</dd>
+                          </>
+                        ) : null}
+                        {curriculumPanel.usage.source_label ? (
+                          <>
+                            <dt className="font-medium text-slate-500">Quelle</dt>
+                            <dd>{curriculumPanel.usage.source_label}</dd>
+                          </>
+                        ) : null}
+                        <dt className="font-medium text-slate-500">Bundesland / Region</dt>
+                        <dd>{curriculumPanel.usage.state ?? '—'}</dd>
+                        <dt className="font-medium text-slate-500">Fach</dt>
+                        <dd>{curriculumPanel.usage.subject ?? '—'}</dd>
+                        <dt className="font-medium text-slate-500">Klassenstufe / Band</dt>
+                        <dd>{curriculumPanel.usage.grade_band ?? '—'}</dd>
+                        <dt className="font-medium text-slate-500">Themenfeld</dt>
+                        <dd className="min-w-0 break-words">{curriculumPanel.usage.topic_area ?? '—'}</dd>
+                        <dt className="font-medium text-slate-500">Qualität</dt>
+                        <dd>{curriculumPanel.usage.quality_status ?? '—'}</dd>
+                        <dt className="font-medium text-slate-500">Match-Score</dt>
+                        <dd>
+                          {curriculumPanel.usage.match_score != null
+                            ? String(curriculumPanel.usage.match_score)
+                            : '—'}
+                        </dd>
+                      </dl>
+                      {curriculumPanel.usage.short_description ? (
+                        <p className="text-xs leading-snug text-slate-600">{curriculumPanel.usage.short_description}</p>
+                      ) : null}
+                      <StringList label="Trefferbegründungen" items={curriculumPanel.usage.match_reasons} />
+                      <StringList label="Teilbereiche / Unterthemen" items={curriculumPanel.usage.subtopics} />
+                      <StringList label="Kompetenzen / Ziele" items={curriculumPanel.usage.competency_goals} />
+                      <StringList label="Erlaubte Aufgabentypen" items={curriculumPanel.usage.allowed_task_types} />
+                      <StringList label="Validierungsregeln" items={curriculumPanel.usage.validation_rules} />
+                      {curriculumPanel.usage.ai_usage_note ? (
+                        <p className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-xs text-slate-700">
+                          {curriculumPanel.usage.ai_usage_note}
+                        </p>
+                      ) : null}
+                      {curriculumPanel.usage.curriculum_alignment &&
+                      Object.keys(curriculumPanel.usage.curriculum_alignment).length > 0 ? (
+                        <details className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                            KI-Zuordnung (technisch)
+                          </summary>
+                          <pre className="mt-2 max-h-40 overflow-auto text-[11px] text-slate-600">
+                            {JSON.stringify(curriculumPanel.usage.curriculum_alignment, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </>
+                  ) : curriculumPanel && !curriculumPanel.has_curriculum_context ? (
+                    <p className="text-sm text-slate-600">
+                      {curriculumPanel.warning ??
+                        'Für dieses Arbeitsblatt wurde kein aktiver Lehrplan-Kontext gefunden oder genutzt.'}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-600">Keine Angaben zum Lehrplanbezug.</p>
+                  )}
+                </SectionCard>
+              </div>
+            ) : null}
             <div className="print:block">
               <div className="flex min-h-0 min-w-0 justify-center print:block print:w-full print:justify-start">
                 <div className="w-full max-w-full shrink-0 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
@@ -532,13 +702,28 @@ export function WorksheetPage() {
             ) : null}
           </div>
 
-          {editSidebarOpen ? (
+          {!editDock.isLgViewport && mobileEditOpen ? (
             <button
               type="button"
               className="no-print absolute inset-0 z-[30] bg-[var(--color-ink-900)]/25 backdrop-blur-[1px] lg:hidden"
               aria-label="Bearbeitungs-Sidebar schließen"
-              onClick={() => setEditSidebarOpen(false)}
+              onClick={() => setMobileEditOpen(false)}
             />
+          ) : null}
+
+          {!editDock.isLgViewport && mobileEditOpen ? (
+            <div className="no-print absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-xl lg:hidden">
+              <WorksheetEditSidebar
+                draft={draft}
+                setDraft={handleDraftFromSheet}
+                displayTitle={String(draft.title ?? ws.title)}
+                err={err}
+                onRequestRegeneratePage={handleOpenRegenPage}
+                regeneratePageBusyIndex={regenBusyPage}
+                pageLayoutOverflow={pageLayoutOverflow}
+                onRequestClose={() => setMobileEditOpen(false)}
+              />
+            </div>
           ) : null}
 
           {previewPageCountForHook > 1 ? (
@@ -555,43 +740,61 @@ export function WorksheetPage() {
             </div>
           ) : null}
 
-          <div className="no-print pointer-events-none absolute inset-y-0 right-0 z-40 w-[min(100%,40rem)] max-w-[100vw] overflow-hidden print:hidden">
-            <div
+          {!editDock.isLgViewport ? (
+            <button
+              type="button"
               className={cn(
-                'pointer-events-auto flex h-full min-h-0 w-full flex-col border-l-[3px] border-l-[var(--color-primary-200)] border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[-16px_0_48px_-12px_rgba(15,23,42,0.2)] transition-transform duration-300 ease-[cubic-bezier(0.33,1,0.68,1)]',
-                editSidebarOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none',
+                'no-print absolute right-0 top-1/2 z-[38] flex items-center gap-2 rounded-l-[var(--radius-lg)] border border-r-0 border-[var(--color-border)] bg-[var(--color-bg-card)] py-2.5 pl-3 pr-2 shadow-[var(--shadow-lg)] transition-transform duration-300 ease-out hover:bg-[var(--color-ink-50)] print:hidden lg:hidden',
+                mobileEditOpen && 'pointer-events-none opacity-0',
               )}
+              style={{
+                transform: mobileEditOpen ? 'translate(100%, -50%)' : 'translateY(-50%)',
+              }}
+              onClick={() => setMobileEditOpen(true)}
+              aria-label="Bearbeitungs-Sidebar öffnen"
             >
-              <WorksheetEditSidebar
-                draft={draft}
-                setDraft={handleDraftFromSheet}
-                displayTitle={String(draft.title ?? ws.title)}
-                err={err}
-                onRequestRegeneratePage={handleOpenRegenPage}
-                regeneratePageBusyIndex={regenBusyPage}
-                pageLayoutOverflow={pageLayoutOverflow}
-                onRequestClose={() => setEditSidebarOpen(false)}
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className={cn(
-              'no-print absolute right-0 top-1/2 z-[38] flex items-center gap-2 rounded-l-[var(--radius-lg)] border border-r-0 border-[var(--color-border)] bg-[var(--color-bg-card)] py-2.5 pl-3 pr-2 shadow-[var(--shadow-lg)] transition-transform duration-300 ease-out hover:bg-[var(--color-ink-50)] print:hidden',
-              editSidebarOpen && 'pointer-events-none opacity-0',
-            )}
-            style={{
-              transform: editSidebarOpen ? 'translate(100%, -50%)' : 'translateY(-50%)',
-            }}
-            onClick={() => setEditSidebarOpen(true)}
-            aria-label="Bearbeitungs-Sidebar öffnen"
-          >
-            <PanelRight size={18} className="shrink-0 text-[var(--color-primary-600)]" aria-hidden />
-            <span className="text-xs font-semibold text-[var(--color-ink-800)]">Bearbeitung</span>
-          </button>
+              <PanelRight size={18} className="shrink-0 text-[var(--color-primary-600)]" aria-hidden />
+              <span className="text-xs font-semibold text-[var(--color-ink-800)]">Bearbeitung</span>
+            </button>
+          ) : null}
         </div>
       </div>
+      </div>
+
+      {editDock.isLgViewport ? (
+        <ResizableEditorDock
+          ariaLabel="Struktur bearbeiten"
+          title="Bearbeitung"
+          dock={editDock}
+          asideClassName="border-l-[3px] border-l-[var(--color-primary-200)] border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[-16px_0_48px_-12px_rgba(15,23,42,0.2)]"
+          expanded={
+            <WorksheetEditSidebar
+              draft={draft}
+              setDraft={handleDraftFromSheet}
+              displayTitle={String(draft.title ?? ws.title)}
+              err={err}
+              onRequestRegeneratePage={handleOpenRegenPage}
+              regeneratePageBusyIndex={regenBusyPage}
+              pageLayoutOverflow={pageLayoutOverflow}
+              onRequestClose={() => editDock.setCollapsed(true)}
+              rootElement="div"
+            />
+          }
+          collapsedRail={
+            <IconButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
+              aria-label="Bearbeitung ausklappen"
+              title="Bearbeitung"
+              onClick={() => editDock.setCollapsed(false)}
+            >
+              <PanelRight size={18} aria-hidden />
+            </IconButton>
+          }
+        />
+      ) : null}
     </div>
   );
 }

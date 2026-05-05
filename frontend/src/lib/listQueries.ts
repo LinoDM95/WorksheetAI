@@ -19,3 +19,10 @@ export const fetchPatternsList = async <T>(): Promise<T[]> => {
 
 /** Nach Create/Update/Delete Listen kurz als frisch markieren (Navigation fühlt sich schneller an). */
 export const WORKSHEET_LIST_STALE_MS = 120_000;
+
+export const BOARDS_LIST_QUERY_KEY = ['boards', 'list'] as const;
+export const BOARDS_FOLDERS_QUERY_KEY = ['boards', 'folders'] as const;
+export const BOARDS_LIBRARY_QUERY_KEY = ['boards', 'library'] as const;
+export const BOARDS_DETAIL_QUERY_KEY = (id: string) => ['boards', 'detail', id] as const;
+export const BOARDS_REVISIONS_QUERY_KEY = (id: string) => ['boards', 'revisions', id] as const;
+export const BOARDS_BLOCKS_QUERY_KEY = ['boards', 'blocks'] as const;

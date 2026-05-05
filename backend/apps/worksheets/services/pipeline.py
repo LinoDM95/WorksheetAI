@@ -23,6 +23,8 @@ from typing import Any, Iterable
 from django.conf import settings
 
 from apps.ai.providers.factory import get_provider
+from apps.curricula.models import WorksheetCurriculumUsage
+from apps.curricula.services.context_matching import CurriculumContextMatchingService
 from apps.patterns.models import WorksheetPattern
 from apps.patterns.services import PatternMatcher
 from apps.worksheets.models import Worksheet
@@ -38,6 +40,26 @@ from .render_model import build_render_model
 from .validators import validate_and_repair
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_curriculum_alignment(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+
+    def slist(key: str) -> list[str]:
+        v = raw.get(key)
+        if not isinstance(v, list):
+            return []
+        return [str(x).strip() for x in v if x is not None and str(x).strip()][:30]
+
+    return {
+        'used_topic_area': str(raw.get('used_topic_area') or '').strip(),
+        'used_subtopics': slist('used_subtopics'),
+        'used_competency_goals': slist('used_competency_goals'),
+        'used_task_types': slist('used_task_types'),
+        'used_language_guidance': slist('used_language_guidance'),
+        'notes': str(raw.get('notes') or '').strip()[:4000],
+    }
 
 
 class WorksheetPipeline:
@@ -93,19 +115,67 @@ class WorksheetGenerator(WorksheetPipeline):
         self.payload = payload
         self.pattern: WorksheetPattern | None = None
         self.page_setup: dict = {}
+        self._curriculum_bundle: dict[str, Any] | None = None
+        self._matched_row: dict[str, Any] | None = None
+        self._curriculum_warning: str | None = None
 
     def run(self) -> Worksheet:
         self._resolve_pattern()
         self.page_setup = self.normalize_setup(self.payload.get('page_setup'))
+        self._resolve_curriculum_match()
         content = self._generate_with_provider()
+        curriculum_alignment: dict[str, Any] = {}
+        if isinstance(content, dict):
+            curriculum_alignment = _sanitize_curriculum_alignment(content.pop('curriculum_alignment', None))
         content = self._maybe_review(content)
+        if isinstance(content, dict):
+            content.pop('curriculum_alignment', None)
         content, notes = self.repair(content, self.pattern, run_reflow=True)
         render_model = self.render(content, self.page_setup, self.pattern, self.payload)
-        worksheet = self._persist(content, render_model)
+        worksheet = self._persist(content, render_model, curriculum_alignment)
         if notes:
             worksheet.content['validation_errors'] = notes
             worksheet.save(update_fields=['content'])
         return worksheet
+
+    def _resolve_curriculum_match(self) -> None:
+        self._curriculum_warning = None
+        self._matched_row = None
+        self._curriculum_bundle = None
+        payload = self.payload
+        state = (payload.get('federal_state') or payload.get('state') or '').strip()
+        subject = (payload.get('subject_name') or payload.get('subject') or '').strip()
+        grade_raw = payload.get('grade_value') if payload.get('grade_value') is not None else payload.get('grade')
+        grade: int | None = None
+        if grade_raw is not None:
+            try:
+                grade = int(grade_raw)
+            except (TypeError, ValueError):
+                grade = None
+        topic = (payload.get('topic') or '').strip()
+        if not state or not subject:
+            self._curriculum_warning = (
+                'Für dieses Arbeitsblatt wurde kein aktiver Lehrplan-Kontext gewählt '
+                '(Bundesland oder Fach fehlt im Auftrag).'
+            )
+            return
+        matches = CurriculumContextMatchingService.find_best_contexts(
+            state=state,
+            subject=subject,
+            grade=grade,
+            topic=topic,
+            limit=5,
+        )
+        if not matches:
+            self._curriculum_warning = 'Kein passender aktiver Lehrplan-Kontext gefunden.'
+            return
+        best = matches[0]
+        ctx = best['context']
+        if best['score'] <= 0:
+            self._curriculum_warning = 'Kein passender aktiver Lehrplan-Kontext gefunden.'
+            return
+        self._matched_row = best
+        self._curriculum_bundle = CurriculumContextMatchingService.compact_context_for_prompt(ctx)
 
     def _resolve_pattern(self) -> None:
         if self.payload.get('pattern_id'):
@@ -121,11 +191,14 @@ class WorksheetGenerator(WorksheetPipeline):
                 self.pattern = matches[0]['pattern']
 
     def _ai_payload(self) -> dict[str, Any]:
-        return {
+        pl: dict[str, Any] = {
             'request': self.payload,
             'page_setup': self.page_setup,
             'pattern': self.pattern.blueprint if self.pattern else {},
         }
+        if self._curriculum_bundle:
+            pl['curriculum_context'] = self._curriculum_bundle
+        return pl
 
     def _generate_with_provider(self) -> dict:
         return self.provider.generate(self._ai_payload())
@@ -193,8 +266,13 @@ class WorksheetGenerator(WorksheetPipeline):
             )
         return reviewed
 
-    def _persist(self, content: dict, render_model: dict) -> Worksheet:
-        return Worksheet.objects.create(
+    def _persist(self, content: dict, render_model: dict, curriculum_alignment: dict[str, Any]) -> Worksheet:
+        meta: dict[str, Any] = {}
+        if self._curriculum_warning:
+            meta['curriculum_warning'] = self._curriculum_warning
+        if self._matched_row:
+            meta['used_curriculum_context_id'] = str(self._matched_row['context'].id)
+        worksheet = Worksheet.objects.create(
             owner=self.user,
             pattern=self.pattern,
             title=content.get('title', 'Arbeitsblatt'),
@@ -204,6 +282,45 @@ class WorksheetGenerator(WorksheetPipeline):
             page_setup=self.page_setup,
             content=content,
             render_model=render_model,
+            generation_meta=meta,
+        )
+        self._persist_curriculum_usage(worksheet, curriculum_alignment)
+        return worksheet
+
+    def _persist_curriculum_usage(self, worksheet: Worksheet, curriculum_alignment: dict[str, Any]) -> None:
+        if not self._matched_row:
+            return
+        ctx = self._matched_row['context']
+        snapshot = CurriculumContextMatchingService.compact_context_for_prompt(ctx)
+        tv = CurriculumContextMatchingService.build_teacher_visible_usage(
+            ctx,
+            match_score=float(self._matched_row['score']),
+            match_reasons=list(self._matched_row['reasons']),
+            curriculum_alignment=curriculum_alignment,
+        )
+        alignment = curriculum_alignment if any(curriculum_alignment.values()) else {}
+        if not alignment:
+            alignment = {
+                'used_topic_area': ctx.topic_area,
+                'used_subtopics': list(ctx.subtopics or [])[:12],
+                'used_competency_goals': list(ctx.competency_goals or [])[:12],
+                'used_task_types': list(ctx.allowed_task_types or [])[:12],
+                'used_language_guidance': [],
+                'notes': 'Keine gesonderte KI-Begründung geliefert — Anzeige aus dem gewählten Lehrplan-Kontext.',
+            }
+        note = (
+            'Die KI hat diesen Kontext als fachliche Leitplanke für Thema, Niveau, '
+            'Aufgabenformate und Sprache genutzt (soweit im Prompt vorgegeben).'
+        )
+        WorksheetCurriculumUsage.objects.create(
+            worksheet=worksheet,
+            context=ctx,
+            match_score=float(self._matched_row['score']),
+            match_reasons=list(self._matched_row['reasons']),
+            used_context_snapshot=snapshot,
+            teacher_visible_summary=tv,
+            ai_usage_note=note,
+            curriculum_alignment=alignment,
         )
 
 

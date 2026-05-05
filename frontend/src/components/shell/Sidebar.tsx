@@ -9,6 +9,7 @@ import {
   Settings,
   ChevronDown,
   Plus,
+  Presentation,
   X,
 } from 'lucide-react';
 import { Logo } from '../Logo';
@@ -29,12 +30,13 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/app/dashboard', label: 'Dashboard', icon: Home },
   { to: '/app/create', label: 'Arbeitsblatt erstellen', icon: PlusSquare },
   { to: '/app/worksheets', label: 'Meine Arbeitsblätter', icon: FileText, matchPrefix: '/app/worksheets' },
+  { to: '/app/boards', label: 'Smartboard', icon: Presentation, matchPrefix: '/app/boards' },
   { to: '/app/patterns', label: 'Vorlagen', icon: LayoutGrid, matchPrefix: '/app/patterns' },
 ];
 
 const SCHOOL_NAV: NavItem[] = [
-  { to: '/app/curriculum', label: 'Lehrpläne', icon: Book, mock: true },
-  { to: '/app/library', label: 'Bibliothek & Teilen', icon: Share2, mock: true },
+  { to: '/app/curricula', label: 'Lehrpläne', icon: Book, matchPrefix: '/app/curricula' },
+  { to: '/app/boards/library', label: 'Tafelbibliothek', icon: Share2, matchPrefix: '/app/boards/library' },
   { to: '/app/settings', label: 'Einstellungen', icon: Settings, mock: true },
 ];
 
@@ -70,9 +72,9 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
           drawerMode && (open ? 'translate-x-0 shadow-xl' : '-translate-x-full'),
           !drawerMode &&
             cn(
-              'relative z-auto min-w-0 translate-x-0 self-stretch',
-              shellVariant === 'focus' && 'relative z-10',
-              'h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain',
+              'relative z-auto min-w-0 translate-x-0 lg:sticky lg:top-0 lg:h-svh lg:max-h-[100dvh] lg:self-start',
+              shellVariant === 'focus' && 'z-10',
+              'min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain',
             ),
           !drawerMode && open && 'w-60 overflow-visible px-3.5 py-4',
           !drawerMode && !open && 'w-0 overflow-hidden border-transparent p-0',

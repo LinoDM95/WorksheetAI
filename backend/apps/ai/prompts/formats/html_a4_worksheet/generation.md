@@ -39,6 +39,11 @@ Du **musst** das Objekt `presentation` befüllen und es **aus den Parametern abl
 
 `language` und `tone` aus dem Request **konsequent** in Formulierungen umsetzen (z. B. Deutsch einfache Sprache, Sie-Form, knapper Prüfungston).
 
+## Pflicht: Touch / Bildschirm (Vorschau am Gerät)
+
+- Arbeitsblätter werden in der App oft auf **Tablet oder Touch-PC** geöffnet. **`presentation`** (u. a. `text_scale`, `task_text_scale`, `line_height`, `density`) so wählen, dass Vorschau und Bearbeitung **groß genug** und **nicht zu gedrängt** sind — insbesondere bei Grundschule / `child_friendly` lieber etwas **großzügiger** als minimal kompakt.
+- Keine Aufgabenformulierungen, die eine **reine Maus-/Hover-Logik** voraussetzen; alles muss für **Fingertipp und Lesen am Bildschirm** funktional sein.
+
 ## Pflicht: Zeitbudget & Inhalt
 
 - `time_budget_minutes` (wenn gesetzt): **realistisch** in **Anzahl und Tiefe** der Aufgaben übersetzen (z. B. 15 Min → wenige, fokussierte Aufgaben; 90 Min → mehr Teile, ggf. mehrseitig).
@@ -212,6 +217,12 @@ Alle **Aufgabentext-Felder** mit Mathe: **LaTeX** (`$…$` / `\[…\]`). Siehe A
 
 ---
 
+## Curriculum-Leitplanke
+
+{{CURRICULUM_CONTEXT_BLOCK}}
+
+---
+
 ## Seitenlayout (eine physische A4-Seite pro `pages[]`-Eintrag)
 
 ```json
@@ -236,4 +247,5 @@ Jede generierte Seite entspricht **format A4** und **dieselben Ränder/safe_area
 - **`presentation`** — siehe Tabelle oben, **vollständig**
 - **`pages`**: `[{ "page_label"?: string, "blocks": [...] }, ...]` — **mindestens ein** Eintrag
 - `solutions`, `design_notes`
+- **`curriculum_alignment`** (optional): nur wenn ein Curriculum-Kontext mitgegeben wurde — kurze interne Zuordnung (`used_topic_area`, `used_subtopics`, `used_competency_goals`, `used_task_types`, `used_language_guidance`, `notes`). **Nicht** als Unterrichtstext formulieren; erscheint **nicht** auf dem gedruckten Arbeitsblatt.
 - `slots` nur wenn Blueprint es erfordert
