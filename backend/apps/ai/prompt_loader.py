@@ -176,14 +176,80 @@ def _truncate_block(s: str, max_chars: int = 14_000) -> str:
 
 
 def build_block_filling_page_prompt(payload: dict) -> str:
-    """Prompt für eine einzelne Tafelbild-Seite: Slots mit Stichpunkten → JSON contents."""
+    """Prompt für eine einzelne Board-Seite: Slots mit Stichpunkten → JSON contents."""
     md = (_board_format_dir() / 'blocks_filling.md').read_text(encoding='utf-8')
     return md.replace('{{PAGE_PAYLOAD_JSON}}', _json_block(payload))
+
+
+def _format_asset_pack_summary(value) -> str:
+    """Formatiert das Asset-Pack-Summary-Dict als kompakten, KI-lesbaren Block."""
+    if not value or not isinstance(value, dict):
+        return '— kein Asset Pack vorhanden, freie Gestaltung erlaubt —'
+    inline_brief = value.get('inline_asset_brief') or []
+    assets = value.get('assets') or []
+    if not inline_brief and not assets:
+        return '— kein Asset Pack vorhanden, freie Gestaltung erlaubt —'
+    lines: list[str] = []
+    style_rules = value.get('style_rules') or {}
+    if style_rules:
+        lines.append(f"**Style Rules (global):** {style_rules}")
+    usage_rules = value.get('usage_rules') or []
+    if usage_rules:
+        lines.append('**Usage Rules:**')
+        for rule in usage_rules[:14]:
+            lines.append(f'- {rule}')
+    lines.append('')
+    if inline_brief:
+        lines.append(f'**Inline im Code zeichnen ({len(inline_brief)}):**')
+        for item in inline_brief[:20]:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                f'- `{item.get("key")}` ({item.get("asset_type")}): {item.get("title")} — '
+                f'placement: {item.get("placement_hint", "free")}; Motiv: {item.get("subject_text", "")[:120]}'
+            )
+        lines.append('')
+    if assets:
+        lines.append(f'**Pack-Assets ({len(assets)}):**')
+        for entry in assets[:24]:
+            if not isinstance(entry, dict):
+                continue
+            key = entry.get('key') or '?'
+            role = entry.get('role') or 'decoration'
+            delivery = entry.get('delivery') or 'inline'
+            width = entry.get('width') or '?'
+            height = entry.get('height') or '?'
+            size_hint = entry.get('size_hint') or ''
+            head = f'- `{key}` (role: `{role}`, delivery: `{delivery}`, viewBox: {width}×{height}'
+            if size_hint:
+                head += f', size_hint: {size_hint}'
+            head += ')'
+            lines.append(head)
+            if delivery == 'inline':
+                inline_svg = (entry.get('inline_svg') or '').strip()
+                if inline_svg:
+                    lines.append('  inline_svg:')
+                    lines.append('  ```svg')
+                    lines.append('  ' + inline_svg.replace('\n', '\n  '))
+                    lines.append('  ```')
+            else:
+                url = entry.get('url') or ''
+                if url:
+                    lines.append(f'  url: `{url}`')
+    return '\n'.join(lines)
 
 
 def build_free_html_generation_prompt(payload: dict) -> str:
     md = (_board_format_dir() / 'free_html_generation.md').read_text(encoding='utf-8')
     prompt = (payload.get('prompt') or '').strip() or '*(Kein Freitext.)*'
+
+    def _block_or_dash(value) -> str:
+        if value in (None, '', {}, []):
+            return '— nicht aktiv —'
+        if isinstance(value, str):
+            return value
+        return _json_block(value)
+
     return (
         md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
         .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
@@ -196,6 +262,13 @@ def build_free_html_generation_prompt(payload: dict) -> str:
         .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+        .replace('{{ asset_pack_summary }}', _format_asset_pack_summary(payload.get('asset_pack_summary')))
+        .replace('{{ intent }}', _block_or_dash(payload.get('intent')))
+        .replace('{{ risk }}', _block_or_dash(payload.get('risk')))
+        .replace('{{ creative_brief }}', _block_or_dash(payload.get('creative_brief')))
+        .replace('{{ style_dna }}', _block_or_dash(payload.get('style_dna')))
+        .replace('{{ snippets }}', str(payload.get('snippets') or '— keine —'))
+        .replace('{{ golden_example }}', str(payload.get('golden_example') or '— keines —'))
         .replace('{{ prompt }}', prompt)
     )
 
@@ -235,6 +308,187 @@ def build_free_html_repair_prompt(payload: dict) -> str:
         .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+    )
+
+
+def build_intent_router_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'intent_router.md').read_text(encoding='utf-8')
+    prompt = (payload.get('prompt') or '').strip() or '*(Kein Freitext.)*'
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', prompt)
+    )
+
+
+def build_risk_classifier_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'risk_classifier.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', str(payload.get('prompt') or '*(Kein Freitext.)*'))
+        .replace('{{ intent }}', _json_block(payload.get('intent') or {}))
+    )
+
+
+def build_creative_brief_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'creative_brief.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', str(payload.get('prompt') or '*(Kein Freitext.)*'))
+        .replace('{{ intent }}', _json_block(payload.get('intent') or {}))
+        .replace('{{ risk }}', _json_block(payload.get('risk') or {}))
+    )
+
+
+def build_style_dna_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'style_dna.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', str(payload.get('prompt') or '*(Kein Freitext.)*'))
+        .replace('{{ intent }}', _json_block(payload.get('intent') or {}))
+        .replace('{{ risk }}', _json_block(payload.get('risk') or {}))
+        .replace('{{ creative_brief }}', _json_block(payload.get('creative_brief') or {}))
+        .replace('{{ visual_metaphor_catalog }}', str(payload.get('visual_metaphor_catalog') or ''))
+    )
+
+
+def build_repair_mode_prompt(mode: str, payload: dict) -> str:
+    """Mode-spezifischer Repair-Prompt für RepairAgent.
+
+    ``mode`` ∈ {'bug_fix','design_improve','touch_optimize','layout_fix',
+    'performance_fix','factual_warning','security_fix','general_repair'}.
+    Fallback: ``free_html_repair.md`` (klassischer Repair-Prompt).
+    """
+    safe_mode = (mode or '').strip().replace('..', '').replace('/', '').replace('\\', '')
+    candidate = _board_format_dir() / f'repair_{safe_mode}.md'
+    if not candidate.is_file():
+        candidate = _board_format_dir() / 'free_html_repair.md'
+    md = candidate.read_text(encoding='utf-8')
+    errs = payload.get('validation_errors') or []
+    if isinstance(errs, list) and errs:
+        err_block = '\n'.join(f'{i + 1}. {str(e).strip()}' for i, e in enumerate(errs))
+    elif errs:
+        err_block = str(errs)
+    else:
+        err_block = '*(Keine Fehlerliste übermittelt — prüfe den Code dennoch auf Sandbox-Konformität.)*'
+    ctx = str(payload.get('context_hint') or '').strip() or '*(Kein Zusatzkontext.)*'
+    return (
+        md.replace('{{ mode }}', safe_mode or 'general_repair')
+        .replace('{{ validation_errors }}', err_block)
+        .replace('{{ repair_attempt }}', str(int(payload.get('repair_attempt') or 1)))
+        .replace('{{ repair_attempt_max }}', str(int(payload.get('repair_attempt_max') or 1)))
+        .replace('{{ context_hint }}', ctx)
+        .replace('{{ html }}', _truncate_block(str(payload.get('html') or '')))
+        .replace('{{ css }}', _truncate_block(str(payload.get('css') or '')))
+        .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or '')))
+        .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
+        .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
+        .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+        .replace('{{ style_dna }}', _json_block(payload.get('style_dna') or {}))
+        .replace('{{ touch_audit }}', _json_block(payload.get('touch_audit') or {}))
+        .replace('{{ screenshot_quality }}', _json_block(payload.get('screenshot_quality') or {}))
+    )
+
+
+def build_screenshot_judge_prompt(payload: dict) -> str:
+    md = (_board_format_dir() / 'screenshot_judge.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ style_dna }}', _json_block(payload.get('style_dna') or {}))
+        .replace('{{ layout_metrics }}', _json_block(payload.get('layout_metrics') or {}))
+    )
+
+
+def _asset_engine_dir():
+    return _FORMATS_DIR / 'asset_engine'
+
+
+def build_asset_intent_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'asset_intent.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', str(payload.get('prompt') or '*(Kein Freitext.)*'))
+        .replace('{{ intent }}', _json_block(payload.get('intent') or {}))
+        .replace('{{ creative_brief }}', str(payload.get('creative_brief') or '— —'))
+        .replace('{{ style_dna_mood }}', str(payload.get('style_dna_mood') or '— —'))
+        .replace('{{ heuristic }}', _json_block(payload.get('heuristic') or {}))
+    )
+
+
+def build_asset_planner_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'asset_planner.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
+        .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
+        .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
+        .replace('{{ prompt }}', str(payload.get('prompt') or '*(Kein Freitext.)*'))
+        .replace('{{ intent }}', _json_block(payload.get('intent') or {}))
+        .replace('{{ risk }}', _json_block(payload.get('risk') or {}))
+        .replace('{{ creative_brief }}', _json_block(payload.get('creative_brief') or {}))
+        .replace('{{ style_dna }}', _json_block(payload.get('style_dna') or {}))
+        .replace('{{ asset_intent }}', _json_block(payload.get('asset_intent') or {}))
+        .replace('{{ heuristic }}', _json_block(payload.get('heuristic') or {}))
+        .replace('{{ style_families }}', _json_block(payload.get('style_families') or []))
+        .replace('{{ available_procedural }}', _json_block(payload.get('available_procedural') or []))
+    )
+
+
+def build_asset_strategy_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'asset_strategy.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ asset }}', _json_block(payload.get('asset') or {}))
+        .replace('{{ heuristic }}', _json_block(payload.get('heuristic') or {}))
+    )
+
+
+def build_svg_free_draw_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'svg_free_draw.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ asset_request }}', _json_block(payload.get('asset_request') or {}))
+        .replace('{{ style_family }}', str(payload.get('style_family') or 'soft_cartoon'))
+        .replace('{{ palette }}', _json_block(payload.get('palette') or {}))
+        .replace('{{ design_tokens }}', _json_block(payload.get('design_tokens') or {}))
+    )
+
+
+def build_asset_repair_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'asset_repair.md').read_text(encoding='utf-8')
+    errors = payload.get('validation_errors') or []
+    warnings = payload.get('validation_warnings') or []
+    err_block = '\n'.join(f'- {e}' for e in errors) if errors else '*(keine)*'
+    warn_block = '\n'.join(f'- {w}' for w in warnings) if warnings else '*(keine)*'
+    return (
+        md.replace('{{ mode }}', str(payload.get('mode') or 'fix_validation'))
+        .replace('{{ directive }}', str(payload.get('directive') or ''))
+        .replace('{{ asset_request }}', _json_block(payload.get('asset_request') or {}))
+        .replace('{{ style_family }}', str(payload.get('style_family') or 'soft_cartoon'))
+        .replace('{{ palette }}', _json_block(payload.get('palette') or {}))
+        .replace('{{ design_tokens }}', _json_block(payload.get('design_tokens') or {}))
+        .replace('{{ critique }}', str(payload.get('critique') or ''))
+        .replace('{{ validation_errors }}', err_block)
+        .replace('{{ validation_warnings }}', warn_block)
+        .replace('{{ svg }}', _truncate_block(str(payload.get('svg') or '')))
+    )
+
+
+def build_asset_quality_judge_prompt(payload: dict) -> str:
+    md = (_asset_engine_dir() / 'asset_quality_judge.md').read_text(encoding='utf-8')
+    return (
+        md.replace('{{ asset_type }}', str(payload.get('asset_type') or 'other'))
+        .replace('{{ background_mode }}', str(payload.get('background_mode') or 'transparent_cutout'))
+        .replace('{{ style_family }}', str(payload.get('style_family') or ''))
+        .replace('{{ svg }}', _truncate_block(str(payload.get('svg') or '')))
     )
 
 

@@ -26,14 +26,14 @@ export const BlockLibraryPanel = ({ blocks, categories, canAdd, onAdd }: Props) 
   return (
     <aside className="flex h-full min-h-0 flex-col gap-3 border-r border-slate-200 bg-slate-50 p-3">
       <div className="relative">
-        <Search aria-hidden size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search aria-hidden size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           type="search"
           aria-label="Bausteine suchen"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Bausteine suchen…"
-          className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+          className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-10 pr-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
         />
       </div>
       <div className="flex flex-wrap gap-1.5">

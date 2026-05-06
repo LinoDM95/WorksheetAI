@@ -4,7 +4,7 @@ Die KI bekommt im Prompt-Kontext genau diese Listen — sie darf NUR diese IDs i
 ``used_libraries`` / ``used_assets`` / ``used_datasets`` zurückmelden, und sie darf
 externe URLs nicht laden. Die Frontend-Sandbox bindet die Libraries/Datasets aus
 ``frontend/public/board-libs``, ``frontend/public/board-datasets`` und
-``frontend/public/board-assets`` (Icons unter ``icons/``) ein.
+``frontend/public/board-assets`` (Icons unter ``icons/``, optional Sounds unter ``sounds/``) ein.
 """
 from __future__ import annotations
 
@@ -61,6 +61,70 @@ LIBRARIES: list[dict[str, Any]] = [
         'always': False,
         'use_for': ['topojson_conversion'],
         'note': 'Optional, nur wenn TopoJSON-Datasets genutzt werden.',
+    },
+    {
+        'id': 'interactjs',
+        'global': 'interact',
+        'always': False,
+        'use_for': [
+            'drag_drop_dom',
+            'multi_touch',
+            'resize_rotate_dom',
+            'sort_puzzle_touch',
+            'simultaneous_pointers_classroom',
+        ],
+        'note': (
+            'Touch/Pointer-Drag auf DOM-Elementen; Mehrfinger (gesturable). Für Ziele '
+            '`touch-action: none` auf dem ziehbaren Element setzen.'
+        ),
+    },
+    {
+        'id': 'matterjs',
+        'global': 'Matter',
+        'always': False,
+        'use_for': ['physics_2d', 'ramps_collision', 'stacking_mass', 'simple_sim_lab'],
+        'note': (
+            '`Matter.Engine` + `render`/`Runner` oder eigenes RAF; Körper begrenzen; '
+            'Canvas klar unter `.free-board` dimensionieren.'
+        ),
+    },
+    {
+        'id': 'gsap',
+        'global': 'gsap',
+        'always': False,
+        'use_for': ['timeline_animation', 'staged_story', 'documentary_motion', 'ui_micro_motion'],
+        'note': (
+            'Nur **GSAP Core** (`gsap.to`, `timeline`) — **keine** Club-/kostenpflichtigen Plugins '
+            'erwähnen oder voraussetzen; es sind nur `gsap.min.js` gebündelt.'
+        ),
+    },
+    {
+        'id': 'confetti',
+        'global': 'confetti',
+        'always': False,
+        'use_for': ['reward_feedback', 'celebration_primary', 'goal_reached'],
+        'note': 'Globale Funktion `confetti({ ... })`; sparsam nutzen, nach erstem Tap auslösen.',
+    },
+    {
+        'id': 'howler',
+        'global': 'Howl',
+        'always': False,
+        'use_for': ['short_sfx', 'applause_hint', 'correct_wrong_audio'],
+        'note': (
+            'Konstruktor `new Howl({ src: [\'/board-assets/sounds/…\'] })` — nur **lokale** '
+            'Pfade unter `/board-assets/`; kein externes Audio. Erst nach Nutzer-Tap abspielen '
+            '(Autoplay-Policy). Howler nutzt intern XHR — nur für gelieferte Dateien.'
+        ),
+    },
+    {
+        'id': 'konva',
+        'global': 'Konva',
+        'always': False,
+        'use_for': ['mindmap_canvas', 'many_shapes_lines', 'layered_2d_stage'],
+        'note': (
+            '2D-Canvas-Stage; Container-Div im HTML, feste Größe in px; nach Stage-Resize '
+            '`stage.width()`/`height()` ggf. anpassen.'
+        ),
     },
 ]
 

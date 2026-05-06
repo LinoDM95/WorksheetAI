@@ -3,10 +3,15 @@ import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'r
 export const STAGE_BASE_W = 1280;
 export const STAGE_BASE_H = 720;
 
+export type BoardStageFitMode = 'contain' | 'cover';
+
 export function useBoardStageScale(
   containerRef: RefObject<HTMLElement | null>,
   baseW = STAGE_BASE_W,
   baseH = STAGE_BASE_H,
+  layoutResetKey?: string,
+  /** `cover` füllt den Container (Thumbnails); `contain` zeigt die ganze Bühne (Editor/Play). */
+  fit: BoardStageFitMode = 'contain',
 ) {
   const [scale, setScale] = useState(1);
   useLayoutEffect(() => {
@@ -14,14 +19,17 @@ export function useBoardStageScale(
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
-      const s = Math.min(r.width / baseW, r.height / baseH);
+      const s =
+        fit === 'cover'
+          ? Math.max(r.width / baseW, r.height / baseH)
+          : Math.min(r.width / baseW, r.height / baseH);
       setScale(s > 0 && Number.isFinite(s) ? s : 1);
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [baseW, baseH]);
+  }, [baseW, baseH, layoutResetKey ?? '', fit]);
   return scale;
 }
 

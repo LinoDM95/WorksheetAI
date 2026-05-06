@@ -1,11 +1,12 @@
 import json
 import logging
 import time
+
 from django.conf import settings
 from google import genai
 from google.genai import types
 
-logger = logging.getLogger(__name__)
+from apps.ai.gemini_model_fallback import expand_gemini_model_chain, is_gemini_model_availability_error
 from apps.ai.prompt_loader import (
     build_block_filling_page_prompt,
     build_free_html_generation_prompt,
@@ -16,6 +17,7 @@ from apps.ai.prompt_loader import (
     build_worksheet_review_prompt,
 )
 
+logger = logging.getLogger(__name__)
 # Diagramm-spec: kind + kind-spezifische Felder (Modell setzt nur passende Untermenge).
 _DIAGRAM_SPEC_SCHEMA = {
     'type': 'OBJECT',
@@ -232,7 +234,8 @@ FREE_HTML_SCHEMA = {
     'type': 'OBJECT',
     'description': (
         'Free HTML5 smartboard fragment. No full documents. No external URLs in strings. '
-        'html = inner content only; wrap in .free-board. Vanilla JS only. '
+        'html = inner content only; wrap in .free-board. Vanilla JS plus optional libs from '
+        'the resource registry only. '
         'used_libraries / used_assets / used_datasets MUST list only IDs from the provided '
         'resource registry — never invent IDs or external URLs.'
     ),
@@ -319,19 +322,68 @@ class GeminiWorksheetProvider:
             http_options=types.HttpOptions(timeout=timeout_ms),
         )
 
-    def _generate_content(self, *, model: str, contents, config: types.GenerateContentConfig):
+    @staticmethod
+    def _prompt_fallback_chars(contents) -> str:
+        if isinstance(contents, str):
+            return contents
+        try:
+            return str(contents)
+        except Exception:
+            return ''
+
+    def _emit_gemini_usage(
+        self,
+        *,
+        resp,
+        model: str,
+        trace_step: str | None,
+        fallback_char_source: str,
+    ) -> None:
+        if not trace_step:
+            return
+        try:
+            from apps.boards.services.pipeline_ai_meter import parse_gemini_usage, route_provider_usage
+
+            inp, out, ex = parse_gemini_usage(resp)
+            if inp == 0 and out == 0 and fallback_char_source:
+                inp = max(0, int(len(fallback_char_source) / 4))
+            route_provider_usage(
+                provider_self=self,
+                step_type=trace_step,
+                provider_label='gemini',
+                model_name=model,
+                input_tokens=inp,
+                output_tokens=out,
+                success=True,
+                metadata=ex,
+            )
+        except Exception:
+            logger.exception('Gemini usage metering skipped')
+
+    def _generate_content_single_model(
+        self,
+        *,
+        model: str,
+        contents,
+        config: types.GenerateContentConfig,
+        trace_step: str | None = None,
+        fallback_char_source: str | None = None,
+    ):
         retries = max(0, int(getattr(settings, 'GEMINI_DEADLINE_RETRIES', 0)))
         delay_base = float(getattr(settings, 'GEMINI_DEADLINE_RETRY_DELAY_SECONDS', 60.0))
         exponential = bool(getattr(settings, 'GEMINI_DEADLINE_RETRY_EXPONENTIAL', False))
         total_attempts = retries + 1
         last: BaseException | None = None
+        fb = fallback_char_source if fallback_char_source is not None else self._prompt_fallback_chars(contents)
         for attempt in range(total_attempts):
             try:
-                return self.client.models.generate_content(
+                resp = self.client.models.generate_content(
                     model=model,
                     contents=contents,
                     config=config,
                 )
+                self._emit_gemini_usage(resp=resp, model=model, trace_step=trace_step, fallback_char_source=fb)
+                return resp
             except BaseException as exc:
                 last = exc
                 if attempt >= retries or not _is_gemini_deadline_exceeded(exc):
@@ -346,6 +398,78 @@ class GeminiWorksheetProvider:
                 time.sleep(pause)
         assert last is not None
         raise last
+
+    def _generate_content(
+        self,
+        *,
+        model: str,
+        contents,
+        config: types.GenerateContentConfig,
+        trace_step: str | None = None,
+        fallback_char_source: str | None = None,
+    ):
+        fb = fallback_char_source if fallback_char_source is not None else self._prompt_fallback_chars(contents)
+        chain = expand_gemini_model_chain(model)
+        last_exc: BaseException | None = None
+        for idx, m in enumerate(chain):
+            try:
+                return self._generate_content_single_model(
+                    model=m,
+                    contents=contents,
+                    config=config,
+                    trace_step=trace_step,
+                    fallback_char_source=fb,
+                )
+            except BaseException as exc:
+                last_exc = exc
+                if idx >= len(chain) - 1 or not is_gemini_model_availability_error(exc):
+                    raise
+                logger.warning(
+                    'Gemini Modell %s nicht verfügbar (%s), Fallback %s',
+                    m,
+                    exc,
+                    chain[idx + 1],
+                )
+        assert last_exc is not None
+        raise last_exc
+
+    def call_with_model(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        response_schema: dict | None = None,
+        temperature: float = 0.3,
+        max_output_tokens: int | None = None,
+        trace_step: str | None = None,
+    ) -> dict:
+        """Generischer JSON-Call gegen ein beliebiges Gemini-Modell.
+
+        Wird vom :class:`SmartboardAIModelRouter` genutzt, um z. B. das schnellere
+        ``gemini-2.5-flash`` für Klassifikations-Aufgaben anzusprechen, ohne den
+        Standard-Code-Pfad anzufassen.
+        """
+        gen_cfg: dict = {
+            'temperature': float(temperature),
+            'max_output_tokens': int(max_output_tokens or settings.GEMINI_MAX_OUTPUT_TOKENS),
+            'response_mime_type': 'application/json',
+        }
+        if response_schema is not None:
+            gen_cfg['response_schema'] = response_schema
+        resp = self._generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(**gen_cfg),
+            trace_step=trace_step,
+            fallback_char_source=prompt,
+        )
+
+        text = resp.text or '{}'
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def generate(self, payload: dict) -> dict:
         req = payload.get('request') or {}
@@ -367,6 +491,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=user_content,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='worksheet_generation',
+            fallback_char_source=self._prompt_fallback_chars(user_content),
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -389,6 +515,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='worksheet_review',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -405,6 +533,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='worksheet_page_regenerate',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -421,6 +551,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='blocks_slot_fill',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -440,6 +572,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='code_generation',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -459,6 +593,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='revision',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -475,6 +611,8 @@ class GeminiWorksheetProvider:
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(**gen_cfg),
+            trace_step='repair',
+            fallback_char_source=prompt,
         )
         text = resp.text or '{}'
         return json.loads(text)

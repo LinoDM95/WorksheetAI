@@ -140,7 +140,7 @@ export function WizardPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] sm:px-6 lg:px-8">
         <Button
           variant="ghost"
           size="sm"
@@ -159,7 +159,7 @@ export function WizardPage() {
       </div>
 
       <div className="flex-1 overflow-auto bg-[var(--color-bg-app)]">
-        <div className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-[1280px] px-3 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom,12px))] sm:px-6 lg:px-8 lg:pt-8 lg:pb-[max(2rem,env(safe-area-inset-bottom,12px))]">
           {step === 0 && <StepInhalt state={state} actions={actions} />}
           {step === 1 && (
             <StepVorlage state={state} actions={actions} patterns={patterns} />
@@ -178,7 +178,7 @@ export function WizardPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 sm:px-6 sm:gap-3 lg:px-8">
+      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:px-6 sm:gap-3 lg:px-8">
         {step > 0 && (
           <Button variant="secondary" onClick={() => setStep((s) => Math.max(0, s - 1))}>
             Schritt zurück

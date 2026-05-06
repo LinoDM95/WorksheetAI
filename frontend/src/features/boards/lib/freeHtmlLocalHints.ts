@@ -53,7 +53,7 @@ export const collectFreeHtmlLocalWarnings = (html: string, css: string, js: stri
     /\burl\s*\(\s*["']?\s*https?:/i.test(css || '')
   ) {
     w.push(
-      'Es wurden http(s)-URLs im Markup oder CSS gefunden — Ziel ist ein möglichst offline-fähiges Tafelbild.',
+      'Es wurden http(s)-URLs im Markup oder CSS gefunden — Ziel ist ein möglichst offline-fähiges Board.',
     );
   }
   if (/javascript:/i.test(html || '')) {

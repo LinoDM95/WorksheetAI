@@ -28,6 +28,22 @@ class SanitizeCssJsTests(SimpleTestCase):
         self.assertNotIn('evil.com', out)
         self.assertIn('external url removed', out)
 
+    def test_sanitize_css_keeps_generated_assets_url(self) -> None:
+        css = 'a{background:url(/board-generated-assets/abc-123.svg)}'
+        out, _notes = san.sanitize_css(css)
+        self.assertIn('/board-generated-assets/abc-123.svg', out)
+
+    def test_sanitize_html_strips_external_img_src(self) -> None:
+        raw = '<img src="https://evil.com/p.png" alt="x">'
+        out, notes = san.sanitize_html_fragment(raw)
+        self.assertNotIn('evil.com', out)
+        self.assertTrue(any('externe' in n.lower() for n in notes))
+
+    def test_sanitize_html_keeps_generated_assets_img_src(self) -> None:
+        raw = '<img src="/board-generated-assets/abc.svg" alt="ok">'
+        out, _notes = san.sanitize_html_fragment(raw)
+        self.assertIn('/board-generated-assets/abc.svg', out)
+
     def test_validate_js_rejects_fetch(self) -> None:
         errs = san.validate_javascript("fetch('/api')")
         self.assertTrue(any('fetch' in e.lower() for e in errs))

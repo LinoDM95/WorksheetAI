@@ -1,6 +1,6 @@
 """Mock-Provider für lokale Entwicklung — keine echte KI.
 
-Free-HTML5-Tafelbilder werden aus drei Templates ausgewählt:
+Free-HTML5-Boards werden aus drei Templates ausgewählt:
 - Wasserkreislauf (Sachunterricht / Naturwissenschaft, Grundschule + Sek I)
 - Europa im Zweiten Weltkrieg (Geschichte, Sek I/II) — schematisch
 - Mathe-Zahlenstrahl mit Quiz (Mathe, Grundschule + Sek I)
@@ -14,6 +14,23 @@ from typing import Any
 
 
 class MockWorksheetProvider:
+    def _stamp_usage(self, step_type: str, *, input_approx: int, output_approx: int) -> None:
+        try:
+            from apps.boards.services.pipeline_ai_meter import route_provider_usage
+
+            route_provider_usage(
+                provider_self=self,
+                step_type=step_type,
+                provider_label='mock',
+                model_name='mock',
+                input_tokens=max(0, input_approx),
+                output_tokens=max(0, output_approx),
+                success=True,
+                metadata={'token_source': 'approx_mock'},
+            )
+        except Exception:
+            pass
+
     def review_worksheet(self, content, request, page_setup, pattern):
         return content
 
@@ -70,6 +87,11 @@ class MockWorksheetProvider:
             ca = self._alignment_from_curriculum(payload)
             if ca:
                 out['curriculum_alignment'] = ca
+            self._stamp_usage(
+                'worksheet_generation',
+                input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
+                output_approx=max(8, int(len(json.dumps(out, default=str)) / 4)),
+            )
             return out
         out = {
             'title': topic,
@@ -100,6 +122,11 @@ class MockWorksheetProvider:
         ca = self._alignment_from_curriculum(payload)
         if ca:
             out['curriculum_alignment'] = ca
+        self._stamp_usage(
+            'worksheet_generation',
+            input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
+            output_approx=max(8, int(len(json.dumps(out, default=str)) / 4)),
+        )
         return out
 
     def regenerate_page(self, payload):
@@ -114,7 +141,13 @@ class MockWorksheetProvider:
                 'Mit echtem Gemini wird die Seite vollständig neu strukturiert.'
             ),
         })
-        return {'page_label': old.get('page_label', '') or '', 'blocks': blocks}
+        result = {'page_label': old.get('page_label', '') or '', 'blocks': blocks}
+        self._stamp_usage(
+            'worksheet_page_regenerate',
+            input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
+            output_approx=max(8, int(len(json.dumps(result, default=str)) / 4)),
+        )
+        return result
 
     # ----------------------------- Free HTML5 -----------------------------
 
@@ -122,12 +155,24 @@ class MockWorksheetProvider:
         p = payload or {}
         template_key = self._choose_template(p)
         if template_key == 'water_cycle':
-            return _MOCK_WATER_CYCLE
-        if template_key == 'ww2_map':
-            return _MOCK_WW2_MAP
-        return _MOCK_NUMBER_LINE
+            out = _MOCK_WATER_CYCLE
+        elif template_key == 'ww2_map':
+            out = _MOCK_WW2_MAP
+        else:
+            out = _MOCK_NUMBER_LINE
+        self._stamp_usage(
+            'code_generation',
+            input_approx=max(32, int(len(json.dumps(p, default=str)) / 4)),
+            output_approx=max(32, int(len(json.dumps(out, default=str)) / 4)),
+        )
+        return out
 
-    def revise_free_html_board(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def revise_free_html_board(
+        self,
+        payload: dict[str, Any],
+        *,
+        usage_step: str = 'revision',
+    ) -> dict[str, Any]:
         p = payload or {}
         note = str(p.get('user_prompt') or '').strip()[:160]
         html = str(p.get('html') or '<div class="free-board"><p>Leer</p></div>')
@@ -150,7 +195,7 @@ class MockWorksheetProvider:
             else:
                 html += badge
 
-        return {
+        result = {
             'title': 'Überarbeitet (Mock)',
             'description': 'Mock-Revision auf bestehenden Code angewendet.',
             'html': html,
@@ -163,6 +208,12 @@ class MockWorksheetProvider:
             'used_assets': used_assets,
             'used_datasets': used_datasets,
         }
+        self._stamp_usage(
+            usage_step,
+            input_approx=max(16, int(len(json.dumps(p, default=str)) / 4)),
+            output_approx=max(16, int(len(json.dumps(result, default=str)) / 4)),
+        )
+        return result
 
     def generate_block_contents(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Bausteinmodus-Filling (Mock): liefert leeres Mapping → Heuristik greift.
@@ -171,6 +222,39 @@ class MockWorksheetProvider:
         Im Mock überlassen wir die Inhalte bewusst der deterministischen Heuristik
         in ``content_filling.py``, damit lokale Tests reproduzierbar sind.
         """
+        in_approx = max(8, int(len(json.dumps(payload or {}, default=str)) / 4))
+        self._stamp_usage('blocks_slot_fill', input_approx=in_approx, output_approx=4)
+        return {}
+
+    def call_with_model(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        response_schema: dict | None = None,
+        temperature: float = 0.3,
+        max_output_tokens: int | None = None,
+        trace_step: str | None = None,
+    ) -> dict[str, Any]:
+        """Mock-Pendant zu :py:meth:`GeminiWorksheetProvider.call_with_model`.
+
+        Liefert ein leeres Dict — die aufrufenden Pipeline-Services haben
+        Heuristik-Fallbacks, die lokal/offline zuverlässig greifen.
+        """
+        if trace_step:
+            from apps.boards.services.pipeline_ai_meter import route_provider_usage
+
+            approx_in = max(0, int(len(prompt) / 4))
+            route_provider_usage(
+                provider_self=self,
+                step_type=trace_step,
+                provider_label='mock',
+                model_name=model or 'mock',
+                input_tokens=approx_in,
+                output_tokens=2,
+                success=True,
+                metadata={'token_source': 'approx_mock', 'note': 'mock_response'},
+            )
         return {}
 
     def repair_free_html_board(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -185,7 +269,7 @@ class MockWorksheetProvider:
             'mit minimalen Änderungen.\n\nFehlerliste:\n'
             + err_text
         )
-        return self.revise_free_html_board({**p, 'user_prompt': user_prompt})
+        return self.revise_free_html_board({**p, 'user_prompt': user_prompt}, usage_step='repair')
 
     @staticmethod
     def _choose_template(p: dict[str, Any]) -> str:

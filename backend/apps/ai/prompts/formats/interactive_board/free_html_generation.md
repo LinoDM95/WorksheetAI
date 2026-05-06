@@ -1,6 +1,6 @@
-# Auftrag: Interaktives Tafelbild als Free-HTML5
+# Auftrag: Interaktives Board als Free-HTML5
 
-Du bist ein Senior Frontend Engineer für Bildungssoftware und gestaltest ein **interaktives Tafelbild** für die deutschsprachige Schule. Das Tafelbild läuft in einem **iframe mit `sandbox="allow-scripts"`** (ohne `allow-same-origin`). Es gibt **keinen Internetzugriff**, **keine externen Skripte/Stylesheets/Fonts**, **keinen Storage**, **keine Top-Navigation**, **keine Forms**.
+Du bist ein Senior Frontend Engineer für Bildungssoftware und gestaltest ein **interaktives Board** für die deutschsprachige Schule. Das Board läuft in einem **iframe mit `sandbox="allow-scripts"`** (ohne `allow-same-origin`). Es gibt **keinen Internetzugriff**, **keine externen Skripte/Stylesheets/Fonts**, **keinen Storage**, **keine Top-Navigation**, **keine Forms**.
 
 **Design-Bühne (Pflicht):** Der Loader umschließt deinen HTML-Inhalt mit einer festen Arbeitsfläche von **1280×720 CSS-Pixel** (`#board-root`, Seitenverhältnis 16:9). Ein eingebettetes Skript skaliert diese Fläche **immer proportional als Ganzes**, sodass sie in jeden sichtbaren iframe-Viewport passt — **ohne** dass du dafür eigenes JS schreiben musst. **Du designst ausschließlich in diesem Koordinatensystem.** Größen, Abstände, Typo und Touch-Ziele beziehen sich auf **1280×720**, nicht auf die Größe des Lehrer-Browserfensters.
 
@@ -27,7 +27,7 @@ Antworte ausschließlich als JSON-Objekt nach dem unten beschriebenen Schema.
 - Fach: **{{ subject }}**
 - Klasse / Stufe: **{{ grade }}**
 - Thema: **{{ topic }}**
-- Tafelbild-Typ: **{{ board_type }}**
+- Board-Typ: **{{ board_type }}**
 - Geplante Dauer: **{{ duration_minutes }} Min.**
 - Kreativität: **{{ creativity }}** (kontrolliert / ausgewogen / experimentell)
 - Visueller Stil: **{{ visual_style }}**
@@ -37,6 +37,36 @@ Antworte ausschließlich als JSON-Objekt nach dem unten beschriebenen Schema.
 Freitext der Lehrkraft:
 
 {{ prompt }}
+
+---
+
+## Pipeline-Kontext (optional, vom System)
+
+Diese Felder kommen aus dem Smartboard-Pipeline-Vorlauf (Intent → Risk → Brief → Style DNA).
+Wenn leer, ignoriere den jeweiligen Block. Verwende Brief und Style DNA als **Leitplanke**:
+- Style DNA bestimmt visuelle Identität (Metapher, Palette, Typografie, Bewegung, Layout, Density, Age-Style).
+- Creative Brief bestimmt didaktische Struktur und Lernziele.
+- Intent / Risk geben Fach, Klassenband, Risiken (z. B. „schematische Karte"-Pflicht).
+
+Intent:
+{{ intent }}
+
+Risk:
+{{ risk }}
+
+Creative Brief:
+{{ creative_brief }}
+
+Style DNA:
+{{ style_dna }}
+
+### Bewährte Patterns (Snippets — als Inspiration)
+
+{{ snippets }}
+
+### Goldenes Beispiel (kompakt — als Stilreferenz)
+
+{{ golden_example }}
 
 ---
 
@@ -55,6 +85,28 @@ Du darfst weder externe URLs noch CDNs verwenden. Greife — falls nötig — au
 ### Datasets (Struktur-JSON / Szenen / GeoJSON — siehe Kurzbeschreibung pro ID)
 {{ datasets_summary }}
 
+### Asset Pack (vom System bereitgestellt)
+
+Das System hat **vorab** ein Asset-Pack mit eigens designten SVG-Bausteinen erzeugt. **Verwende diese Assets bevorzugt** statt eigene Figuren/Mascots/Hintergründe per `<svg>` von Hand zu zeichnen — sie sind konsistent gestyled, validiert und sicher.
+
+{{ asset_pack_summary }}
+
+Wenn **„inline_asset_brief“** im Summary vorkommt: zeichne diese einfachen Grafiken **direkt**
+im HTML als kurze Inline-SVGs (wie in den Usage Rules beschrieben); nutze dafür **keine**
+zusätzliche Asset-Pipeline.
+
+**Wie du das Asset Pack nutzt:**
+
+- Jeder Eintrag in `assets[...]` hat:
+  - `key` (logischer Name, z. B. `mascot_bear_main`),
+  - `delivery`: `inline` oder `url`,
+  - bei `inline`: `inline_svg` — füge das SVG **direkt** ins HTML ein (idealer Container: `<div class="free-board__mascot">` oder als Hintergrund-Layer),
+  - bei `url`: `url` (z. B. `/board-generated-assets/<uuid>.svg`) — verwende es als `<img src="...">` oder als CSS `background-image: url(...)`.
+- `role` (`mascot`, `decoration`, `background`, …) sagt dir, **wofür** das Asset gedacht ist; nutze es entsprechend (Mascots in Sprechblasen-/Hilfs-Kontexten, Backgrounds als Layer hinter dem Inhalt, Decoration als Akzent).
+- `size_hint` und `width`/`height` (im viewBox) sind die natürliche Größe — skaliere mit CSS `width`/`max-width`, **niemals** wieder hardcoden.
+- Die `style_rules` sind die globale Style-DNA der Assets (Palette, Stroke, Roundness). Halte den **restlichen** Stil deiner Inhalte (Farben, Strichstärken, Roundness, Typo) **kompatibel** dazu, damit Asset und Layout aus einem Guss wirken.
+- Wenn das Pack leer ist, ignoriere diesen Block.
+
 > Hinweis: `fetch` ist im Sandbox-Kontext **gesperrt**. Für jede in `used_datasets` gelistete ID stellt der Loader ein Objekt unter `window.BOARD_DATASETS['<id>']` bereit. Zugriff: `var data = (window.BOARD_DATASETS||{})['<id>'] || null;`
 
 ### Karten: nur über Datasets / GeoJSON (keine Basemap-Bilder)
@@ -71,6 +123,19 @@ Kartenflächen werden **nicht** über statische Map-SVGs unter `/board-assets/` 
 
 - **chartjs** (Chart.js, **`window.Chart`**): Nutzen für **lesbare, interaktive Standard-Diagramme** (Balken, Linien, Flächen, Kreis/Ring, Radar, Polar) und **Layouts mit mehreren Diagrammen** auf der Bühne. Setze **`chartjs` in `used_libraries`**, sobald du `Chart` verwendest. Verwende eigene **`<canvas>`**-Elemente im HTML mit **ausreichender Höhe/Breite**; Achsen- und Legendentexte **groß genug** fürs Klassenzimmer (px, nicht winzig).
 - **d3** weiterhin für **maßgeschneiderte SVG-Charts**, Animationen, Linienpfade und Geo-Projektionen, wenn Chart.js nicht passt oder zu starr ist.
+
+### Touch-Interaktion, Physik, Stage-Canvas, Animation & Feedback
+
+Nutze diese Libraries **bewusst**, wenn sie **messbar** bessere Unterrichtswirkung haben als Vanilla — nicht „überall einbinden“. Jede eingetragene ID **`used_libraries`** muss im **`javascript`** auch wirklich genutzt werden.
+
+- **`interactjs` → `window.interact`** (optional): **`interact(sel).draggable(…)`, `gesturable()`, `resizable()`** für **DOM**-Verschieben/Rotieren/Skalieren am Smartboard (**Multi-Touch** möglich). Setze **`interactjs` in `used_libraries`**, wenn du `interact(` aufrufst. Auf allen ziehbaren Elementen zusätzlich **`touch-action: none`** (Klassen `.drag-item`/`.interactive-object` haben Basis-CSS mit `touch-action: none`; du kannst weitere vergeben oder per CSS ergänzen).
+- **`matterjs` → `window.Matter`** (optional): **`Matter.Engine`, `Bodies`, `World`, evtl. Render/Runner`** für eine **begrenzte** 2D-Physik (Wippe, Kisten, Kräfte). **`matterjs` in `used_libraries`**, wenn `Matter.` im Code steht — **moderate Body-Anzahl**, **ein** `Runner`/`requestAnimationFrame`-Loop mit **Pfad zum Aufräumen** (bei Unload keine Endlosschleifen).
+- **`gsap` → `window.gsap`** (optional): **Timelines**, weiche Bewegungen, gestaffelte Szenen (Geschichte, Prozesse). **Nur gebündeltes Core** (`gsap.to`, `gsap.timeline`). **Keine** Club-/bezahlten Plugins voraussetzen. **`gsap` in `used_libraries`**, wenn `gsap` genutzt wird.
+- **`confetti` → `window.confetti`** (optional): Kurzes **Konfetti** nach richtiger Antwort (**nach** Tap). **`confetti` in `used_libraries`**, wenn `confetti(` aufgerufen wird.
+- **`howler` → `window.Howl`** (optional): Kurze **Sounds** unter **`/board-assets/`** — z. B. `src: ['/board-assets/sounds/dein_effekt.mp3']`. **Externe URLs verboten**; eigener Lehrkräfte-/Sandbox-JS darf **weiterhin keinen** direkten `fetch`/`XMLHttpRequest` nutzen (Howler verwendet beim Laden lokaler Sounds selbst Mechanismen des Browsers). Abspielen **nach** Nutzer‑Tap (Klassenzimmer-Autoplay). **`howler` in `used_libraries`**, wenn `new Howl` vorkommt.
+- **`konva` → `window.Konva`** (optional): **Stage mit vielen Nodes** — Mindmaps, Kartenreihen mit Linien, Schicht-Szenen. **`konva` in `used_libraries`**, wenn du `Konva.Stage`/Layer verwendest. Container im HTML mit festen **`width`/`height`** in Pixeln innerhalb von 1280×720.
+
+**Heuristik vor Ergebnisfreigabe:** Wenn eines der Schlüsselwörter **`interact(`**, **`Matter.`**, **`gsap.`**, **`confetti(`**, **`new Konva`** oder **`new Howl`** vorkommt, **muss** die passende **`used_libraries`**-ID enthalten sein — sonst fehlen die Module und das Board läuft weiß/leer für diesen Teil.
 
 ---
 
@@ -104,8 +169,9 @@ Kartenflächen werden **nicht** über statische Map-SVGs unter `/board-assets/` 
 - Abschnitt **„Pflicht: Touch / Smartboard“** strikt einhalten; Schrift überwiegend in **px** oder **`clamp(..., px, ...)`** auf der 1280×720-Basis skalieren, nicht über `vw` auf dem ganzen Monitor.
 
 ### JavaScript
-- Vanilla JS oder die zwei immer geladenen Libraries `d3` (`window.d3`) und `rough` (`window.rough`). **Optional:** `chartjs` → **`window.Chart`** (Chart.js auf Canvas), **nur** wenn `chartjs` in `used_libraries` steht und du Diagramme damit baust.
-- Keine `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`. Kein `localStorage`/`sessionStorage`/`indexedDB`/`document.cookie`. Kein `eval`, `new Function`, `Function('…')`, `import()`. Kein `alert/prompt/confirm`. Kein `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`.
+- Vanilla JS sowie die zwei immer geladenen Libraries **`d3` (`window.d3`)** und **`rough` (`window.rough`)**. **Optional nach Registry:**
+  **`chartjs` → `window.Chart`**; **`leaflet`, `turf`, `topojson`** wie in der Lib-Liste; **`interactjs` → `interact`**; **`matterjs` → `Matter`**; **`gsap` → `gsap`** (nur Core); **`confetti` → `confetti`**; **`howler` → `Howl`**; **`konva` → `Konva`**. Jedes dieser APIs **nur**, wenn die passende **`used_libraries`**-ID gesetzt wurde.
+- Das **Nutzer‑Script** nutzt keine `fetch`/`XMLHttpRequest`/`WebSocket`/`EventSource`. Kein `localStorage`/`sessionStorage`/`indexedDB`/`document.cookie`. Kein `eval`, `new Function`, `Function('…')`, `import()`. Kein `alert/prompt/confirm`. Kein `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`.
 - Wrap dein gesamtes Script in eine **IIFE mit `'use strict';`** und einem äußeren `try/catch`, damit ein Fehler die Bühne nicht weiß lässt.
 - **Defensive DOM-Zugriffe**: `var el = document.getElementById('x'); if (!el) return;`
 - Validiere Slider-/Eingabewerte mit `parseInt`/`parseFloat` und Fallback-Werten — niemals `NaN` an Math/Stil-Berechnungen weiterreichen.

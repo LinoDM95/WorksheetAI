@@ -219,9 +219,18 @@ def _build_inputs(source: CurriculumSource) -> tuple[str, str, int]:
     return toc_text[:35_000], sample_text, total
 
 
-def _gemini_json(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+def _gemini_json(
+    prompt: str,
+    schema: dict[str, Any],
+    *,
+    log_user=None,
+    log_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     from google import genai
     from google.genai import types
+
+    from apps.ai.gemini_model_fallback import generate_content_first_resolved_model
+    from apps.boards.services.pipeline_ai_meter import log_standalone_gemini_usage
 
     api_key = getattr(settings, 'GEMINI_API_KEY', '') or ''
     if not api_key.strip():
@@ -234,7 +243,21 @@ def _gemini_json(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         response_mime_type='application/json',
         response_schema=schema,
     )
-    resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
+    resp, resolved_model = generate_content_first_resolved_model(
+        client,
+        primary_model=model,
+        contents=prompt,
+        config=cfg,
+    )
+    extra = dict(log_metadata) if log_metadata else {}
+    log_standalone_gemini_usage(
+        resp=resp,
+        model=resolved_model,
+        step_type='curriculum_auto_discovery',
+        user=log_user,
+        fallback_char_source=prompt,
+        metadata_extra=extra or None,
+    )
     text = resp.text or '{}'
     return json.loads(text)
 
@@ -466,13 +489,19 @@ def _toc_subject_line(toc_rows: list[dict[str, Any]]) -> str:
     return '\n'.join(lines) if lines else '(keine TOC-Fächer extrahiert — nur Stichproben nutzen)'
 
 
-def _gemini_with_retries(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+def _gemini_with_retries(
+    prompt: str,
+    schema: dict[str, Any],
+    *,
+    log_user=None,
+    log_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     attempts = 0
     last_err: str | None = None
     while attempts <= _retry_limit():
         attempts += 1
         try:
-            return _gemini_json(prompt, schema)
+            return _gemini_json(prompt, schema, log_user=log_user, log_metadata=log_metadata)
         except json.JSONDecodeError as exc:
             last_err = f'JSON-Parsing fehlgeschlagen: {exc}'
             logger.warning('Auto-Discovery JSON parse failed (attempt %s): %s', attempts, exc)
@@ -562,7 +591,15 @@ class CurriculumAutoDiscoveryService:
                     .replace('{{TOC_TEXT}}', toc_text)
                 )
                 try:
-                    toc_raw = _gemini_with_retries(toc_prompt, _TOC_SUBJECTS_SCHEMA)
+                    toc_raw = _gemini_with_retries(
+                        toc_prompt,
+                        _TOC_SUBJECTS_SCHEMA,
+                        log_user=getattr(source, 'created_by', None),
+                        log_metadata={
+                            'curriculum_source_id': str(source.pk),
+                            'phase': 'toc_subjects',
+                        },
+                    )
                     toc_rows = _parse_toc_subjects(toc_raw)
                 except Exception as exc:
                     logger.warning('TOC-Fächerauszug fehlgeschlagen, fallback ohne TOC-Liste: %s', exc)
@@ -580,7 +617,15 @@ class CurriculumAutoDiscoveryService:
                     .replace('{{TOC_TEXT}}', toc_text)
                     .replace('{{SAMPLE_TEXT}}', sample_text)
                 )
-                raw_main = _gemini_with_retries(prompt_main, _DISCOVERY_RESPONSE_SCHEMA)
+                raw_main = _gemini_with_retries(
+                    prompt_main,
+                    _DISCOVERY_RESPONSE_SCHEMA,
+                    log_user=getattr(source, 'created_by', None),
+                    log_metadata={
+                        'curriculum_source_id': str(source.pk),
+                        'phase': 'main_discover',
+                    },
+                )
                 accumulated.extend(_entries_from_raw(raw_main, total))
 
                 missing = _missing_toc_rows(toc_rows, accumulated)
@@ -605,7 +650,16 @@ class CurriculumAutoDiscoveryService:
                         .replace('{{MISSING_BLOCK}}', missing_block or '(keine)')
                         .replace('{{FOCUS_TEXT}}', focus or toc_text[:8000])
                     )
-                    raw_fill = _gemini_with_retries(prompt_fill, _DISCOVERY_RESPONSE_SCHEMA)
+                    raw_fill = _gemini_with_retries(
+                        prompt_fill,
+                        _DISCOVERY_RESPONSE_SCHEMA,
+                        log_user=getattr(source, 'created_by', None),
+                        log_metadata={
+                            'curriculum_source_id': str(source.pk),
+                            'phase': 'fill_missing',
+                            'fill_round': fill_rounds_run,
+                        },
+                    )
                     accumulated.extend(_entries_from_raw(raw_fill, total))
                     missing = _missing_toc_rows(toc_rows, accumulated)
                     meta_missing_snapshots.append([m['name'] for m in missing])

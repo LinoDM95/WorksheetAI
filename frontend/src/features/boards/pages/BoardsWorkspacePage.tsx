@@ -27,7 +27,6 @@ import { Alert, Button, EmptyState, IconButton, SearchInput } from '../../../com
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
-  BOARDS_LIBRARY_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
 import {
@@ -41,6 +40,8 @@ import {
   updateBoardFolder,
 } from '../boardsApi';
 import { cn } from '../../../lib/cn';
+import { LG_MEDIA_QUERY, useMediaQuery } from '../../../lib/useMediaQuery';
+import { MobileWorkspaceTabs, type WorkspaceMobileTab } from '../../../components/shell/MobileWorkspaceTabs';
 import type { BoardFolderDto, BoardListItem } from '../types';
 import { BoardDetailPage } from './BoardDetailPage';
 import { NewBoardModal } from '../components/NewBoardModal';
@@ -115,9 +116,9 @@ export function BoardExplorerPlaceholder() {
     <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-3 bg-[var(--color-bg-app)] p-8 text-center lg:min-h-0">
       <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-8 py-10 shadow-sm">
         <Presentation className="mx-auto mb-3 h-10 w-10 text-slate-300" aria-hidden />
-        <p className="text-sm font-semibold text-slate-800">Tafelbild auswählen</p>
+        <p className="text-sm font-semibold text-slate-800">Board auswählen</p>
         <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-500">
-          Klicke links auf ein Tafelbild oder nutze den Rechtsklick für dieselben Optionen wie in der Ansicht oben
+          Klicke links auf ein Board oder nutze den Rechtsklick für dieselben Optionen wie in der Ansicht oben
           (Vorschau, Bibliothek, Schüler-Link, Duplizieren, Löschen).
         </p>
       </div>
@@ -130,7 +131,7 @@ export function BoardDetailPageOutlet() {
   if (!id) {
     return (
       <div className="flex min-h-[12rem] flex-1 items-center justify-center text-sm text-slate-500 lg:min-h-0">
-        Tafelbild wird geladen …
+        Board wird geladen …
       </div>
     );
   }
@@ -165,6 +166,13 @@ export function BoardsWorkspacePage() {
   }, [location.pathname]);
 
   const [ungroupedCollapsed, setUngroupedCollapsed] = useState(false);
+  const isLg = useMediaQuery(LG_MEDIA_QUERY);
+  const [mobileTab, setMobileTab] = useState<WorkspaceMobileTab>('list');
+
+  useEffect(() => {
+    if (isLg) return;
+    setMobileTab(selectedBoardId ? 'content' : 'list');
+  }, [selectedBoardId, isLg]);
 
   const { data: items = [], isPending, isError } = useQuery({
     queryKey: BOARDS_LIST_QUERY_KEY,
@@ -313,7 +321,7 @@ export function BoardsWorkspacePage() {
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(variables.id) });
       if (variables.library_public !== undefined) {
-        queryClient.invalidateQueries({ queryKey: BOARDS_LIBRARY_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
       }
     },
   });
@@ -353,7 +361,7 @@ export function BoardsWorkspacePage() {
   });
 
   const handleDeleteBoard = (item: BoardListItem) => {
-    if (!window.confirm(`Tafelbild „${item.title ?? 'Ohne Titel'}" wirklich löschen?`)) return;
+    if (!window.confirm(`Board „${item.title ?? 'Ohne Titel'}" wirklich löschen?`)) return;
     deleteMutation.mutate(item.id);
   };
 
@@ -420,7 +428,7 @@ export function BoardsWorkspacePage() {
     const parts = [
       `Ordner „${label}" wirklich löschen?`,
       '',
-      'Alle Tafelbilder in diesem Ordner und in allen Unterordnern verlieren die Ordnerzuordnung und erscheinen wieder unter „Ohne Ordner".',
+      'Alle Boards in diesem Ordner und in allen Unterordnern verlieren die Ordnerzuordnung und erscheinen wieder unter „Ohne Ordner".',
     ];
     if (subfolderTotal > 0) {
       parts.push(
@@ -430,8 +438,8 @@ export function BoardsWorkspacePage() {
     parts.push(
       '',
       boardTotal > 0
-        ? `Betroffene Tafelbilder (Summe inkl. Unterordner): ${boardTotal}.`
-        : 'In diesem Teil der Galerie sind derzeit keine Tafelbilder zugeordnet.',
+        ? `Betroffene Boards (Summe inkl. Unterordner): ${boardTotal}.`
+        : 'In diesem Teil der Galerie sind derzeit keine Boards zugeordnet.',
       '',
       'Fortfahren?',
     );
@@ -529,7 +537,7 @@ export function BoardsWorkspacePage() {
         <IconButton
           variant="danger"
           size="sm"
-          className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+          className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/row:opacity-100 focus-visible:opacity-100"
           aria-label={`„${titleLabel}" löschen`}
           title="Löschen"
           disabled={deleteMutation.isPending}
@@ -546,36 +554,25 @@ export function BoardsWorkspacePage() {
   };
 
   return (
-    <div className="flex min-h-full w-full flex-1 flex-col lg:flex-row">
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+      <MobileWorkspaceTabs
+        value={mobileTab}
+        onChange={setMobileTab}
+        contentDisabled={!selectedBoardId}
+      />
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <aside
         className={cn(
-          'flex max-h-[44vh] shrink-0 flex-col border-slate-200 bg-[var(--color-bg-card)] lg:max-h-none lg:w-[min(100%,300px)] lg:max-w-[340px] lg:border-r',
-          'border-b lg:border-b-0',
+          'flex shrink-0 flex-col border-slate-200 bg-[var(--color-bg-card)] lg:w-[min(100%,300px)] lg:max-w-[340px] lg:border-r lg:border-b-0',
+          'border-b',
           draggingBoardId != null && 'select-none',
+          !isLg && mobileTab !== 'list' && 'hidden',
+          !isLg && mobileTab === 'list' && 'min-h-0 flex-1',
+          'lg:flex lg:max-h-none',
         )}
       >
         <div className="shrink-0 space-y-2 border-b border-slate-100 p-2">
-          <div className="flex flex-nowrap gap-1.5">
-            <Button
-              as="link"
-              to="/app/boards/library"
-              variant="secondary"
-              size="sm"
-              className="min-w-0 flex-1"
-            >
-              <span className="truncate">Tafelbibliothek</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              leftIcon={<Plus size={14} aria-hidden />}
-              className="min-w-0 shrink-0"
-              onClick={() => setNewBoardOpen(true)}
-            >
-              Neu
-            </Button>
-          </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 sm:flex-nowrap">
             <IconButton
               type="button"
               variant="secondary"
@@ -588,12 +585,21 @@ export function BoardsWorkspacePage() {
             >
               <FolderPlus size={18} aria-hidden />
             </IconButton>
+            <Button
+              type="button"
+              size="sm"
+              leftIcon={<Plus size={14} aria-hidden />}
+              className="shrink-0"
+              onClick={() => setNewBoardOpen(true)}
+            >
+              Neu
+            </Button>
             <SearchInput
               placeholder="Titel, Fach, Thema …"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              aria-label="Tafelbilder durchsuchen"
-              containerClassName="min-w-0 flex-1"
+              aria-label="Boards durchsuchen"
+              containerClassName="min-w-0 flex-1 basis-[min(100%,12rem)] sm:basis-auto"
             />
           </div>
         </div>
@@ -621,7 +627,7 @@ export function BoardsWorkspacePage() {
         )}
         {isError && (
           <div className="shrink-0 px-2">
-            <Alert tone="error">Tafelbilder konnten nicht geladen werden.</Alert>
+            <Alert tone="error">Boards konnten nicht geladen werden.</Alert>
           </div>
         )}
         {deleteMutation.isError && (
@@ -645,8 +651,8 @@ export function BoardsWorkspacePage() {
             <p className="px-2 text-sm text-slate-500">Lade …</p>
           ) : items.length === 0 ? (
             <EmptyState
-              title="Noch keine Tafelbilder"
-              description="Lege ein interaktives Tafelbild über „Neu“ an."
+              title="Noch keine Boards"
+              description="Lege ein interaktives Board über „Neu“ an."
               action={
                 <Button
                   type="button"
@@ -654,7 +660,7 @@ export function BoardsWorkspacePage() {
                   leftIcon={<Plus size={14} aria-hidden />}
                   onClick={() => setNewBoardOpen(true)}
                 >
-                  Neues Tafelbild
+                  Neues Board
                 </Button>
               }
             />
@@ -677,7 +683,7 @@ export function BoardsWorkspacePage() {
                   Rechtsklick für Optionen. Zum Sortieren das{' '}
                   <span className="font-semibold text-slate-500">Griff-Symbol</span> links neben dem Titel greifen und auf
                   einen Ordner ziehen — der Titel-Link dient nur zum Öffnen, damit Klick und Ziehen sich nicht stören.
-                  Neu erzeugte, aus der Tafelbibliothek übernommene oder duplizierte Tafelbilder sind grün hinterlegt,
+                  Neu erzeugte, aus der Bibliothek übernommene oder duplizierte Boards sind grün hinterlegt,
                   bis du sie einmal in der Bearbeitung geöffnet hast.
                 </p>
               </div>
@@ -727,7 +733,7 @@ export function BoardsWorkspacePage() {
                         <span className="min-w-0 flex-1 truncate">Ohne Ordner</span>
                         <span
                           className="shrink-0 tabular-nums text-[11px] text-slate-400"
-                          title="Tafelbilder ohne Ordnerzuordnung (gefiltert)"
+                          title="Boards ohne Ordnerzuordnung (gefiltert)"
                         >
                           {ungroupedBoards.length}
                         </span>
@@ -771,9 +777,15 @@ export function BoardsWorkspacePage() {
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0">
+      <section
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0',
+          !isLg && mobileTab !== 'content' && 'hidden',
+        )}
+      >
         <Outlet />
       </section>
+      </div>
 
       <NewBoardModal
         open={newBoardOpen}
@@ -954,7 +966,7 @@ const FolderBranch = ({
                   <span className="min-w-0 flex-1 truncate">{f.name}</span>
                   <span
                     className="shrink-0 tabular-nums text-[11px] text-slate-400"
-                    title="Tafelbilder in diesem Ordner inkl. Unterordner"
+                    title="Boards in diesem Ordner inkl. Unterordner"
                   >
                     {boardTotal}
                   </span>
@@ -1062,14 +1074,14 @@ const BoardContextMenuPortal = ({
       </MenuButton>
       <MenuDivider />
       <MenuButton onClick={onToggleLibrary} disabled={flagsDisabled}>
-        {board.library_public ? 'Aus Tafelbibliothek nehmen' : 'In Tafelbibliothek veröffentlichen'}
+        {board.library_public ? 'Aus Bibliothek nehmen' : 'In Bibliothek veröffentlichen'}
       </MenuButton>
       <MenuButton onClick={onToggleStudentLink} disabled={flagsDisabled}>
         {board.student_link_enabled ? 'Schüler-Link deaktivieren' : 'Schüler-Link aktivieren'}
       </MenuButton>
       <MenuDivider />
       <MenuButton onClick={onDelete} disabled={deletePending || duplicatePending} className="text-red-600 hover:bg-red-50">
-        Tafelbild löschen …
+        Board löschen …
       </MenuButton>
     </div>,
     document.body,

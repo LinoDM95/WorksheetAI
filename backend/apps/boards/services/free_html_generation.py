@@ -1,8 +1,9 @@
-"""KI-Generierung und Revision für Free-HTML5-Tafelbilder (flat fields)."""
+"""KI-Generierung und Revision für Free-HTML5-Boards (flat fields)."""
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from django.conf import settings
 
@@ -12,6 +13,7 @@ from apps.ai.providers.mock import MockWorksheetProvider
 
 from ..models import Board, BoardRevision
 from ..owner import resolve_board_owner
+from .board_revision_head import create_initial_revision_if_absent, require_board_at_revision_head
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import (
     sanitize_free_html_bundle,
@@ -81,7 +83,7 @@ def validate_free_html_code(html: str, css: str, javascript: str) -> tuple[bool,
 
 
 class FreeHtmlBoardGenerationService:
-    """Erzeugt ein Free-HTML5-Tafelbild aus Lehrkraft-Eingaben."""
+    """Erzeugt ein Free-HTML5-Board aus Lehrkraft-Eingaben."""
 
     def __init__(self, user, payload: dict[str, Any]):
         self.user = resolve_board_owner(user)
@@ -104,65 +106,159 @@ class FreeHtmlBoardGenerationService:
         return bundle
 
     def run(self) -> Board:
+        from .pipeline_ai_meter import generation_meter_context
+
         tier = self.payload.get('ai_quality_tier')
         tier_s = tier.strip().lower() if isinstance(tier, str) else None
         provider = _select_provider(ai_quality_tier=tier_s)
         ai_payload = self._ai_payload()
-        try:
-            raw = provider.generate_free_html_board(ai_payload)
-        except Exception:
-            logger.exception('Free-HTML-Board-Generierung beim AI-Provider fehlgeschlagen')
-            raise
+        with generation_meter_context(user=self.user) as meter:
+            try:
+                raw = provider.generate_free_html_board(ai_payload)
+            except Exception:
+                logger.exception('Free-HTML-Board-Generierung beim AI-Provider fehlgeschlagen')
+                raise
 
-        if not isinstance(raw, dict):
-            raw = {}
-        ctx = build_resource_context()
-        context_hint = (
-            f'Fach: {self.payload.get("subject") or "—"}\n'
-            f'Thema: {self.payload.get("topic") or "—"}\n'
-            f'Auftrag (Auszug): {str(self.payload.get("prompt") or "")[:500]}'
-        )
-        last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
-            provider,
-            initial_raw=raw,
-            resource_ctx=ctx,
-            context_hint=context_hint,
-            visual_qa=_visual_qa_for_pipeline(),
-            document_base_href=None,
-        )
+            if not isinstance(raw, dict):
+                raw = {}
+            ctx = build_resource_context()
+            context_hint = (
+                f'Fach: {self.payload.get("subject") or "—"}\n'
+                f'Thema: {self.payload.get("topic") or "—"}\n'
+                f'Auftrag (Auszug): {str(self.payload.get("prompt") or "")[:500]}'
+            )
+            last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
+                provider,
+                initial_raw=raw,
+                resource_ctx=ctx,
+                context_hint=context_hint,
+                visual_qa=_visual_qa_for_pipeline(),
+                document_base_href=None,
+            )
 
-        title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Tafelbild')[:255]
-        desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
+            title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
+            desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
-        gen_input = self._sanitized_input()
-        gen_input['validation_repair_trace'] = repair_trace
-        gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
+            gen_input = self._sanitized_input()
+            gen_input['validation_repair_trace'] = repair_trace
+            gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
 
-        board = Board.objects.create(
-            owner=self.user,
-            title=title,
-            description=desc,
-            subject=str(self.payload.get('subject') or '')[:120],
-            grade=str(self.payload.get('grade') or '')[:60],
-            topic=str(self.payload.get('topic') or '')[:220],
-            board_type=str(self.payload.get('board_type') or 'interactive_board')[:40],
-            status='generated' if ok else 'draft',
-            html=bundle['html'],
-            css=bundle['css'],
-            javascript=bundle['javascript'],
-            teacher_notes=bundle['teacher_notes'],
-            usage_instructions=bundle['usage_instructions'],
-            warnings=bundle['warnings'],
-            used_libraries=bundle['used_libraries'],
-            used_assets=bundle['used_assets'],
-            used_datasets=bundle['used_datasets'],
-            generation_prompt=str(self.payload.get('prompt') or '')[:8000],
-            generation_input=gen_input,
-            ai_raw_output=last_raw,
-            validation_errors=verrs,
-            validation_warnings=vwarns,
-        )
+            board = Board.objects.create(
+                owner=self.user,
+                title=title,
+                description=desc,
+                subject=str(self.payload.get('subject') or '')[:120],
+                grade=str(self.payload.get('grade') or '')[:60],
+                topic=str(self.payload.get('topic') or '')[:220],
+                board_type=str(self.payload.get('board_type') or 'interactive_board')[:40],
+                status='generated' if ok else 'draft',
+                html=bundle['html'],
+                css=bundle['css'],
+                javascript=bundle['javascript'],
+                teacher_notes=bundle['teacher_notes'],
+                usage_instructions=bundle['usage_instructions'],
+                warnings=bundle['warnings'],
+                used_libraries=bundle['used_libraries'],
+                used_assets=bundle['used_assets'],
+                used_datasets=bundle['used_datasets'],
+                generation_prompt=str(self.payload.get('prompt') or '')[:8000],
+                generation_input=gen_input,
+                ai_raw_output=last_raw,
+                validation_errors=verrs,
+                validation_warnings=vwarns,
+            )
+            meter.flush_logs_to_board(board)
+            create_initial_revision_if_absent(board, user=self.user, prompt='(Erstgenerierung)')
         return board
+
+    def iter_ndjson(self, *, serialize_board: Callable[[Board], dict[Any, Any]]):
+        """Legacy-Pfad: gleiche Logik wie ``run``, mit Fortschrittszeilen (NDJSON)."""
+        from .pipeline_ai_meter import generation_meter_context
+
+        def enc(obj: dict[str, Any]) -> bytes:
+            return (json.dumps(obj, ensure_ascii=False) + '\n').encode('utf-8')
+
+        tier = self.payload.get('ai_quality_tier')
+        tier_s = tier.strip().lower() if isinstance(tier, str) else None
+        provider = _select_provider(ai_quality_tier=tier_s)
+        ai_payload = self._ai_payload()
+        with generation_meter_context(user=self.user) as meter:
+            yield enc({
+                'event': 'phase',
+                'key': 'codegen',
+                'pct': 15,
+                'label': 'Die KI erstellt dein interaktives Board …',
+            })
+            try:
+                raw = provider.generate_free_html_board(ai_payload)
+            except Exception:
+                logger.exception('Free-HTML-Board-Generierung beim AI-Provider fehlgeschlagen')
+                raise
+
+            if not isinstance(raw, dict):
+                raw = {}
+            yield enc({
+                'event': 'phase',
+                'key': 'validate',
+                'pct': 48,
+                'label': 'Wir prüfen den Code auf Sicherheit und Struktur …',
+            })
+            ctx = build_resource_context()
+            context_hint = (
+                f'Fach: {self.payload.get("subject") or "—"}\n'
+                f'Thema: {self.payload.get("topic") or "—"}\n'
+                f'Auftrag (Auszug): {str(self.payload.get("prompt") or "")[:500]}'
+            )
+            last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
+                provider,
+                initial_raw=raw,
+                resource_ctx=ctx,
+                context_hint=context_hint,
+                visual_qa=_visual_qa_for_pipeline(),
+                document_base_href=None,
+            )
+
+            title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
+            desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
+
+            gen_input = self._sanitized_input()
+            gen_input['validation_repair_trace'] = repair_trace
+            gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
+
+            used = _normalize_used_lists(bundle)
+            yield enc({
+                'event': 'phase',
+                'key': 'save',
+                'pct': 92,
+                'label': 'Fast fertig — wir speichern …',
+            })
+            board = Board.objects.create(
+                owner=self.user,
+                title=title,
+                description=desc,
+                subject=str(self.payload.get('subject') or '')[:120],
+                grade=str(self.payload.get('grade') or '')[:60],
+                topic=str(self.payload.get('topic') or '')[:220],
+                board_type=str(self.payload.get('board_type') or 'interactive_board')[:40],
+                status='generated' if ok else 'draft',
+                html=bundle['html'],
+                css=bundle['css'],
+                javascript=bundle['javascript'],
+                teacher_notes=bundle['teacher_notes'],
+                usage_instructions=bundle['usage_instructions'],
+                warnings=bundle['warnings'],
+                used_libraries=used['used_libraries'],
+                used_assets=used['used_assets'],
+                used_datasets=used['used_datasets'],
+                generation_prompt=str(self.payload.get('prompt') or '')[:8000],
+                generation_input=gen_input,
+                ai_raw_output=last_raw,
+                validation_errors=verrs,
+                validation_warnings=vwarns,
+            )
+            meter.flush_logs_to_board(board)
+            create_initial_revision_if_absent(board, user=self.user, prompt='(Erstgenerierung)')
+            yield enc({'event': 'done', 'board': serialize_board(board)})
 
     def _ai_payload(self) -> dict[str, Any]:
         return {
@@ -185,65 +281,126 @@ class FreeHtmlBoardGenerationService:
         return {k: self.payload.get(k) for k in keep if k in self.payload}
 
 
-class FreeHtmlBoardRevisionService:
-    """Nachprompten für Free-HTML5-Boards."""
+_REVISION_MODES = {
+    'general', 'bug_fix', 'design_improve', 'touch_optimize',
+    'content_change', 'simplify', 'make_more_creative', 'performance_improve',
+}
 
-    def __init__(self, board: Board, user_prompt: str, user, *, ai_quality_tier: str | None = None):
+
+class FreeHtmlBoardRevisionService:
+    """Nachprompten für Free-HTML5-Boards.
+
+    ``revision_mode`` steuert, wie aggressiv die KI ändern darf
+    (vgl. :data:`apps.boards.models.REVISION_MODE_CHOICES`). Bei ``general`` läuft
+    der klassische Revisions-Prompt; in spezialisierten Modi wird der
+    :class:`apps.boards.services.repair_agent.RepairAgent` verwendet, damit der
+    Mode-Dispatcher greift (z. B. ``bug_fix`` minimal-invasiv).
+    """
+
+    def __init__(self, board: Board, user_prompt: str, user, *,
+                 ai_quality_tier: str | None = None, revision_mode: str | None = None):
         self.board = board
         self.user_prompt = (user_prompt or '').strip()[:4000]
         self.user = resolve_board_owner(user)
         t = (ai_quality_tier or '').strip().lower() if isinstance(ai_quality_tier, str) else None
         self._ai_quality_tier = t if t in ('ultra', 'claude', 'standard') else None
+        mode = (revision_mode or 'general').strip().lower()
+        self._revision_mode = mode if mode in _REVISION_MODES else 'general'
 
     def run(self) -> BoardRevision:
         if not self.user_prompt:
             raise ValueError('Bitte beschreibe deinen Änderungswunsch.')
 
+        require_board_at_revision_head(self.board)
+
+        from .pipeline_ai_meter import generation_meter_context
+
         provider = _select_provider(ai_quality_tier=self._ai_quality_tier)
         prev_meta = _board_metadata(self.board)
-        try:
-            raw = provider.revise_free_html_board(
-                {
-                    'html': self.board.html or '',
-                    'css': self.board.css or '',
-                    'javascript': self.board.javascript or '',
-                    'teacher_notes': self.board.teacher_notes or '',
-                    'usage_instructions': list(self.board.usage_instructions or []),
-                    'used_libraries': list(self.board.used_libraries or []),
-                    'used_assets': list(self.board.used_assets or []),
-                    'used_datasets': list(self.board.used_datasets or []),
-                    'user_prompt': self.user_prompt,
-                },
+
+        with generation_meter_context(user=self.user) as meter:
+            revision = self._run_revision_body(provider, prev_meta)
+            meter.flush_logs_to_board(self.board)
+            return revision
+
+    def _run_revision_body(self, provider, prev_meta: dict[str, Any]) -> BoardRevision:
+        # Spezialisierte Modi → RepairAgent (mode-spezifischer Prompt).
+        if self._revision_mode != 'general':
+            from .repair_agent import MODE_TO_PROMPT_KEY, RepairAgent
+
+            current_bundle = {
+                'html': self.board.html or '',
+                'css': self.board.css or '',
+                'javascript': self.board.javascript or '',
+                'teacher_notes': self.board.teacher_notes or '',
+                'usage_instructions': list(self.board.usage_instructions or []),
+                'warnings': list(self.board.warnings or []),
+                'used_libraries': list(self.board.used_libraries or []),
+                'used_assets': list(self.board.used_assets or []),
+                'used_datasets': list(self.board.used_datasets or []),
+            }
+            agent = RepairAgent(
+                provider=provider,
+                style_dna=self.board.style_dna or {},
+                creative_brief=self.board.creative_brief or {},
+                risk_analysis=self.board.risk_analysis or {},
+                context_hint=f'Nutzer-Änderungswunsch:\n{self.user_prompt}',
+                run_visual_qa=_visual_qa_for_pipeline(),
+                run_touch_audit=bool(getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True)),
             )
-        except Exception:
-            logger.exception('Free-HTML-Revision beim AI-Provider fehlgeschlagen')
-            raise
-
-        if not isinstance(raw, dict):
+            mode_key = MODE_TO_PROMPT_KEY.get(self._revision_mode, 'general_repair')
+            result = agent.run(current_bundle, mode=mode_key)
+            bundle = result.get('bundle') or current_bundle
+            ok = bool(result.get('ok'))
+            verrs = list(result.get('errors') or [])
+            vwarns = list(result.get('warnings') or [])
+            repair_trace = list(result.get('history') or [])
+            last_raw = {'mode': self._revision_mode, 'rounds': result.get('rounds')}
             raw = {}
+        else:
+            try:
+                raw = provider.revise_free_html_board(
+                    {
+                        'html': self.board.html or '',
+                        'css': self.board.css or '',
+                        'javascript': self.board.javascript or '',
+                        'teacher_notes': self.board.teacher_notes or '',
+                        'usage_instructions': list(self.board.usage_instructions or []),
+                        'used_libraries': list(self.board.used_libraries or []),
+                        'used_assets': list(self.board.used_assets or []),
+                        'used_datasets': list(self.board.used_datasets or []),
+                        'user_prompt': self.user_prompt,
+                    },
+                )
+            except Exception:
+                logger.exception('Free-HTML-Revision beim AI-Provider fehlgeschlagen')
+                raise
 
-        defaults = {
-            'html': self.board.html or '',
-            'css': self.board.css or '',
-            'javascript': self.board.javascript or '',
-            'teacher_notes': self.board.teacher_notes or '',
-            'usage_instructions': list(self.board.usage_instructions or []),
-            'warnings': list(self.board.warnings or []),
-            'used_libraries': list(self.board.used_libraries or []),
-            'used_assets': list(self.board.used_assets or []),
-            'used_datasets': list(self.board.used_datasets or []),
-        }
-        merged = {**defaults, **{k: v for k, v in raw.items() if v is not None}}
-        ctx = build_resource_context()
-        hint = self.user_prompt.strip()[:600]
-        last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
-            provider,
-            initial_raw=merged,
-            resource_ctx=ctx,
-            context_hint=f'Nutzer-Änderungswunsch:\n{hint}',
-            visual_qa=_visual_qa_for_pipeline(),
-            document_base_href=None,
-        )
+            if not isinstance(raw, dict):
+                raw = {}
+
+            defaults = {
+                'html': self.board.html or '',
+                'css': self.board.css or '',
+                'javascript': self.board.javascript or '',
+                'teacher_notes': self.board.teacher_notes or '',
+                'usage_instructions': list(self.board.usage_instructions or []),
+                'warnings': list(self.board.warnings or []),
+                'used_libraries': list(self.board.used_libraries or []),
+                'used_assets': list(self.board.used_assets or []),
+                'used_datasets': list(self.board.used_datasets or []),
+            }
+            merged = {**defaults, **{k: v for k, v in raw.items() if v is not None}}
+            ctx = build_resource_context()
+            hint = self.user_prompt.strip()[:600]
+            last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
+                provider,
+                initial_raw=merged,
+                resource_ctx=ctx,
+                context_hint=f'Nutzer-Änderungswunsch:\n{hint}',
+                visual_qa=_visual_qa_for_pipeline(),
+                document_base_href=None,
+            )
 
         previous_html = self.board.html or ''
         previous_css = self.board.css or ''
@@ -252,6 +409,7 @@ class FreeHtmlBoardRevisionService:
         revision = BoardRevision.objects.create(
             board=self.board,
             prompt=self.user_prompt,
+            revision_mode=self._revision_mode,
             previous_html=previous_html,
             previous_css=previous_css,
             previous_javascript=previous_js,
@@ -275,6 +433,8 @@ class FreeHtmlBoardRevisionService:
             ai_raw_output=last_raw,
             validation_errors=verrs,
             validation_warnings=vwarns,
+            quality_report_before=dict(self.board.quality_report or {}),
+            repair_notes=list(repair_trace or []),
             created_by=self.user,
         )
 

@@ -26,7 +26,7 @@ User Prompt
 → Browser Print/PDF
 ```
 
-Wichtig: **Für Arbeitsblätter** erzeugt die KI **kein freies HTML/CSS**, sondern ein strukturiertes JSON aus Blocks. Das System rendert dieses JSON mit geprüften HTML/CSS-Komponenten — so bleiben Layout, Ränder und Druckausgabe kontrollierbar. Für **interaktive Tafelbilder (Smartboard)** gilt ein anderes Modell: dort liefert die KI freies HTML/CSS/JS, das ausschließlich in einer iframe-Sandbox läuft (siehe Abschnitt „Interaktive Tafelbilder / Smartboard").
+Wichtig: **Für Arbeitsblätter** erzeugt die KI **kein freies HTML/CSS**, sondern ein strukturiertes JSON aus Blocks. Das System rendert dieses JSON mit geprüften HTML/CSS-Komponenten — so bleiben Layout, Ränder und Druckausgabe kontrollierbar. Für **interaktive Boards (Smartboard)** gilt ein anderes Modell: dort liefert die KI freies HTML/CSS/JS, das ausschließlich in einer iframe-Sandbox läuft (siehe Abschnitt „Interaktive Boards / Smartboard").
 
 ## Gemini
 
@@ -131,9 +131,9 @@ Ablauf:
 
 Die bestehende App `apps.curriculum` liefert weiterhin nur `GET /api/curriculum/options/` für Wizard-Dropdowns.
 
-## Interaktive Tafelbilder / Smartboard
+## Interaktive Boards / Smartboard
 
-Neben Druck-Arbeitsblättern erzeugt die App **interaktive HTML5-Tafelbilder** für Smartboard, Beamer oder PC. Lehrkräfte beschreiben Fach, Klasse, Thema und gewünschte Interaktionen — die KI baut daraus ein **vollständiges, in sich geschlossenes HTML5-Tafelbild** (HTML, CSS und JavaScript), das offline läuft und ausschließlich in einer Sandbox ausgeführt wird.
+Neben Druck-Arbeitsblättern erzeugt die App **interaktive HTML5-Boards** für Smartboard, Beamer oder PC. Lehrkräfte beschreiben Fach, Klasse, Thema und gewünschte Interaktionen — die KI baut daraus ein **vollständiges, in sich geschlossenes HTML5-Board** (HTML, CSS und JavaScript), das offline läuft und ausschließlich in einer Sandbox ausgeführt wird.
 
 > Es gibt **nur noch den freien HTML5-Modus**. Der frühere strukturierte BoardSpec-/JSON-Modus wurde komplett entfernt.
 
@@ -172,7 +172,7 @@ Fehlt eine optionale Library, überspringt das Skript sie mit Warnung; die gener
 ### Routen & UI
 
 - `GET /app/boards` — Liste; Spalte „Libraries" zeigt `used_libraries` als Chips.
-- `GET /app/boards/new` — Formular: Fach, Klasse, Thema, Dauer, **Kreativitätslevel** (kontrolliert · kreativ · experimentell), **Visueller Stil** (auto, Grundschule verspielt, Historischer Atlas, Museum, Science Lab, Math Grid, Tafel/Kreide, Dokumentarisch, frei kreativ), **Interaktionswünsche** (Schieberegler, Schritt-Buttons, Karte, Quiz, Drag&Drop usw.), Prompt-Textarea. CTA „Interaktives Tafelbild erzeugen".
+- `GET /app/boards/new` — Formular: Fach, Klasse, Thema, Dauer, **Kreativitätslevel** (kontrolliert · kreativ · experimentell), **Visueller Stil** (auto, Grundschule verspielt, Historischer Atlas, Museum, Science Lab, Math Grid, Tafel/Kreide, Dokumentarisch, frei kreativ), **Interaktionswünsche** (Schieberegler, Schritt-Buttons, Karte, Quiz, Drag&Drop usw.), Prompt-Textarea. CTA „Interaktives Board erzeugen".
 - `GET /app/boards/:id` — Vorschau (Sandbox-iframe) plus Tabs **Nachprompten**, **HTML**, **CSS**, **JavaScript**, **Validierung**, **Hinweise**, **Ressourcen**.
 - `GET /app/boards/:id/play` — reine Vollbild-Präsentation in der iframe-Sandbox (Reload, Skript an/aus, Schließen).
 
@@ -196,7 +196,7 @@ Pydantic/Schema-Validierung gibt es nicht mehr — der `Board` ist ein flaches M
 
 - **KI-Code kann Bugs enthalten.** Lehrkräfte sollten Nachprompten, manuelle Code-Anpassung und das Validierungs-Tab nutzen und vor dem Einsatz am Gerät testen (PC, Board, Beamer).
 - **Daten der bisherigen strukturierten Boards sind bei Migration `0003_flat_free_html` verloren** — strukturierte Spalten werden entfernt, nur Free-HTML-Daten werden in die flachen Felder übernommen.
-- **Karten/Historik:** Kartenmaterial im Mock-Provider und in den Demo-Datasets ist **schematisch** — keine amtliche Grenzdarstellung. Die Prompts erzwingen einen sichtbaren Hinweis im Tafelbild, sobald historisch-politische Karten erzeugt werden.
+- **Karten/Historik:** Kartenmaterial im Mock-Provider und in den Demo-Datasets ist **schematisch** — keine amtliche Grenzdarstellung. Die Prompts erzwingen einen sichtbaren Hinweis im Board, sobald historisch-politische Karten erzeugt werden.
 - **Layout-Pflicht im iframe:** der KI-Prompt schreibt `min-height:100%; height:100%; width:100%; box-sizing:border-box` für `.free-board` vor und verbietet `100vh`/`100vw` sowie `position: fixed`, damit Vollbild- und 16:9-Stage-Skalierung in `BoardDetailPage` und `BoardPlayPage` zuverlässig greifen.
 
 ### Backend `.env`
@@ -207,7 +207,280 @@ BOARDS_FREE_HTML_GENERATION_TEMPERATURE=0.55
 BOARDS_FREE_HTML_REVISION_TEMPERATURE=0.4
 ```
 
-Mit `AI_PROVIDER=mock` (oder `BOARDS_AI_PROVIDER=mock`) liefert der Mock-Provider drei deterministische Beispiel-Tafelbilder (Wasserkreislauf, schematische WW2-Karte, Mathe-Zahlenstrahl) und kann die komplette Pipeline ohne API-Key getestet werden.
+Mit `AI_PROVIDER=mock` (oder `BOARDS_AI_PROVIDER=mock`) liefert der Mock-Provider drei deterministische Beispiel-Boards (Wasserkreislauf, schematische WW2-Karte, Mathe-Zahlenstrahl) und kann die komplette Pipeline ohne API-Key getestet werden.
+
+### Smartboard-Kreativmodus-Pipeline
+
+Der Kreativmodus nutzt eine **mehrstufige KI-Produktionspipeline** (`SmartboardCreativePipeline`),
+die nicht „ein Prompt rein, hoffen, dass HTML funktioniert" ist, sondern eine kontrollierte
+Generierungs- und Qualitätskette:
+
+```
+Lehrerprompt
+→ Intent-Analyse (klein)
+→ Risiko-Klassifikation (klein, regelbasiert)
+→ Creative Brief (klein)
+→ Style DNA (klein, mit Visual-Metaphor-Katalog)
+→ HTML/CSS/JS-Generierung (groß: Gemini 2.5 Pro / Claude)
+→ Static-Validation + Sanitizer (kein KI-Aufruf)
+→ Browser-Smoke-Test (Playwright, optional)
+→ Touch-Audit (DOM-statisch oder Playwright)
+→ Screenshot-Quality-Judge (structured-only, Vision als TODO)
+→ RepairAgent (mode-spezifisch, groß)
+→ Quality Report (Aggregator)
+→ Persistierung
+```
+
+#### Modell-Routing klein vs. groß
+
+| Phase                 | Modell       | Begründung                                    |
+|-----------------------|--------------|-----------------------------------------------|
+| Intent-Analyse        | klein        | Klassifikation; Heuristik liefert Fallback    |
+| Risiko-Klassifikation | klein/regeln | Regelbasis ist Quelle der Wahrheit            |
+| Creative Brief        | klein¹       | Strukturierte Liste, kompaktes JSON           |
+| Style DNA             | klein        | Auswahl aus Katalog + Palette-Coercion        |
+| **Code-Generierung**  | **groß**     | HTML/CSS/JS — Qualität ist hier entscheidend  |
+| **Code-Repair**       | **groß**     | Code muss valide bleiben                      |
+| Screenshot-Judge      | klein/Vision | Vision als TODO-Hook (`SMARTBOARD_ENABLE_VISION_JUDGE`) |
+
+¹ Bei `complexity=high|extreme` wechselt der Brief automatisch auf das große Modell.
+
+`backend/apps/boards/services/ai_model_router.py` zentralisiert die Auswahl und schreibt
+für jeden KI-Aufruf einen Eintrag in `apps.boards.AIUsageLog` (Modell, Schritt, Erfolg,
+Tokens-Heuristik). Mock- und Claude-Provider implementieren ebenfalls `call_with_model`,
+damit der Router providerunabhängig bleibt.
+
+#### Quality-Modes
+
+| Modus      | Phasen                                                                                       |
+|------------|----------------------------------------------------------------------------------------------|
+| `fast`     | Intent (heuristisch) + Code + Static-Validation + bestehende Repair-Loop                    |
+| `balanced` | + Risk + Creative Brief + Style DNA + Touch-Audit + 1 RepairAgent-Runde                      |
+| `full`     | + Screenshot-Judge + bis zu `SMARTBOARD_MAX_AUTO_REPAIRS` RepairAgent-Runden                 |
+
+Default: `SMARTBOARD_DEFAULT_QUALITY_MODE=balanced`. Notbremse: `SMARTBOARD_USE_PIPELINE=false`
+nutzt den klassischen `FreeHtmlBoardGenerationService`-Pfad ohne Audits.
+
+#### Revisions-/Repair-Modi
+
+`POST /api/boards/{id}/revise/` und `/auto-repair/` akzeptieren `revision_mode`:
+
+| Mode                  | Verhalten                                                              |
+|-----------------------|------------------------------------------------------------------------|
+| `general`             | Klassischer Nachprompt (Default)                                       |
+| `bug_fix`             | Minimale Änderungen, Funktion reparieren                               |
+| `design_improve`      | Visuelle Hierarchie, Farben, Komposition; Style DNA bleibt             |
+| `touch_optimize`      | Pointer-Events, ≥56 px Touchflächen, Hover-Bedienung entfernen         |
+| `content_change`      | Fakten / Aufgaben / Texte präzisieren                                  |
+| `simplify`            | Texte kürzen, weniger Optionen                                         |
+| `make_more_creative`  | Stärker umgestalten, neue Metapher erlaubt                             |
+| `performance_improve` | Animationen reduzieren, DOM/Loops vereinfachen                         |
+
+Jeder Modus hat einen eigenen Prompt unter
+`backend/apps/ai/prompts/formats/interactive_board/repair_*.md` und wird vom `RepairAgent`
+(`backend/apps/boards/services/repair_agent.py`) iterativ mit Sanitize → Validate →
+Touch-Audit → Visual-QA bis zu `SMARTBOARD_MAX_AUTO_REPAIRS` Runden ausgeführt.
+
+#### Quality Report
+
+`build_quality_report` aggregiert Audits zu einem **Ampel-Report** mit sechs Sektionen:
+
+```
+overall_status: passed | warning | failed
+overall_score:  0–100
+sections:       security · browser · touch · design · content · performance
+```
+
+Schwellen: `≥85 passed`, `60–85 warning`, `<60 failed` (Sicherheit < 50 → automatisch
+`failed`). Im Frontend zeigt `BoardDetailPage` den Report im Tab **Qualität** mit den
+Aktionen **Erneut prüfen** und **Automatisch reparieren**.
+
+#### Was kostet KI-Tokens — und was nicht?
+
+Tokens kosten: Intent, Risk, Brief, Style DNA, Code-Generierung, Code-Repair,
+Screenshot-Judge (structured). **Keine Tokens** kosten: Sanitize, Static-Validation,
+Touch-Audit (statisch oder Playwright), Browser-Smoke-Test (Playwright),
+Screenshot-Erstellung (Playwright). Jeder kostende Schritt landet in `AIUsageLog`.
+
+#### Playwright-Setup (optional)
+
+`Browser-Smoke-Test`, `TouchAuditService` (Playwright-Pfad) und `ScreenshotQualityJudge`
+benötigen Playwright + Chromium. Wenn beides nicht installiert ist, **fallen die Schritte
+sauber zurück** auf statische Heuristiken und der Quality Report markiert die Sektion mit
+„Browser-Smoke-Test wurde nicht ausgeführt." statt zu crashen.
+
+```bash
+cd backend
+pip install playwright
+python -m playwright install chromium
+```
+
+Zusätzlich braucht der Visual-QA-Pfad `BOARDS_VISUAL_QA_DOCUMENT_BASE_HREF`
+(siehe `backend/.env.example`), damit das Sandbox-Dokument lokale `/board-libs/*`
+und `/board-assets/*` auflösen kann.
+
+#### Vision-Pfad (TODO)
+
+`ScreenshotQualityJudge._evaluate_with_vision` ist ein dokumentierter Hook für
+Multimodal-Bewertung mit Gemini Vision. Aktuell deaktiviert via
+`SMARTBOARD_ENABLE_VISION_JUDGE=false`. Beim Aktivieren bitte:
+
+1. Vision-fähigen Provider in `ai_model_router` durchreichen.
+2. AIUsageLog-`step_type` bleibt `screenshot_judge`.
+3. `ScreenshotQualityJudge.run` ruft den Pfad bevorzugt, Fallback bleibt structured.
+
+#### Golden Examples & Snippet-Library
+
+Damit die KI nicht jede Standardinteraktion neu erfindet:
+
+- **Snippet-Library** (`backend/apps/boards/services/snippet_library.py`) enthält 10 geprüfte
+  Code-Patterns (Touch-Slider, Pointer-Drag&Drop, Reset-State, …). Pro Generation werden bis
+  zu 3 relevante Patterns in den Prompt gespiegelt.
+- **Golden Examples** (`backend/apps/boards/prompt_examples/*.md`) liefern pro Fach **ein**
+  kurzes Qualitätsmuster. `pick_golden_example(intent)` wählt das passendste Beispiel; das
+  Markdown wird im Generation-Prompt als zusätzlicher Stilanker injiziert.
+
+Neues Beispiel hinzufügen:
+
+1. Markdown unter `backend/apps/boards/prompt_examples/<bereich>_<thema>_board.md` ablegen
+   (kompakt halten, keine vollständigen Boards).
+2. `_BY_KEY` in `backend/apps/boards/prompt_examples/__init__.py` ergänzen.
+3. Bei Bedarf einen passenden Snippet-Tag in `snippet_library.py` ergänzen.
+
+#### Smartboard-Settings (`.env`)
+
+```env
+SMARTBOARD_USE_PIPELINE=true
+SMARTBOARD_SMALL_MODEL_PROVIDER=gemini
+SMARTBOARD_SMALL_MODEL=gemini-2.5-flash
+SMARTBOARD_LARGE_MODEL_PROVIDER=gemini
+SMARTBOARD_LARGE_MODEL=gemini-2.5-pro
+SMARTBOARD_DEFAULT_QUALITY_MODE=balanced
+SMARTBOARD_PREMIUM_QUALITY_MODE=full
+SMARTBOARD_MAX_AUTO_REPAIRS=2
+SMARTBOARD_ENABLE_BROWSER_SMOKE_TEST=true
+SMARTBOARD_ENABLE_TOUCH_AUDIT=true
+SMARTBOARD_ENABLE_SCREENSHOT_JUDGE=true
+SMARTBOARD_ENABLE_CREATIVE_BRIEF=true
+SMARTBOARD_ENABLE_STYLE_DNA=true
+SMARTBOARD_ENABLE_VISION_JUDGE=false
+SMARTBOARD_CODE_MAX_HTML_CHARS=80000
+SMARTBOARD_CODE_MAX_CSS_CHARS=120000
+SMARTBOARD_CODE_MAX_JS_CHARS=120000
+```
+
+Frontend kann den aktuellen Status der Pipeline-Features über
+`GET /api/boards/pipeline-status/` abfragen (z. B. um Audit-Buttons auszublenden,
+wenn Playwright fehlt).
+
+### Asset Engine
+
+Der Kreativmodus enthält eine eigene **Asset-/SVG-/Design-Engine** (`apps.assets`),
+die zwischen Style DNA und Code-Generierung läuft. Die KI ist dort
+**Art Director / Asset Planner**, das System ist **Asset Compiler / SVG Builder /
+QA / Registry / Composer**. Ziel: konsistente, kindgerechte, editierbare SVGs —
+kein freies Improvisieren komplexer Grafiken durch das große Modell.
+
+**Pipeline:**
+
+```
+Lehrerprompt
+  → Board Creative Brief / Style DNA
+  → Asset Intent Detection      (apps.assets.services.asset_intent_classifier)
+  → Asset Plan                  (apps.assets.services.asset_planner)
+  → Asset Strategy Router       (apps.assets.services.asset_strategy_router)
+  → Asset Generation
+       ├─ Procedural Generators (apps.assets.services.procedural_generators, 19 Stück)
+       ├─ Mascot/Character-Compiler (apps.assets.services.mascot_compiler)
+       └─ SVG Free Draw         (apps.assets.services.asset_generation, große KI)
+  → SVG Lint / Normalize        (apps.assets.services.svg_validation + svg_normalizer)
+  → Render / Preview            (apps.assets.services.svg_renderer)
+  → Asset Quality Judge         (apps.assets.services.asset_quality_judge)
+  → Asset Repair Agent          (apps.assets.services.asset_repair_agent, 7 Modi)
+  → Asset Pack Consistency      (apps.assets.services.asset_pack_consistency)
+  → Scene Composer              (apps.assets.services.scene_composer)
+  → Free-HTML-Code-Generation (Asset Pack Summary fließt in den Code-Prompt ein)
+```
+
+**Strategien pro Asset (Heuristik + optionales KI-Refinement):**
+
+- `compiler` — Mascot/Charakter via deterministischem Shape-Kit (`bear`, `rabbit`,
+  `monster`, `generic` × Posen × Expressions).
+- `procedural` — eines der 19 Standard-SVGs (sun, cloud, star, arrow, badge, …).
+- `template_remix` — bekanntes Objekt (Haus, Baum, Buch …).
+- `svg_free_draw` — KI generiert das SVG; danach Validate → Repair-Loop.
+- `fallback_simple` — sicherer Sticker/Card statt freier Generation (z. B. Karten).
+- `asset_library` — kuratiertes wiederverwendbares Asset (MVP-vorbereitet).
+
+**Style Families** (`apps.assets.services.asset_style.STYLE_FAMILIES`, 9 Stück):
+`cute_round_mascot`, `soft_cartoon`, `storybook_flat`, `clean_flat`,
+`rough_handdrawn`, `classroom_icon`, `science_lab_cartoon`, `historical_atlas`,
+`sticker_toy`. Wählbar im Board-Creation-Modal („Eigene Illustrationen erzeugen“ +
+Stilrichtungs-Select); Default `auto` leitet aus der Style DNA ab.
+
+**Hybrid-Auslieferung:** Der Composer entscheidet pro Asset:
+- **inline** (`<svg>…</svg>` direkt im HTML) für kleine Cutout-Mascots/Icons
+  (< `ASSET_INLINE_MAX_BYTES`, default 8 KB),
+- **URL** (`/board-generated-assets/<uuid>.svg`) für `full_background`,
+  `framed_scene` und alles Größere.
+
+Die Auslieferungs-URL ist im Sanitizer (`free_html_sanitize.py`) und im
+iframe-`<base>`/CSP whitelisted; der iframe-`<meta>`-CSP enthält
+`img-src 'self' data: blob: http: https:;`. Externe `<img src="https://…">`
+werden vom HTML-Sanitizer entfernt, lokale `/board-generated-assets/`-Pfade
+bleiben erhalten. Der Endpoint `AssetSvgView` macht einen Owner-Check (Board-
+Owner oder Public-Library) und liefert das normalisierte SVG mit eigener
+strenger CSP (`default-src 'none'; style-src 'unsafe-inline'`).
+
+**API-Endpunkte:**
+
+```
+GET    /api/assets/packs/                       — Pack-Liste (eigener Account)
+GET    /api/assets/packs/<id>/                  — Pack-Detail mit Assets + Jobs
+POST   /api/assets/packs/<id>/repair/           — Pack neu reparieren
+POST   /api/assets/packs/<id>/select-variant/   — Variant-Auswahl (für Hero-Assets)
+GET    /api/assets/<asset_id>/                  — Asset-Detail
+POST   /api/assets/<asset_id>/repair/           — einzelnes Asset reparieren
+POST   /api/assets/<asset_id>/mark-quality-example/
+POST   /api/assets/<asset_id>/mark-reusable/
+POST   /api/boards/<id>/generate-asset-pack/    — Pack nachträglich für ein Board
+GET    /board-generated-assets/<uuid>.svg       — SVG-Auslieferung (Owner-Check)
+```
+
+`Board.assets_summary` (`JSONField`) speichert die `SceneComposer`-Ausgabe für die
+Anzeige in `BoardDetailPage` (Tab „Assets“) und für spätere Code-Re-Generation.
+
+**Settings (`backend/.env`):**
+
+```env
+ASSET_ENGINE_ENABLED=true
+ASSET_MAX_ASSETS_PER_PACK=8
+ASSET_MAX_REPAIR_ATTEMPTS=2
+ASSET_ENABLE_HERO_VARIANTS=true
+ASSET_HERO_VARIANT_COUNT=3
+ASSET_INLINE_MAX_BYTES=8000
+ASSET_SMALL_MODEL_PROVIDER=gemini
+ASSET_SMALL_MODEL=gemini-2.5-flash
+ASSET_LARGE_MODEL_PROVIDER=gemini
+ASSET_LARGE_MODEL=gemini-2.5-pro
+BOARDS_BLOCKS_FILLING_TEMPERATURE=0.45
+```
+
+Asset-spezifische `task_type`-Werte (`asset_intent`, `asset_plan`, `asset_strategy`,
+`asset_svg_generation`, `asset_repair`, `asset_quality_judge`,
+`asset_pack_consistency`, `asset_pack_generation`) werden vom
+`SmartboardAIModelRouter` auf die `ASSET_*`-Modelle geroutet (Fallback: die
+allgemeinen `SMARTBOARD_*`-Defaults). Alle Schritte werden im `AIUsageLog` als
+eigene Step-Types geloggt.
+
+**Vision-Quality-Hook (TODO):** `asset_quality_judge.py` enthält den Aufruf-
+Punkt für ein Vision-Modell, das gerendertes Preview-PNG bewertet. Für den MVP
+bleibt das deaktiviert, der Score läuft über die SVG-Heuristik (Pfade, Farben,
+Background-Mode-Korrektheit, `<title>/<desc>`).
+
+**Offline-Export-TODO:** Der Pack ist vollständig SVG-basiert; ein späterer
+PDF-Export oder Offline-ZIP kann inline-SVGs direkt einbetten und URL-Assets aus
+`AssetSvgView` herunterladen — keine externen Bilder nötig.
 
 ## Nächste sinnvolle Ausbaustufen
 

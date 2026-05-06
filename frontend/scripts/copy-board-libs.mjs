@@ -3,7 +3,7 @@
  * Kopiert Sandbox-Libraries aus node_modules nach frontend/public/board-libs/.
  *
  * Lokale Auslieferung ist Pflicht: der iframe ohne `allow-same-origin` darf
- * keine Cross-Origin-CDNs laden, und wir wollen die Tafelbilder offline-fähig.
+ * keine Cross-Origin-CDNs laden, und wir wollen die Boards offline-fähig.
  *
  * Pakete, die nicht installiert sind, werden mit Hinweis übersprungen, damit
  * `npm run build` weiterhin durchläuft.
@@ -27,6 +27,12 @@ const COPIES = [
   [['leaflet/dist/leaflet.css'], 'leaflet.css'],
   [['@turf/turf/turf.min.js'], 'turf.min.js'],
   [['topojson-client/dist/topojson-client.min.js'], 'topojson-client.min.js'],
+  [['interactjs/dist/interact.min.js'], 'interact.min.js'],
+  [['matter-js/build/matter.min.js'], 'matter.min.js'],
+  [['gsap/dist/gsap.min.js'], 'gsap.min.js'],
+  [['canvas-confetti/dist/confetti.browser.js'], 'confetti.browser.js'],
+  [['howler/dist/howler.min.js'], 'howler.min.js'],
+  [['konva/konva.min.js'], 'konva.min.js'],
 ];
 
 if (!existsSync(TARGET)) {

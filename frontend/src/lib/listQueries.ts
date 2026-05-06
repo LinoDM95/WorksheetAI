@@ -22,7 +22,17 @@ export const WORKSHEET_LIST_STALE_MS = 120_000;
 
 export const BOARDS_LIST_QUERY_KEY = ['boards', 'list'] as const;
 export const BOARDS_FOLDERS_QUERY_KEY = ['boards', 'folders'] as const;
-export const BOARDS_LIBRARY_QUERY_KEY = ['boards', 'library'] as const;
 export const BOARDS_DETAIL_QUERY_KEY = (id: string) => ['boards', 'detail', id] as const;
 export const BOARDS_REVISIONS_QUERY_KEY = (id: string) => ['boards', 'revisions', id] as const;
 export const BOARDS_BLOCKS_QUERY_KEY = ['boards', 'blocks'] as const;
+
+export type BoardLibraryScope = 'all' | 'mine';
+
+export const boardsLibraryQueryKey = (scope: BoardLibraryScope = 'all') =>
+  ['boards', 'library', scope] as const;
+
+export const boardsLibraryCommentsQueryKey = (boardId: string) =>
+  ['boards', 'library-comments', boardId] as const;
+
+export const boardLibraryEntryQueryKey = (boardId: string) =>
+  ['boards', 'library-entry', boardId] as const;

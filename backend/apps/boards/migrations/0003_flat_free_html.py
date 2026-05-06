@@ -138,7 +138,7 @@ class Migration(migrations.Migration):
             name='board_type',
             field=models.CharField(
                 choices=[
-                    ('interactive_board', 'Interaktives Tafelbild'),
+                    ('interactive_board', 'Interaktives Board'),
                     ('lesson_intro', 'Stundeneinstieg'),
                     ('practice_board', 'Übungstafel'),
                     ('explanation_board', 'Erklärtafel'),

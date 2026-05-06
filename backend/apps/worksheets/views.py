@@ -2,6 +2,7 @@ from rest_framework import viewsets, decorators, response
 import copy
 
 from apps.ai.error_mapper import AIErrorMapper
+from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
 from .models import Worksheet
@@ -41,6 +42,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=False, methods=['post'], url_path='generate')
     def generate(self, request):
+        enforce_positive_ai_credits_balance(request.user)
         try:
             ws = generate_worksheet(request.user, request.data)
             return response.Response(WorksheetSerializer(ws).data, status=201)
@@ -59,6 +61,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'], url_path='regenerate-page')
     def regenerate_page_view(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
         ws = self.get_object()
         raw_idx = request.data.get('page_index')
         if raw_idx is None:

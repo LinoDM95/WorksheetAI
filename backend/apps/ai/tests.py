@@ -1,9 +1,42 @@
 from __future__ import annotations
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from rest_framework import status
 
 from apps.ai.error_mapper import AIErrorMapper
+from apps.ai.gemini_model_fallback import expand_gemini_model_chain, is_gemini_model_availability_error
+
+
+class GeminiModelFallbackTests(SimpleTestCase):
+    @override_settings(GEMINI_MODEL_FALLBACK='gemini-2.5-pro')
+    def test_expand_chain_appends_fallback_when_distinct(self) -> None:
+        self.assertEqual(
+            expand_gemini_model_chain('gemini-3.1-pro-preview'),
+            ['gemini-3.1-pro-preview', 'gemini-2.5-pro'],
+        )
+
+    @override_settings(GEMINI_MODEL_FALLBACK='')
+    def test_expand_chain_no_fallback_when_empty_setting(self) -> None:
+        self.assertEqual(expand_gemini_model_chain('gemini-2.5-pro'), ['gemini-2.5-pro'])
+
+    @override_settings(GEMINI_MODEL_FALLBACK='gemini-2.5-pro')
+    def test_expand_chain_skips_duplicate_fallback(self) -> None:
+        self.assertEqual(expand_gemini_model_chain('gemini-2.5-pro'), ['gemini-2.5-pro'])
+
+    def test_availability_error_detects_not_found_message(self) -> None:
+        self.assertTrue(is_gemini_model_availability_error(Exception('404 NOT_FOUND models/foo')))
+
+    def test_deadline_not_model_fallback(self) -> None:
+        self.assertFalse(is_gemini_model_availability_error(Exception('DEADLINE_EXCEEDED')))
+
+    def test_quota_not_model_fallback(self) -> None:
+        self.assertFalse(is_gemini_model_availability_error(Exception('RESOURCE_EXHAUSTED')))
+
+    def test_availability_error_google_api_error_not_found(self) -> None:
+        from google.genai.errors import APIError
+
+        exc = APIError(404, {'error': {'code': 404, 'message': 'not found', 'status': 'NOT_FOUND'}})
+        self.assertTrue(is_gemini_model_availability_error(exc))
 
 
 class AIErrorMapperTests(SimpleTestCase):

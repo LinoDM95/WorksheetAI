@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
@@ -14,6 +14,8 @@ import {
   StatusBadge,
 } from '../../components/ui';
 import { cn } from '../../lib/cn';
+import { LG_MEDIA_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
+import { MobileWorkspaceTabs, type WorkspaceMobileTab } from '../../components/shell/MobileWorkspaceTabs';
 import { WorksheetPage } from './WorksheetPage';
 import { ChevronDown, FileText, Folder as FolderIcon, FolderPlus, Plus, Trash2 } from 'lucide-react';
 
@@ -65,6 +67,13 @@ export function WorksheetWorkspacePage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteErr, setDeleteErr] = useState('');
   const [collapsedSubjects, setCollapsedSubjects] = useState<Set<string>>(() => new Set());
+  const isLg = useMediaQuery(LG_MEDIA_QUERY);
+  const [mobileTab, setMobileTab] = useState<WorkspaceMobileTab>('list');
+
+  useEffect(() => {
+    if (isLg) return;
+    setMobileTab(selectedId ? 'content' : 'list');
+  }, [selectedId, isLg]);
 
   const toggleSubject = useCallback((key: string) => {
     setCollapsedSubjects((prev) => {
@@ -124,11 +133,20 @@ export function WorksheetWorkspacePage() {
   const errMessage = isError ? 'Liste konnte nicht geladen werden.' : deleteErr;
 
   return (
-    <div className="flex min-h-full w-full flex-1 flex-col lg:flex-row">
+    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+      <MobileWorkspaceTabs
+        value={mobileTab}
+        onChange={setMobileTab}
+        contentDisabled={!selectedId}
+      />
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <aside
         className={cn(
-          'flex max-h-[44vh] shrink-0 flex-col border-slate-200 bg-[var(--color-bg-card)] lg:max-h-none lg:w-[min(100%,300px)] lg:max-w-[340px] lg:border-r',
-          'border-b lg:border-b-0',
+          'flex shrink-0 flex-col border-slate-200 bg-[var(--color-bg-card)] lg:w-[min(100%,300px)] lg:max-w-[340px] lg:border-r lg:border-b-0',
+          'border-b',
+          !isLg && mobileTab !== 'list' && 'hidden',
+          !isLg && mobileTab === 'list' && 'min-h-0 flex-1',
+          'lg:flex lg:max-h-none',
         )}
       >
         <div className="shrink-0 space-y-2 border-b border-slate-100 p-2">
@@ -283,7 +301,7 @@ export function WorksheetWorkspacePage() {
                                     <IconButton
                                       variant="danger"
                                       size="sm"
-                                      className="shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                                      className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/row:opacity-100 focus-visible:opacity-100"
                                       aria-label={`„${titleLabel}“ löschen`}
                                       title="Löschen"
                                       disabled={deleting === w.id}
@@ -316,9 +334,15 @@ export function WorksheetWorkspacePage() {
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0">
+      <section
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0',
+          !isLg && mobileTab !== 'content' && 'hidden',
+        )}
+      >
         <Outlet />
       </section>
+      </div>
     </div>
   );
 }

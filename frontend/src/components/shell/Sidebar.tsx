@@ -1,43 +1,29 @@
-import { NavLink, useNavigate } from 'react-router-dom';
-import {
-  Home,
-  PlusSquare,
-  FileText,
-  LayoutGrid,
-  Book,
-  Share2,
-  Settings,
-  ChevronDown,
-  Plus,
-  Presentation,
-  X,
-} from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Home, FileText, LayoutGrid, Book, Share2, Presentation, X } from 'lucide-react';
 import { Logo } from '../Logo';
-import { Avatar } from '../Avatar';
 import { cn } from '../../lib/cn';
 
 type NavItem = {
   to: string;
   label: string;
   icon: typeof Home;
-  /** Mockup-Hinweis: Backend fehlt komplett. */
-  mock?: boolean;
+  /** Eintrag ohne Navigation (z. B. noch nicht freigeschaltet). */
+  disabled?: boolean;
   /** Match-Pfad-Präfix (für active-State über mehrere Routen). */
   matchPrefix?: string;
 };
 
 const PRIMARY_NAV: NavItem[] = [
   { to: '/app/dashboard', label: 'Dashboard', icon: Home },
-  { to: '/app/create', label: 'Arbeitsblatt erstellen', icon: PlusSquare },
   { to: '/app/worksheets', label: 'Meine Arbeitsblätter', icon: FileText, matchPrefix: '/app/worksheets' },
   { to: '/app/boards', label: 'Smartboard', icon: Presentation, matchPrefix: '/app/boards' },
   { to: '/app/patterns', label: 'Vorlagen', icon: LayoutGrid, matchPrefix: '/app/patterns' },
 ];
 
 const SCHOOL_NAV: NavItem[] = [
-  { to: '/app/curricula', label: 'Lehrpläne', icon: Book, matchPrefix: '/app/curricula' },
-  { to: '/app/boards/library', label: 'Tafelbibliothek', icon: Share2, matchPrefix: '/app/boards/library' },
-  { to: '/app/settings', label: 'Einstellungen', icon: Settings, mock: true },
+  { to: '/app/curricula', label: 'Lehrpläne', icon: Book, matchPrefix: '/app/curricula', disabled: true },
+  { to: '/app/boards/library', label: 'Bibliothek', icon: Share2, matchPrefix: '/app/boards/library' },
 ];
 
 type SidebarProps = {
@@ -50,45 +36,57 @@ type SidebarProps = {
 };
 
 export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: SidebarProps) => {
-  const navigate = useNavigate();
   const drawerMode = !isLg;
+  /** Desktop: eingeklappt = schmale Leiste nur mit Icons (nicht width 0). */
+  const railMode = !drawerMode && !open;
 
   return (
     <>
-      {open && drawerMode && (
-        <button
-          type="button"
-          aria-label="Seitenleiste schließen"
-          className="no-print fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px]"
-          onClick={onClose}
-        />
+      {drawerMode && (
+        <AnimatePresence>
+          {open ? (
+            <motion.button
+              key="sidebar-overlay"
+              type="button"
+              aria-label="Seitenleiste schließen"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.33, 1, 0.68, 1] }}
+              className="no-print fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px]"
+              onClick={onClose}
+            />
+          ) : null}
+        </AnimatePresence>
       )}
       <aside
         className={cn(
-          'no-print flex shrink-0 flex-col border-slate-200 bg-white transition-[width,transform] duration-200 ease-out',
-          'border-r',
+          'no-print flex shrink-0 flex-col border-slate-200 bg-white border-r',
           drawerMode &&
-            'fixed inset-y-0 left-0 z-50 w-60 max-w-[min(15rem,85vw)] px-3.5 py-4',
+            'fixed inset-y-0 left-0 z-50 w-[min(15rem,85vw)] max-w-[min(15rem,85vw)] px-3.5 py-4 transition-[transform] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none motion-reduce:duration-0',
           drawerMode && (open ? 'translate-x-0 shadow-xl' : '-translate-x-full'),
           !drawerMode &&
             cn(
-              'relative z-auto min-w-0 translate-x-0 lg:sticky lg:top-0 lg:h-svh lg:max-h-[100dvh] lg:self-start',
+              'relative z-auto translate-x-0 lg:sticky lg:top-0 lg:h-svh lg:max-h-[100dvh] lg:self-start',
               shellVariant === 'focus' && 'z-10',
-              'min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain',
+              'min-h-0 overscroll-contain transition-[width,padding-inline] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none motion-reduce:duration-0',
+              railMode
+                ? 'w-[4.5rem] shrink-0 overflow-x-hidden overflow-y-auto px-2 py-4'
+                : 'w-[15rem] shrink-0 overflow-x-hidden overflow-y-auto px-3.5 py-4',
             ),
-          !drawerMode && open && 'w-60 overflow-visible px-3.5 py-4',
-          !drawerMode && !open && 'w-0 overflow-hidden border-transparent p-0',
         )}
         aria-label="Hauptnavigation"
-        inert={!drawerMode && !open ? true : undefined}
+        inert={drawerMode && !open ? true : undefined}
       >
         <div
           className={cn(
-            'flex items-center justify-between px-1 pb-3 pt-1',
-            !drawerMode && !open && 'pointer-events-none opacity-0',
+            'flex items-center pb-3 pt-1',
+            drawerMode && 'justify-between px-1',
+            !drawerMode && open && 'justify-between px-1',
+            railMode && 'justify-center px-0',
           )}
         >
-          <Logo />
+          <Logo compact={railMode} />
           {drawerMode && open && (
             <button
               type="button"
@@ -101,75 +99,118 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            navigate('/app/create');
-            if (drawerMode) onClose();
-          }}
-          className="btn btn-primary mt-1 w-full justify-start"
-        >
-          <Plus size={16} aria-hidden /> Neues Arbeitsblatt
-        </button>
-
-        <SectionLabel>Arbeitsbereich</SectionLabel>
+        <SectionLabel rail={railMode}>Arbeitsbereich</SectionLabel>
         <nav className="flex flex-col gap-0.5">
           {PRIMARY_NAV.map((item) => (
-            <NavItemLink key={item.to} item={item} onNavigate={() => drawerMode && onClose()} />
+            <NavItemLink
+              key={item.to}
+              item={item}
+              railMode={railMode}
+              onNavigate={() => drawerMode && onClose()}
+            />
           ))}
         </nav>
 
-        <SectionLabel>Schule</SectionLabel>
+        <SectionLabel rail={railMode}>Schule</SectionLabel>
         <nav className="flex flex-col gap-0.5">
           {SCHOOL_NAV.map((item) => (
-            <NavItemLink key={item.to} item={item} onNavigate={() => drawerMode && onClose()} />
+            <NavItemLink
+              key={item.to}
+              item={item}
+              railMode={railMode}
+              onNavigate={() => drawerMode && onClose()}
+            />
           ))}
         </nav>
 
         <div className="flex-1" />
-
-        <button
-          type="button"
-          className="flex items-center gap-2.5 rounded-lg p-1.5 text-left transition hover:bg-slate-50 focus-visible:bg-slate-50"
-          aria-label="Profil-Menü öffnen (Mockup)"
-          title="Profil-Menü (Mockup — kein Backend)"
-        >
-          <Avatar name="M Krüger" size={32} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold text-slate-900">M. Krüger</div>
-            <div className="truncate text-[11.5px] text-slate-500">Goethe-Gymnasium</div>
-          </div>
-          <ChevronDown size={14} className="text-slate-400" aria-hidden />
-        </button>
       </aside>
     </>
   );
 };
 
-const SectionLabel = ({ children }: { children: string }) => (
-  <div className="mt-4 px-1.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">
-    {children}
+const SectionLabel = ({ children, rail }: { children: string; rail?: boolean }) => (
+  <div className={cn('px-1.5', rail ? 'mt-2' : 'mt-4')}>
+    {rail ? <span className="sr-only">{children}</span> : null}
+    <div
+      className={cn(
+        'overflow-hidden transition-[opacity,max-height,margin] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none motion-reduce:duration-0',
+        rail ? 'pointer-events-none max-h-0 opacity-0' : 'max-h-10 opacity-100',
+      )}
+      aria-hidden={rail}
+    >
+      <div className="pb-1.5 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-400">{children}</div>
+    </div>
+    <div
+      className={cn(
+        'mx-auto shrink-0 bg-slate-200 transition-[width,height,margin,opacity] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none motion-reduce:duration-0',
+        rail ? 'mt-1 h-px w-9 opacity-100' : 'h-0 w-0 opacity-0',
+      )}
+      aria-hidden
+    />
   </div>
 );
 
-const NavItemLink = ({ item, onNavigate }: { item: NavItem; onNavigate: () => void }) => {
+const NavItemLink = ({
+  item,
+  railMode,
+  onNavigate,
+}: {
+  item: NavItem;
+  railMode: boolean;
+  onNavigate: () => void;
+}) => {
   const Icon = item.icon;
+  const { pathname } = useLocation();
+  const suppressSmartboardActive =
+    item.to === '/app/boards' && pathname.startsWith('/app/boards/library');
+
+  const railCls = railMode && '!justify-center gap-0 px-2 py-2.5 [&_.icon]:mx-auto';
+
+  const labelSpan = (muted?: boolean) => (
+    <span
+      className={cn(
+        'min-w-0 overflow-hidden truncate text-left transition-[max-width,opacity] duration-300 ease-[cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none motion-reduce:duration-0',
+        railMode ? 'max-w-0 opacity-0' : 'max-w-[min(12rem,calc(15rem-4rem))] flex-1 opacity-100',
+        muted && 'text-slate-500',
+      )}
+    >
+      {item.label}
+    </span>
+  );
+
+  if (item.disabled) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={cn(
+          'nav-item !cursor-not-allowed opacity-45 saturate-[0.65]',
+          'hover:!border-transparent hover:!bg-transparent',
+          railCls,
+        )}
+        aria-label={`${item.label} — demnächst verfügbar`}
+        title={`${item.label} — demnächst verfügbar`}
+      >
+        <Icon size={railMode ? 19 : 17} className="icon !text-slate-400 shrink-0" aria-hidden />
+        {labelSpan(true)}
+      </button>
+    );
+  }
+
   return (
     <NavLink
       to={item.to}
       end={!item.matchPrefix}
       onClick={() => onNavigate()}
-      className={({ isActive }) => cn('nav-item', isActive && 'active')}
-      aria-disabled={item.mock || undefined}
-      title={item.mock ? `${item.label} — Mockup, noch nicht funktional` : undefined}
+      title={railMode ? item.label : undefined}
+      aria-label={railMode ? item.label : undefined}
+      className={({ isActive }) =>
+        cn('nav-item', railCls, isActive && !suppressSmartboardActive && 'active')
+      }
     >
-      <Icon size={17} className="icon" aria-hidden />
-      <span className="flex-1 truncate">{item.label}</span>
-      {item.mock && (
-        <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-800">
-          Mock
-        </span>
-      )}
+      <Icon size={railMode ? 19 : 17} className="icon shrink-0" aria-hidden />
+      {labelSpan()}
     </NavLink>
   );
 };

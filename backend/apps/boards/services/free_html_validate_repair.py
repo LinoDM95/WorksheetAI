@@ -1,7 +1,9 @@
 """Validierungs-Reparatur-Schleife für KI-erzeugte Free-HTML5-Bundles.
 
-Nach jeder Modellantwort: sanitizen (Allowlists, Längen) + ``validate_free_html_bundle``.
-Scheitert die Prüfung, folgt bis zu N zusätzliche „Repair“-Aufrufe mit expliziter Fehlerliste.
+Nach Modellantwort: sanitizen + ``validate_free_html_bundle``. Schlägt die Prüfung fehl und
+Liegt noch Reparatur-Budget (**max. eine** zusätzliche KI-Reparaturrunde beim
+Standard-Setting ``BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS``), wird **einmal** repariert
+und erneut geprüft — kein iterative „bis alles grün ist“ ohne weiteres Budget.
 """
 from __future__ import annotations
 

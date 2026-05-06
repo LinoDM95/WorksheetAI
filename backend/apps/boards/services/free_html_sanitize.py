@@ -1,4 +1,4 @@
-"""Validierung und Sanitizing für Free-HTML5-Tafelbilder.
+"""Validierung und Sanitizing für Free-HTML5-Boards.
 
 Vollständige Sicherheit bietet die Kombination aus serverseitigem Filtering und
 iframe-``sandbox`` im Frontend — dieses Modul reduziert offensichtliche Risiken
@@ -26,6 +26,13 @@ _IFRAME_EMBED_RE = re.compile(
 _META_REFRESH_RE = re.compile(r'<\s*meta\b[^>]*http-equiv\s*=\s*([\'"])refresh\1', re.IGNORECASE)
 _JS_HREF_RE = re.compile(
     r'\b(href|src|srcset)\s*=\s*([\'"])\s*javascript:',
+    re.IGNORECASE,
+)
+
+# Externe http(s)-Bild-Quellen werden im HTML-Fragment durch ein Inline-SVG-Stub ersetzt.
+# Lokale Pfade (/board-assets/, /board-libs/, /board-datasets/, /board-generated-assets/, data:) bleiben erlaubt.
+_EXTERNAL_IMG_SRC_RE = re.compile(
+    r'(<\s*img\b[^>]*\bsrc\s*=\s*[\'"])\s*(https?:|//|file:|ftp:)[^\'"\s>]+([\'"][^>]*>)',
     re.IGNORECASE,
 )
 
@@ -78,7 +85,31 @@ _FORBIDDEN_JS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 _WARN_JS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ('setInterval ohne clearInterval', re.compile(r'\bsetInterval\s*\((?![\s\S]*?clearInterval)', re.IGNORECASE)),
     ('crypto.subtle', re.compile(r'\bcrypto\.subtle\b')),
+    # Touch-/Pointer-Heuristik: mouse-only ist auf Smartboard problematisch.
+    ('mousedown ohne pointerdown', re.compile(r'\bmousedown\b(?![\s\S]*?\bpointerdown\b)', re.IGNORECASE)),
+    ('mousemove ohne pointermove', re.compile(r'\bmousemove\b(?![\s\S]*?\bpointermove\b)', re.IGNORECASE)),
+    ('mouseup ohne pointerup', re.compile(r'\bmouseup\b(?![\s\S]*?\bpointerup\b)', re.IGNORECASE)),
+    # HTML5 native Drag&Drop: auf Touch unzuverlässig.
+    ('dragstart (HTML5 native DnD)', re.compile(r'\baddEventListener\s*\(\s*[\'"]dragstart[\'"]', re.IGNORECASE)),
 ]
+
+# Anker-Klassen — werden als Warnung gemeldet, wenn sie fehlen, aber das Board interaktiv aussieht.
+_ANCHOR_CLASS_PATTERNS = {
+    'free-board': re.compile(r'class\s*=\s*[\'"][^\'"\n]*\bfree-board\b', re.IGNORECASE),
+}
+
+_HTML_INTERACTIVE_HINT_RE = re.compile(
+    r'<\s*(button|input|select|textarea)\b|role\s*=\s*[\'"](button|tab|switch|slider)[\'"]',
+    re.IGNORECASE,
+)
+_HTML_RESET_HINT_RE = re.compile(r'\breset\b', re.IGNORECASE)
+
+# CSS-Heuristik: viel zu kleine Touchflächen erkennen.
+_CSS_SMALL_TOUCH_RE = re.compile(
+    r'(?:button|input|select|\[role="button"\]|\.touch-target|\.btn)\s*{[^}]*?\bmin-(?:width|height)\s*:\s*[0-3]?\d\s*px',
+    re.IGNORECASE,
+)
+_CSS_HOVER_ONLY_RE = re.compile(r':hover\s*{[^}]*\b(display|visibility|opacity)\s*:', re.IGNORECASE)
 
 
 def _clip(s: str, max_len: int) -> tuple[str, list[str]]:
@@ -115,6 +146,11 @@ def sanitize_html_fragment(raw: str) -> tuple[str, list[str]]:
     if n:
         notes.append('meta refresh aus HTML entfernt.')
         out = out2
+    if _EXTERNAL_IMG_SRC_RE.search(out):
+        out2, n = _EXTERNAL_IMG_SRC_RE.subn(r'\1#\3', out)
+        if n:
+            notes.append(f'{n} externe <img src="http(s)://..."> entfernt — nur /board-* Pfade erlaubt.')
+            out = out2
     if _DISALLOWED_HTML_ROOT.search(out):
         notes.append('Hinweis: Vollständige Dokument-Tags sollten nicht im Fragment vorkommen.')
     return out, notes
@@ -133,7 +169,23 @@ def validate_html_fragment(html: str) -> list[str]:
         errs.append('HTML enthält iframe/object/embed oder form.')
     if _JS_HREF_RE.search(h):
         errs.append('HTML enthält javascript: URLs.')
+    # Pflicht: .free-board als Root-Klasse — nur bei substanziellem oder interaktivem HTML.
+    # Kleine Fragmente (< 200 Zeichen, keine interaktiven Elemente) bleiben für Tests/Stubs valide.
+    is_substantial = len(h.strip()) >= 200
+    has_interactive = bool(_HTML_INTERACTIVE_HINT_RE.search(h))
+    if (is_substantial or has_interactive) and not _ANCHOR_CLASS_PATTERNS['free-board'].search(h):
+        errs.append('HTML hat keine .free-board-Wurzelklasse — Anker für Audit/Sandbox-CSS fehlt.')
     return errs
+
+
+def warn_html_fragment(html: str) -> list[str]:
+    warns: list[str] = []
+    h = html or ''
+    if not h.strip():
+        return warns
+    if _HTML_INTERACTIVE_HINT_RE.search(h) and not _HTML_RESET_HINT_RE.search(h):
+        warns.append('Interaktives Board ohne Reset-Hinweis (.reset-button oder Reset-Text fehlt).')
+    return warns
 
 
 def sanitize_css(raw: str) -> tuple[str, list[str]]:
@@ -153,7 +205,12 @@ def sanitize_css(raw: str) -> tuple[str, list[str]]:
         low = url.lower()
         if low.startswith('data:') or low.startswith('#') or not url:
             return m.group(0)
-        if low.startswith('/board-assets/') or low.startswith('/board-libs/') or low.startswith('/board-datasets/'):
+        if (
+            low.startswith('/board-assets/')
+            or low.startswith('/board-libs/')
+            or low.startswith('/board-datasets/')
+            or low.startswith('/board-generated-assets/')
+        ):
             return m.group(0)
         if '://' in low or low.startswith('//'):
             return '/* external url removed */'
@@ -173,6 +230,16 @@ def validate_css(css: str) -> list[str]:
     if _CSS_IMPORT_RE.search(c):
         errs.append('CSS enthält @import.')
     return errs
+
+
+def warn_css(css: str) -> list[str]:
+    warns: list[str] = []
+    c = css or ''
+    if _CSS_SMALL_TOUCH_RE.search(c):
+        warns.append('Touchfläche unter 40 px erkannt — auf Smartboard zu klein.')
+    if _CSS_HOVER_ONLY_RE.search(c):
+        warns.append(':hover steuert Sichtbarkeit — auf Smartboard funktioniert das nicht zuverlässig.')
+    return warns
 
 
 def validate_javascript(js: str) -> list[str]:
@@ -245,5 +312,7 @@ def validate_free_html_bundle(bundle: dict[str, Any]) -> tuple[bool, list[str], 
     errs.extend(validate_html_fragment(html))
     errs.extend(validate_css(css))
     errs.extend(validate_javascript(js))
+    warns.extend(warn_html_fragment(html))
+    warns.extend(warn_css(css))
     warns.extend(warn_javascript(js))
     return len(errs) == 0, errs, warns

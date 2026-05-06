@@ -1,26 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Maximize2, Minimize2, MoreHorizontal, QrCode, RotateCw, X } from 'lucide-react';
 import { Button, IconButton } from '../../../components/ui';
-import { fetchBoard } from '../boardsApi';
+import { fetchBoard, updateBoardCode } from '../boardsApi';
 import { BOARDS_DETAIL_QUERY_KEY } from '../../../lib/listQueries';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
+import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import { FreeHtmlBoardFrame } from '../components/free-html/FreeHtmlBoardFrame';
 import { buildStudentBoardUrl } from '../publicBoardApi';
-import { boardStageClipBoxStyle, boardStageScaledInnerStyle, useBoardStageScale } from '../boardStageLayout';
+import { boardStageClipBoxStyle, boardStageScaledInnerStyle, STAGE_BASE_W, STAGE_BASE_H, useBoardStageScale } from '../boardStageLayout';
 import { cn } from '../../../lib/cn';
+import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
+import { needsStudentSharePrep } from '../lib/studentShareFlow';
 
 export function BoardPlayPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement>(null);
   const playStageOuterRef = useRef<HTMLDivElement>(null);
-  const playStageScale = useBoardStageScale(playStageOuterRef);
+  const playStageScale = useBoardStageScale(playStageOuterRef, STAGE_BASE_W, STAGE_BASE_H, id);
   const [reloadKey, setReloadKey] = useState(0);
   const [scriptsEnabled, setScriptsEnabled] = useState(true);
   const [browserFs, setBrowserFs] = useState(false);
   const [shareQrOpen, setShareQrOpen] = useState(false);
+  const [sharePrepOpen, setSharePrepOpen] = useState(false);
+  const [shareQrPayload, setShareQrPayload] = useState<{
+    url: string;
+    expiresAt: string | null;
+    title: string;
+  } | null>(null);
 
   const chromeH = 'calc(4.5rem + env(safe-area-inset-top, 0px))';
 
@@ -29,6 +39,66 @@ export function BoardPlayPage() {
     queryFn: () => fetchBoard(id),
     enabled: Boolean(id),
   });
+
+  const patchMutation = useMutation({
+    mutationFn: (body: { student_link_enabled?: boolean; student_link_valid_minutes?: number | null }) =>
+      updateBoardCode(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+    },
+  });
+
+  const showShareQrModalWithPayload = useCallback((payload: { url: string; expiresAt: string | null; title: string }) => {
+    void (async () => {
+      await exitElementFullscreen();
+      setShareQrPayload(payload);
+      setShareQrOpen(true);
+    })();
+  }, []);
+
+  const openExistingShareQr = useCallback(() => {
+    if (!board?.share_token || !board.student_link_enabled) return;
+    showShareQrModalWithPayload({
+      url: buildStudentBoardUrl(board.share_token),
+      expiresAt: board.student_link_expires_at ?? null,
+      title: board.title || '',
+    });
+  }, [board, showShareQrModalWithPayload]);
+
+  const handleStudentShareMenuClick = useCallback(() => {
+    void (async () => {
+      await exitElementFullscreen();
+      if (!board || needsStudentSharePrep(board)) {
+        setSharePrepOpen(true);
+        return;
+      }
+      openExistingShareQr();
+    })();
+  }, [board, openExistingShareQr]);
+
+  const handleConfirmStudentShare = useCallback(
+    (validMinutes: number | null) => {
+      patchMutation.mutate(
+        { student_link_enabled: true, student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: async (data) => {
+            await exitElementFullscreen();
+            setSharePrepOpen(false);
+            const token = data.share_token ?? board?.share_token ?? null;
+            if (token) {
+              setShareQrPayload({
+                url: buildStudentBoardUrl(token),
+                expiresAt: data.student_link_expires_at ?? null,
+                title: data.title || board?.title || '',
+              });
+              setShareQrOpen(true);
+            }
+          },
+        },
+      );
+    },
+    [patchMutation, board?.share_token, board?.title],
+  );
 
   const goEditor = useCallback(() => {
     navigate(`/app/boards/${id}`);
@@ -96,14 +166,14 @@ export function BoardPlayPage() {
   if (isPending) {
     return (
       <div className="grid min-h-[100dvh] place-items-center bg-black text-sm text-slate-400">
-        Lade Tafelbild …
+        Lade Board …
       </div>
     );
   }
   if (isError || !board) {
     return (
       <div className="grid min-h-[100dvh] place-items-center gap-3 bg-black p-6 text-center text-sm text-slate-400">
-        <p>Tafelbild konnte nicht geladen werden.</p>
+        <p>Board konnte nicht geladen werden.</p>
         <Button variant="secondary" size="lg" onClick={() => navigate('/app/boards')}>
           Zurück zur Liste
         </Button>
@@ -176,17 +246,16 @@ export function BoardPlayPage() {
               >
                 {browserFs ? 'Randlos beenden' : 'Nur Tafel randlos (Bildschirm)'}
               </Button>
-              {board.share_token && board.student_link_enabled ? (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  className="w-full justify-center"
-                  onClick={() => setShareQrOpen(true)}
-                  leftIcon={<QrCode size={18} aria-hidden />}
-                >
-                  QR für Schüler:innen
-                </Button>
-              ) : null}
+              <Button
+                variant="secondary"
+                size="lg"
+                className="w-full justify-center"
+                loading={patchMutation.isPending && sharePrepOpen}
+                onClick={() => handleStudentShareMenuClick()}
+                leftIcon={<QrCode size={18} aria-hidden />}
+              >
+                QR &amp; Link
+              </Button>
             </div>
           </details>
 
@@ -218,16 +287,15 @@ export function BoardPlayPage() {
             >
               {browserFs ? 'Randlos aus' : 'Randlos'}
             </Button>
-            {board.share_token && board.student_link_enabled ? (
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={() => setShareQrOpen(true)}
-                leftIcon={<QrCode size={18} aria-hidden />}
-              >
-                QR
-              </Button>
-            ) : null}
+            <Button
+              variant="secondary"
+              size="lg"
+              loading={patchMutation.isPending && sharePrepOpen}
+              onClick={() => handleStudentShareMenuClick()}
+              leftIcon={<QrCode size={18} aria-hidden />}
+            >
+              QR &amp; Link
+            </Button>
           </div>
 
           <Button
@@ -266,6 +334,7 @@ export function BoardPlayPage() {
               javascript={board.javascript}
               scriptsEnabled={scriptsEnabled}
               reloadKey={reloadKey}
+              boardFrameId={board.id}
               usedLibraries={board.used_libraries}
               usedDatasets={board.used_datasets}
               fillHeight
@@ -301,11 +370,21 @@ export function BoardPlayPage() {
       >
         <X size={28} aria-hidden />
       </IconButton>
+      <BoardStudentSharePrepModal
+        open={sharePrepOpen}
+        onClose={() => setSharePrepOpen(false)}
+        onConfirm={handleConfirmStudentShare}
+        busy={patchMutation.isPending}
+      />
       <BoardShareQrModal
-        open={shareQrOpen && Boolean(board.share_token)}
-        onClose={() => setShareQrOpen(false)}
-        studentUrl={board.share_token ? buildStudentBoardUrl(board.share_token) : ''}
-        title={board.title || ''}
+        open={shareQrOpen && Boolean(shareQrPayload?.url)}
+        onClose={() => {
+          setShareQrOpen(false);
+          setShareQrPayload(null);
+        }}
+        studentUrl={shareQrPayload?.url ?? ''}
+        title={shareQrPayload?.title ?? ''}
+        expiresAt={shareQrPayload?.expiresAt}
       />
     </div>
   );

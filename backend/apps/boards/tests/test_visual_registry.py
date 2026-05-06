@@ -25,8 +25,11 @@ class VisualResourceRegistryTests(SimpleTestCase):
         self.assertIn('d3', ids)
         self.assertIn('roughjs', ids)
 
-    def test_chartjs_is_known_library(self) -> None:
-        self.assertEqual(filter_used_libraries(['chartjs', 'unknown']), ['chartjs'])
+    def test_newPhysics_libs_are_known(self) -> None:
+        self.assertEqual(
+            filter_used_libraries(['matterjs', 'interactjs', 'nope', 'gsap']),
+            ['matterjs', 'interactjs', 'gsap'],
+        )
 
     def test_summarize_libraries_mentions_window_global(self) -> None:
         md = summarize_libraries()

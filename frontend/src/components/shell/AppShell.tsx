@@ -1,12 +1,38 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { AccountMenu } from './AccountMenu';
+import { CreditsBubble } from './CreditsBubble';
 import { Sidebar } from './Sidebar';
 import { ShellChromeProvider } from './ShellChromeContext';
 import { Topbar, type TopbarProps } from './Topbar';
 import { cn } from '../../lib/cn';
 
+/** Desktop-Sidebar (Labels vs. Rail): über Routen hinweg, AppShell mountet pro Route neu. */
+const SIDEBAR_DESKTOP_OPEN_KEY = 'worksheetai.shell.sidebarOpenDesktop';
+
 function readDesktopMq(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
+}
+
+function readStoredDesktopSidebarOpen(): boolean | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(SIDEBAR_DESKTOP_OPEN_KEY);
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return null;
+}
+
+function persistDesktopSidebarOpen(open: boolean) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SIDEBAR_DESKTOP_OPEN_KEY, open ? 'true' : 'false');
+}
+
+function readInitialSidebarOpen(): boolean {
+  const lg = readDesktopMq();
+  if (!lg) return false;
+  const stored = readStoredDesktopSidebarOpen();
+  if (stored !== null) return stored;
+  return true;
 }
 
 type AppShellProps = {
@@ -26,11 +52,11 @@ type AppShellProps = {
  * Layout-Wrapper für alle authentifizierten Routen.
  * Sidebar links, Topbar oben, Content rechts.
  * — Unter lg: Sidebar als Overlay-Drawer (Menü öffnen / X / Klick außerhalb / Escape schließen).
- * — Ab lg: Sidebar als Spalte, per Panel-Toggle ein- und ausklappbar (Breite 0 … w-60).
+ * — Ab lg: Sidebar per Toggle breit (Labels) oder schmale Icon-Leiste — verschwindet nicht vollständig.
  */
 export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default', children }: AppShellProps) => {
   const [isLg, setIsLg] = useState(readDesktopMq);
-  const [sidebarOpen, setSidebarOpen] = useState(readDesktopMq);
+  const [sidebarOpen, setSidebarOpen] = useState(readInitialSidebarOpen);
   const location = useLocation();
 
   useEffect(() => {
@@ -38,8 +64,12 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
     const onBp = () => {
       const lg = mq.matches;
       setIsLg(lg);
-      if (lg) setSidebarOpen(true);
-      else setSidebarOpen(false);
+      if (!lg) {
+        setSidebarOpen(false);
+        return;
+      }
+      const stored = readStoredDesktopSidebarOpen();
+      setSidebarOpen(stored !== null ? stored : true);
     };
     mq.addEventListener('change', onBp);
     return () => mq.removeEventListener('change', onBp);
@@ -54,7 +84,9 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
   useEffect(() => {
     if (!sidebarOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSidebarOpen(false);
+      if (e.key !== 'Escape') return;
+      setSidebarOpen(false);
+      if (window.matchMedia('(min-width: 1024px)').matches) persistDesktopSidebarOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -82,17 +114,30 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
         {topbar && (
           <Topbar
             {...topbar}
+            actions={
+              <>
+                {topbar.actions}
+                <CreditsBubble />
+                <AccountMenu />
+              </>
+            }
             isLg={isLg}
             sidebarOpen={sidebarOpen}
             onMobileMenuOpen={() => setSidebarOpen(true)}
-            onDesktopSidebarToggle={() => setSidebarOpen((o) => !o)}
+            onDesktopSidebarToggle={() =>
+              setSidebarOpen((o) => {
+                const next = !o;
+                if (window.matchMedia('(min-width: 1024px)').matches) persistDesktopSidebarOpen(next);
+                return next;
+              })
+            }
           />
         )}
         <ShellChromeProvider breadcrumbs={topbar?.breadcrumbs}>
           <main
             className={cn(
               'flex min-h-0 min-w-0 flex-1 flex-col bg-transparent print:m-0 print:min-h-0 print:w-full print:max-w-none print:flex-none print:overflow-visible print:bg-white print:p-0',
-              !fullBleed && 'p-4 sm:p-6 lg:p-8',
+              !fullBleed && 'px-3 py-4 sm:p-6 lg:p-8',
               isFocusLayout && 'overflow-hidden print:overflow-visible',
               !isFocusLayout &&
                 'overflow-y-auto overflow-x-hidden overscroll-contain print:overflow-visible',

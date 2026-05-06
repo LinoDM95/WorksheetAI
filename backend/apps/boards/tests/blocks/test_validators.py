@@ -112,7 +112,7 @@ def _ok_spec() -> dict:
         'grade': '4',
         'topic': 'Wasserkreislauf',
         'title': 'Wasserkreislauf',
-        'description': 'Tafelbild zu Verdunstung, Kondensation, Niederschlag.',
+        'description': 'Board zu Verdunstung, Kondensation, Niederschlag.',
         'theme_id': 'science',
         'pages': [
             {

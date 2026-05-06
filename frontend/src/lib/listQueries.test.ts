@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
-  BOARDS_LIBRARY_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
   BOARDS_REVISIONS_QUERY_KEY,
   PATTERNS_LIST_QUERY_KEY,
   WORKSHEET_LIST_QUERY_KEY,
+  boardsLibraryQueryKey,
+  boardLibraryEntryQueryKey,
 } from './listQueries';
 
 describe('listQueries keys', () => {
@@ -21,6 +22,8 @@ describe('listQueries keys', () => {
     expect(BOARDS_DETAIL_QUERY_KEY('abc')).toEqual(['boards', 'detail', 'abc']);
     expect(BOARDS_REVISIONS_QUERY_KEY('abc')).toEqual(['boards', 'revisions', 'abc']);
     expect(BOARDS_FOLDERS_QUERY_KEY).toEqual(['boards', 'folders']);
-    expect(BOARDS_LIBRARY_QUERY_KEY).toEqual(['boards', 'library']);
+    expect(boardsLibraryQueryKey('all')).toEqual(['boards', 'library', 'all']);
+    expect(boardsLibraryQueryKey('mine')).toEqual(['boards', 'library', 'mine']);
+    expect(boardLibraryEntryQueryKey('b1')).toEqual(['boards', 'library-entry', 'b1']);
   });
 });

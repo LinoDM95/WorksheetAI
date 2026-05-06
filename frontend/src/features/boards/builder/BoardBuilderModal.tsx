@@ -116,7 +116,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
     const payload: CompositionPlan = {
       ...plan,
       pages: pagesMerged,
-      title: plan.title || plan.topic || 'Tafelbild',
+      title: plan.title || plan.topic || 'Board',
     };
     generateM.mutate(payload);
   };
@@ -137,7 +137,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Tafelbild aus Bausteinen</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Board aus Bausteinen</h2>
             <p className="text-[11px] leading-snug text-slate-500">
               Du gibst nur die Themen-Stichpunkte pro Seite an — die KI füllt die gewählten Bausteine selbständig.
               <span className="ml-2 hidden md:inline text-slate-400">Shortcuts: ←/→ Seitenwechsel · Esc schließen</span>
@@ -155,7 +155,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
               leftIcon={<Sparkles size={14} aria-hidden />}
               size="sm"
             >
-              Tafelbild erzeugen
+              Board erzeugen
             </Button>
             <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" onClick={onClose} disabled={busy}>
               <X size={16} aria-hidden />
@@ -252,7 +252,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
           <div className="space-y-1 border-t border-slate-100 bg-slate-50 px-4 py-2">
             {totalSlots === 0 && !busy && !generateM.isError && !planError && (
               <p className="text-[12px] text-slate-500">
-                Wähle links mindestens einen Baustein, dann kannst du das Tafelbild erzeugen lassen.
+                Wähle links mindestens einen Baustein, dann kannst du das Board erzeugen lassen.
               </p>
             )}
             {planError && (

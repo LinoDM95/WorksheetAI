@@ -1,4 +1,4 @@
-"""Bausteinmodus für interaktive Tafelbilder.
+"""Bausteinmodus für interaktive Boards.
 
 Deterministische, geprüfte HTML/CSS/JS-Templates pro Baustein. Die KI darf hier
 *keinen* Code generieren — nur (optional) Theme/Mikrotexte/Hinweise als JSON.

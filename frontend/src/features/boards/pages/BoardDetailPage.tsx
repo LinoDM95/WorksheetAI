@@ -5,9 +5,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
   Code2,
-  Maximize2,
-  RotateCw,
+  FolderOpen,
+  Gauge,
   Sparkles,
+  Trash2,
   Undo2,
   X,
 } from 'lucide-react';
@@ -15,38 +16,49 @@ import { Alert, Button, IconButton } from '../../../components/ui';
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
-  BOARDS_LIBRARY_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
 import { formatDate } from '../../../lib/formatDate';
 import { cn } from '../../../lib/cn';
+import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
 import {
+  applyBoardRevision,
+  autoRepairBoard,
+  deleteBoardRevision,
   fetchBoard,
   fetchBoardFolders,
   fetchBoardRevisions,
   reviseBoard,
   revertLastBoardRevision,
+  runBoardQualityCheck,
   updateBoardCode,
   validateBoardCode,
 } from '../boardsApi';
 import { BoardAiGenerationOverlay } from '../components/BoardAiGenerationOverlay';
+import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
-import {
-  boardStageClipBoxStyle,
-  boardStageScaledInnerStyle,
-  useBoardStageScale,
-} from '../boardStageLayout';
-import { FreeHtmlBoardFrame } from '../components/free-html/FreeHtmlBoardFrame';
+import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
+import { BoardQualityReportPanel } from '../components/quality/BoardQualityReportPanel';
+import { BoardPipelineDetailsPanel } from '../components/quality/BoardPipelineDetailsPanel';
+import { RevisionModeSelect } from '../components/quality/RevisionModeSelect';
+import { RevisionQuickActions } from '../components/quality/RevisionQuickActions';
 import { FreeHtmlValidationPanel } from '../components/free-html/FreeHtmlValidationPanel';
 import { FreeHtmlResourcesPanel } from '../components/free-html/FreeHtmlResourcesPanel';
 import { FreeHtmlCodeEditor } from '../components/free-html/FreeHtmlCodeEditor';
 import { collectFreeHtmlLocalWarnings } from '../lib/freeHtmlLocalHints';
 import { buildStudentBoardUrl } from '../publicBoardApi';
-import type { BoardDetail } from '../types';
+import type { BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
+import { needsStudentSharePrep } from '../lib/studentShareFlow';
 
 type CodeLang = 'html' | 'css' | 'javascript';
-type MetaSection = 'validation' | 'hints' | 'resources' | 'share';
+type MetaSection = 'validation' | 'quality' | 'pipeline' | 'hints' | 'resources' | 'share';
+
+/** Liste neueste zuerst (API): v1 = älteste Revision, höhere Nummer = neuer. */
+const revisionVLabel = (indexNewestFirst: number, total: number) => {
+  const n = total > 0 ? total - indexNewestFirst : 1;
+  return `v${n}`;
+};
 
 function BoardShellModal({
   open,
@@ -107,9 +119,6 @@ export function BoardDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const stageOuterRef = useRef<HTMLDivElement>(null);
-  const stageScale = useBoardStageScale(stageOuterRef);
-
   const [codeEditorOpen, setCodeEditorOpen] = useState(false);
   const [codeEditorTab, setCodeEditorTab] = useState<CodeLang>('html');
   const [reviseOpen, setReviseOpen] = useState(false);
@@ -120,6 +129,7 @@ export function BoardDetailPage() {
   const [reviseError, setReviseError] = useState<string | null>(null);
   const [revertError, setRevertError] = useState<string | null>(null);
   const [reviseInput, setReviseInput] = useState('');
+  const [revisionMode, setRevisionMode] = useState<RevisionMode>('general');
   const [reloadKey, setReloadKey] = useState(0);
   const scriptsEnabled = true;
   const [validateResult, setValidateResult] = useState<{
@@ -128,6 +138,13 @@ export function BoardDetailPage() {
     warnings: string[];
   }>({ ok: null, errors: [], warnings: [] });
   const [shareQrOpen, setShareQrOpen] = useState(false);
+  const [sharePrepOpen, setSharePrepOpen] = useState(false);
+  const [shareQrPayload, setShareQrPayload] = useState<{
+    url: string;
+    expiresAt: string | null;
+    title: string;
+  } | null>(null);
+  const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -151,6 +168,63 @@ export function BoardDetailPage() {
     enabled: Boolean(id),
   });
 
+  const revisionHeadId = useMemo(() => {
+    if (!board) return null;
+    return board.revision_head_id ?? revisions[0]?.id ?? null;
+  }, [board, revisions]);
+
+  const previewRevision = useMemo((): BoardRevision | null => {
+    if (!board || previewRevisionId === null) return null;
+    if (!revisionHeadId || previewRevisionId === revisionHeadId) return null;
+    return revisions.find((r) => r.id === previewRevisionId) ?? null;
+  }, [board, previewRevisionId, revisionHeadId, revisions]);
+
+  const isHeadView = !previewRevision;
+
+  const iframeBundle = useMemo(() => {
+    if (!board) {
+      return {
+        html: '',
+        css: '',
+        javascript: '',
+        used_libraries: [] as BoardDetail['used_libraries'],
+        used_assets: [] as BoardDetail['used_assets'],
+        used_datasets: undefined as BoardDetail['used_datasets'] | undefined,
+      };
+    }
+    if (!previewRevision) {
+      return {
+        html: board.html,
+        css: board.css,
+        javascript: board.javascript,
+        used_libraries: board.used_libraries ?? [],
+        used_assets: board.used_assets ?? [],
+        used_datasets: board.used_datasets,
+      };
+    }
+    const nm = previewRevision.new_metadata ?? {};
+    return {
+      html: previewRevision.new_html,
+      css: previewRevision.new_css,
+      javascript: previewRevision.new_javascript,
+      used_libraries: (nm.used_libraries as BoardDetail['used_libraries']) ?? board.used_libraries ?? [],
+      used_assets: (nm.used_assets as BoardDetail['used_assets']) ?? board.used_assets ?? [],
+      used_datasets: (nm.used_datasets as BoardDetail['used_datasets']) ?? board.used_datasets,
+    };
+  }, [board, previewRevision]);
+
+  const canReviseWithAi = Boolean((board?.can_revise_with_ai ?? true) && isHeadView);
+
+  const aiBlockedHint =
+    'Nur am aktuellen Stand (neueste Version) verfügbar. Wähle oben „Aktueller Stand“ oder übernimm eine Version.';
+
+  useEffect(() => {
+    if (!previewRevisionId) return;
+    if (!revisions.some((r) => r.id === previewRevisionId)) {
+      setPreviewRevisionId(null);
+    }
+  }, [previewRevisionId, revisions]);
+
   const { data: folders = [] } = useQuery({
     queryKey: BOARDS_FOLDERS_QUERY_KEY,
     queryFn: fetchBoardFolders,
@@ -163,19 +237,39 @@ export function BoardDetailPage() {
   );
 
   const reviseMutation = useMutation({
-    mutationFn: (prompt: string) => reviseBoard(id, prompt),
+    mutationFn: ({ prompt, mode }: { prompt: string; mode: RevisionMode }) =>
+      reviseBoard(id, prompt, { revision_mode: mode }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       setReviseInput('');
+      setRevisionMode('general');
       setRevertError(null);
       setReloadKey((k) => k + 1);
       setReviseOpen(false);
+      setPreviewRevisionId(null);
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail;
       setReviseError(detail || (err as Error)?.message || 'Revision fehlgeschlagen.');
+    },
+  });
+
+  const qualityCheckMutation = useMutation({
+    mutationFn: () => runBoardQualityCheck(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+    },
+  });
+
+  const autoRepairMutation = useMutation({
+    mutationFn: (mode?: RevisionMode) =>
+      autoRepairBoard(id, mode && mode !== 'general' ? { revision_mode: mode } : undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
+      setReloadKey((k) => k + 1);
     },
   });
 
@@ -187,11 +281,32 @@ export function BoardDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       setReloadKey((k) => k + 1);
+      setPreviewRevisionId(null);
     },
     onError: (err: unknown) => {
       const detail =
         (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail;
       setRevertError(detail || (err as Error)?.message || 'Zurücksetzen fehlgeschlagen.');
+    },
+  });
+
+  const applyRevisionMutation = useMutation({
+    mutationFn: (revisionId: string) => applyBoardRevision(id, revisionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
+      queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+      setPreviewRevisionId(null);
+      setReloadKey((k) => k + 1);
+    },
+  });
+
+  const deleteRevisionMutation = useMutation({
+    mutationFn: (revisionId: string) => deleteBoardRevision(id, revisionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
+      setPreviewRevisionId(null);
     },
   });
 
@@ -202,14 +317,16 @@ export function BoardDetailPage() {
       javascript?: string;
       folder_id?: string | null;
       student_link_enabled?: boolean;
+      student_link_valid_minutes?: number | null;
       library_public?: boolean;
     }) => updateBoardCode(id, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
       setReloadKey((k) => k + 1);
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       if (variables.library_public !== undefined) {
-        queryClient.invalidateQueries({ queryKey: BOARDS_LIBRARY_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
       }
     },
   });
@@ -234,9 +351,12 @@ export function BoardDetailPage() {
   );
 
   const localWarnings = useMemo(() => {
-    if (!board) return [] as string[];
-    return collectFreeHtmlLocalWarnings(board.html, board.css, board.javascript);
-  }, [board?.html, board?.css, board?.javascript]);
+    return collectFreeHtmlLocalWarnings(
+      iframeBundle.html,
+      iframeBundle.css,
+      iframeBundle.javascript,
+    );
+  }, [iframeBundle.css, iframeBundle.html, iframeBundle.javascript]);
 
   const handleRevise = () => {
     setReviseError(null);
@@ -244,7 +364,7 @@ export function BoardDetailPage() {
       setReviseError('Bitte beschreibe deinen Änderungswunsch.');
       return;
     }
-    reviseMutation.mutate(reviseInput.trim());
+    reviseMutation.mutate({ prompt: reviseInput.trim(), mode: revisionMode });
   };
 
   const handleRevertRevision = () => {
@@ -258,10 +378,79 @@ export function BoardDetailPage() {
     revertMutation.mutate(latestId);
   };
 
+  const handleConfirmDeleteRevision = (revisionId: string) => {
+    const confirmed = window.confirm(
+      'Diesen Versionseintrag aus der Historie löschen? Der aktuelle Board-Stand bleibt unverändert.',
+    );
+    if (!confirmed) return;
+    deleteRevisionMutation.mutate(revisionId);
+  };
+
+  const showShareQrModalWithPayload = useCallback(
+    (payload: { url: string; expiresAt: string | null; title: string }) => {
+      void (async () => {
+        await exitElementFullscreen();
+        setShareQrPayload(payload);
+        setShareQrOpen(true);
+      })();
+    },
+    [],
+  );
+
+  const handleConfirmStudentShare = useCallback(
+    (validMinutes: number | null) => {
+      patchMutation.mutate(
+        { student_link_enabled: true, student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: async (data) => {
+            await exitElementFullscreen();
+            setSharePrepOpen(false);
+            const token = data.share_token ?? board?.share_token ?? null;
+            if (token) {
+              setShareQrPayload({
+                url: buildStudentBoardUrl(token),
+                expiresAt: data.student_link_expires_at ?? null,
+                title: data.title || board?.title || '',
+              });
+              setShareQrOpen(true);
+            }
+          },
+        },
+      );
+    },
+    [patchMutation, board?.share_token, board?.title],
+  );
+
+  const openExistingShareQr = useCallback(() => {
+    if (!board?.share_token || !board.student_link_enabled) return;
+    showShareQrModalWithPayload({
+      url: buildStudentBoardUrl(board.share_token),
+      expiresAt: board.student_link_expires_at ?? null,
+      title: board.title || '',
+    });
+  }, [board, showShareQrModalWithPayload]);
+
+  const handleShareToolbarClick = useCallback(() => {
+    void (async () => {
+      await exitElementFullscreen();
+      if (!board || needsStudentSharePrep(board)) {
+        setSharePrepOpen(true);
+        return;
+      }
+      openExistingShareQr();
+    })();
+  }, [board, openExistingShareQr]);
+
+  const reviseBlockedTitle: string | undefined = !canReviseWithAi
+    ? !isHeadView
+      ? aiBlockedHint
+      : 'Änderungen speichern, bis der Stand wieder der neuesten Version entspricht.'
+    : undefined;
+
   if (isPending) {
     return (
       <div className="flex min-h-[12rem] flex-1 items-center justify-center text-sm text-slate-500 lg:min-h-0">
-        Lade Tafelbild …
+        Lade Board …
       </div>
     );
   }
@@ -269,7 +458,7 @@ export function BoardDetailPage() {
   if (isError || !board) {
     return (
       <div className="flex min-h-[12rem] flex-1 flex-col items-center justify-center gap-4 px-4 lg:min-h-0">
-        <Alert tone="error">Tafelbild konnte nicht geladen werden.</Alert>
+        <Alert tone="error">Board konnte nicht geladen werden.</Alert>
         <Button variant="secondary" onClick={() => navigate('/app/boards')}>
           Zurück zur Galerie
         </Button>
@@ -285,6 +474,8 @@ export function BoardDetailPage() {
         {(
           [
             ['validation', 'Prüfung'],
+            ['quality', 'Qualität'],
+            ['pipeline', 'Pipeline'],
             ['hints', 'Hinweise'],
             ['resources', 'Ressourcen'],
             ['share', 'Freigabe'],
@@ -317,6 +508,30 @@ export function BoardDetailPage() {
           busy={validateMutation.isPending}
         />
       ) : null}
+      {metaSection === 'quality' ? (
+        <BoardQualityReportPanel
+          report={board.quality_report}
+          isChecking={qualityCheckMutation.isPending}
+          isRepairing={autoRepairMutation.isPending}
+          onRunCheck={() => qualityCheckMutation.mutate()}
+          onAutoRepair={() => autoRepairMutation.mutate(undefined)}
+          assetsSummary={board.assets_summary}
+          disableAutoRepair={!canReviseWithAi}
+          autoRepairDisabledTitle={reviseBlockedTitle}
+        />
+      ) : null}
+      {metaSection === 'pipeline' ? (
+        <BoardPipelineDetailsPanel
+          intent={board.intent_analysis}
+          risk={board.risk_analysis}
+          brief={board.creative_brief}
+          dna={board.style_dna}
+          modelConfig={board.used_model_config}
+          tokenUsage={board.token_usage}
+          estimatedCost={board.estimated_cost}
+          repairHistory={board.repair_history}
+        />
+      ) : null}
       {metaSection === 'hints' ? <HintsTab board={board} revisions={revisions} /> : null}
       {metaSection === 'resources' ? (
         <FreeHtmlResourcesPanel
@@ -343,7 +558,7 @@ export function BoardDetailPage() {
           </label>
           {board.student_link_enabled && board.share_token ? (
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={() => setShareQrOpen(true)}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => openExistingShareQr()}>
                 QR anzeigen
               </Button>
               <Button
@@ -367,7 +582,7 @@ export function BoardDetailPage() {
               onChange={(e) => patchMutation.mutate({ library_public: e.target.checked })}
             />
             <span className="text-sm text-slate-700">
-              <span className="font-medium text-slate-900">In der Tafelbibliothek listen</span>
+              <span className="font-medium text-slate-900">In der Bibliothek listen</span>
             </span>
           </label>
           {board.library_public ? (
@@ -380,7 +595,7 @@ export function BoardDetailPage() {
             </p>
           ) : null}
           {board.source_board ? (
-            <p className="text-xs text-slate-500">Übernommen aus der öffentlichen Tafelbibliothek.</p>
+            <p className="text-xs text-slate-500">Übernommen aus der öffentlichen Bibliothek.</p>
           ) : null}
           <p className="text-[11px] text-slate-400">Stand: {formatDate(board.updated_at)}</p>
         </div>
@@ -393,10 +608,10 @@ export function BoardDetailPage() {
       <BoardAiGenerationOverlay open={reviseMutation.isPending} variant="revise" />
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="relative z-20 flex shrink-0 flex-col gap-1 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur-sm sm:px-3">
+        <header className="relative z-20 flex shrink-0 flex-col gap-1 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top,0px))] shadow-sm backdrop-blur-sm sm:px-3">
         {showFatalErrors && (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-red-50 px-2 py-1 text-xs text-red-900 ring-1 ring-red-200">
-            <span className="font-medium">Validierungsfehler im Tafelbild</span>
+            <span className="font-medium">Validierungsfehler im Board</span>
             <Button type="button" variant="danger" size="sm" onClick={() => setFatalOpen(true)}>
               Details
             </Button>
@@ -404,8 +619,8 @@ export function BoardDetailPage() {
         )}
 
         <div className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-1">
-          <div className="min-w-0 max-w-[10rem] sm:max-w-xs">
-            <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">{board.title || 'Tafelbild'}</p>
+          <div className="min-w-0 max-w-[min(100%,11rem)] sm:max-w-xs">
+            <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">{board.title || 'Board'}</p>
             {board.description ? (
               <p className="truncate text-[10px] text-slate-500 sm:text-xs">{board.description}</p>
             ) : null}
@@ -432,6 +647,53 @@ export function BoardDetailPage() {
             ))}
           </select>
 
+          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
+
+          <select
+            className="max-w-[7.5rem] rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-1 text-[11px] text-slate-800 sm:max-w-[14rem] sm:text-xs"
+            value={previewRevisionId ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPreviewRevisionId(v === '' ? null : v);
+            }}
+            disabled={revisions.length === 0 || applyRevisionMutation.isPending}
+            aria-label="Board-Version"
+            title="Versionen durchblättern"
+          >
+            <option value="">Aktueller Stand</option>
+            {revisions.map((r, idx) => (
+              <option key={r.id} value={r.id}>
+                {revisionVLabel(idx, revisions.length)} · {formatDate(r.created_at)}
+              </option>
+            ))}
+          </select>
+
+          {previewRevision ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="!px-2"
+                loading={applyRevisionMutation.isPending}
+                onClick={() => applyRevisionMutation.mutate(previewRevision.id)}
+              >
+                Übernehmen
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                className="!px-2"
+                loading={deleteRevisionMutation.isPending}
+                aria-label="Versionseintrag löschen"
+                onClick={() => handleConfirmDeleteRevision(previewRevision.id)}
+              >
+                <Trash2 size={14} aria-hidden />
+              </Button>
+            </>
+          ) : null}
+
           <span className="hidden h-6 w-px bg-slate-200 lg:block" aria-hidden />
 
           <div className="flex flex-wrap items-center gap-0.5">
@@ -440,6 +702,8 @@ export function BoardDetailPage() {
               variant="secondary"
               size="sm"
               className="!px-2"
+              disabled={!isHeadView || patchMutation.isPending}
+              title={!isHeadView ? aiBlockedHint : undefined}
               onClick={() => {
                 setCodeEditorTab('html');
                 setCodeEditorOpen(true);
@@ -449,7 +713,14 @@ export function BoardDetailPage() {
               <Code2 size={14} className="sm:mr-1" aria-hidden />
               <span className="hidden sm:inline">Code</span>
             </Button>
-            <Button type="button" size="sm" className="!px-2" onClick={() => setReviseOpen(true)}>
+            <Button
+              type="button"
+              size="sm"
+              className="!px-2"
+              disabled={!canReviseWithAi}
+              title={reviseBlockedTitle}
+              onClick={() => setReviseOpen(true)}
+            >
               <Sparkles size={14} className="sm:mr-1" aria-hidden />
               <span className="hidden sm:inline">Nachprompten</span>
             </Button>
@@ -457,56 +728,46 @@ export function BoardDetailPage() {
 
           <span className="hidden h-6 w-px bg-slate-200 lg:block" aria-hidden />
 
+          <Button type="button" variant="secondary" size="sm" className="!px-2" onClick={() => openMetaSection('quality')}>
+            <Gauge size={14} className="sm:mr-1" aria-hidden />
+            <span className="hidden sm:inline">Qualität</span>
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="!px-2"
+            onClick={() => openMetaSection('resources')}
+            aria-label="Ressourcen öffnen"
+          >
+            <FolderOpen size={14} className="sm:mr-1" aria-hidden />
+            <span className="hidden sm:inline">Ressourcen</span>
+          </Button>
           <Button type="button" variant="secondary" size="sm" className="!px-2" onClick={() => openMetaSection('hints')}>
             <BookOpen size={14} className="sm:mr-1" aria-hidden />
             <span className="hidden sm:inline">Hinweise</span>
           </Button>
-
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-0.5">
-            <IconButton
-              type="button"
-              variant="secondary"
-              size="sm"
-              title="Vorschau neu laden"
-              aria-label="Vorschau neu laden"
-              onClick={() => setReloadKey((k) => k + 1)}
-            >
-              <RotateCw size={14} aria-hidden />
-            </IconButton>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="!px-2"
-              onClick={() => navigate(`/app/boards/${board.id}/play`)}
-            >
-              <Maximize2 size={14} className="sm:mr-1" aria-hidden />
-              <span className="hidden md:inline">Vollbild</span>
-            </Button>
-          </div>
         </div>
       </header>
 
-      <div ref={stageOuterRef} className="relative min-h-0 flex-1 overflow-hidden bg-[var(--color-bg-app)]">
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="pointer-events-auto bg-white" style={boardStageClipBoxStyle(stageScale)}>
-            <div style={boardStageScaledInnerStyle(stageScale)}>
-              <FreeHtmlBoardFrame
-                html={board.html}
-                css={board.css}
-                javascript={board.javascript}
-                scriptsEnabled={scriptsEnabled}
-                reloadKey={reloadKey}
-                usedLibraries={board.used_libraries}
-                usedDatasets={board.used_datasets}
-                fillHeight
-                fitContainer
-                className="!h-full !min-h-0 !rounded-none !ring-0"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <BoardFullscreenPreview
+        className="min-h-0 flex-1"
+        layoutKey={id}
+        viewTransitionGroupName="board-editor-fs-root"
+        shareToolbarAction={{
+          onClick: handleShareToolbarClick,
+          loading: patchMutation.isPending && sharePrepOpen,
+        }}
+        reloadKey={reloadKey}
+        onReload={() => setReloadKey((k) => k + 1)}
+        html={iframeBundle.html}
+        css={iframeBundle.css}
+        javascript={iframeBundle.javascript}
+        boardFrameId={board.id}
+        usedLibraries={iframeBundle.used_libraries ?? []}
+        usedDatasets={iframeBundle.used_datasets}
+        scriptsEnabled={scriptsEnabled}
+      />
     </div>
 
       <BoardShellModal
@@ -579,18 +840,20 @@ export function BoardDetailPage() {
 
       <BoardShellModal
         open={reviseOpen}
-        title="Tafelbild nachprompten (KI)"
+        title="Board nachprompten (KI)"
         onClose={() => !reviseMutation.isPending && setReviseOpen(false)}
         wide
       >
         <ReviseTab
           value={reviseInput}
           onChange={setReviseInput}
+          mode={revisionMode}
+          onModeChange={setRevisionMode}
           error={reviseError}
           revertError={revertError}
           busy={reviseMutation.isPending}
           revertBusy={revertMutation.isPending}
-          canRevert={revisions.length > 0}
+          canRevert={isHeadView && revisions.length > 0}
           onRevert={handleRevertRevision}
           onSubmit={handleRevise}
           board={board}
@@ -617,11 +880,21 @@ export function BoardDetailPage() {
         </Alert>
       </BoardShellModal>
 
+      <BoardStudentSharePrepModal
+        open={sharePrepOpen}
+        onClose={() => setSharePrepOpen(false)}
+        onConfirm={handleConfirmStudentShare}
+        busy={patchMutation.isPending}
+      />
       <BoardShareQrModal
-        open={shareQrOpen && Boolean(board.share_token)}
-        onClose={() => setShareQrOpen(false)}
-        studentUrl={board.share_token ? buildStudentBoardUrl(board.share_token) : ''}
-        title={board.title || ''}
+        open={shareQrOpen && Boolean(shareQrPayload?.url)}
+        onClose={() => {
+          setShareQrOpen(false);
+          setShareQrPayload(null);
+        }}
+        studentUrl={shareQrPayload?.url ?? ''}
+        title={shareQrPayload?.title ?? ''}
+        expiresAt={shareQrPayload?.expiresAt}
       />
     </div>
   );
@@ -630,6 +903,8 @@ export function BoardDetailPage() {
 const ReviseTab = ({
   value,
   onChange,
+  mode,
+  onModeChange,
   error,
   revertError,
   busy,
@@ -642,6 +917,8 @@ const ReviseTab = ({
 }: {
   value: string;
   onChange: (v: string) => void;
+  mode: RevisionMode;
+  onModeChange: (m: RevisionMode) => void;
   error: string | null;
   revertError: string | null;
   busy: boolean;
@@ -660,9 +937,22 @@ const ReviseTab = ({
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
-        Beschreibe in eigenen Worten, was am Tafelbild verändert werden soll. Die KI liefert eine überarbeitete
+        Beschreibe in eigenen Worten, was am Board verändert werden soll. Die KI liefert eine überarbeitete
         Komplettfassung von HTML, CSS und JavaScript zurück.
       </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+        <RevisionModeSelect value={mode} onChange={onModeChange} disabled={busy} />
+        <div>
+          <label className="mb-1 block text-[12px] font-semibold text-slate-600">Schnellauswahl</label>
+          <RevisionQuickActions
+            disabled={busy}
+            onPick={(action) => {
+              onModeChange(action.mode);
+              if (!value.trim()) onChange(action.prompt);
+            }}
+          />
+        </div>
+      </div>
       <textarea
         ref={ref}
         value={value}
@@ -692,7 +982,7 @@ const ReviseTab = ({
             </Button>
           )}
           <Button onClick={onSubmit} loading={busy} disabled={revertBusy}>
-            Tafelbild überarbeiten
+            Board überarbeiten
           </Button>
         </div>
       </div>
@@ -705,7 +995,7 @@ const HintsTab = ({
   revisions,
 }: {
   board: BoardDetail;
-  revisions: { id: string; prompt: string; created_at: string }[];
+  revisions: { id: string; created_at: string }[];
 }) => (
   <div className="space-y-4">
     <section>
@@ -737,12 +1027,13 @@ const HintsTab = ({
     )}
     {revisions.length > 0 && (
       <section>
-        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Letzte Revisionen</h3>
+        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Versionen</h3>
         <ul className="space-y-1 text-sm text-slate-600">
-          {revisions.slice(0, 8).map((r) => (
+          {revisions.slice(0, 8).map((r, i) => (
             <li key={r.id} className="flex items-baseline gap-2">
-              <span className="text-xs text-slate-400">{formatDate(r.created_at)}</span>
-              <span>{r.prompt || '(ohne Text)'}</span>
+              <span className="font-medium text-slate-800">
+                {revisionVLabel(i, revisions.length)} · {formatDate(r.created_at)}
+              </span>
             </li>
           ))}
         </ul>

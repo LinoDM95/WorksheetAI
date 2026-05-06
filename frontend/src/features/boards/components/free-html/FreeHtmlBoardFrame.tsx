@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../../../lib/cn';
 import { buildFreeHtmlSrcDoc } from './buildFreeHtmlSrcDoc';
 import type { DatasetId, LibraryId } from '../../types';
@@ -12,6 +12,8 @@ type Props = {
   javascript: string;
   scriptsEnabled: boolean;
   reloadKey: number;
+  /** Router-/API-ID — gemeinsam mit reloadKey garantiert einen frischen iframe beim Durchklicken in der Galerie. */
+  boardFrameId?: string;
   className?: string;
   usedLibraries?: LibraryId[];
   usedDatasets?: DatasetId[];
@@ -19,6 +21,10 @@ type Props = {
   fillHeight?: boolean;
   /** Eltern-Box definiert Größe (z. B. 16:9-Stage im Play-Modus) — iframe füllt exakt diese Fläche. */
   fitContainer?: boolean;
+  /** Statische Vorschau (#board-root ohne laufende Anim/Transition); sinnvoll mit scriptsEnabled:false. */
+  frozenPreview?: boolean;
+  /** Bei scriptsEnabled:false kein gelber Hinweis-Balken (z. B. kleine Thumbnails). */
+  hideScriptsDisabledNotice?: boolean;
 };
 
 const datasetIdsKey = (ids: DatasetId[] | undefined): string =>
@@ -30,13 +36,15 @@ export const FreeHtmlBoardFrame = ({
   javascript,
   scriptsEnabled,
   reloadKey,
+  boardFrameId,
   className,
   usedLibraries,
   usedDatasets,
   fillHeight = false,
   fitContainer = false,
+  frozenPreview = false,
+  hideScriptsDisabledNotice = false,
 }: Props) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [boardDatasets, setBoardDatasets] = useState<Record<string, unknown> | null>(null);
   const idsSignature = useMemo(() => datasetIdsKey(usedDatasets), [usedDatasets]);
 
@@ -66,7 +74,7 @@ export const FreeHtmlBoardFrame = ({
     return () => {
       cancelled = true;
     };
-  }, [idsSignature]);
+  }, [idsSignature, reloadKey]);
 
   const documentBaseHref = useMemo(() => {
     if (typeof window === 'undefined') return undefined;
@@ -87,6 +95,7 @@ export const FreeHtmlBoardFrame = ({
         usedLibraries: [],
         boardDatasets: {},
         documentBaseHref,
+        frozenPreview,
       });
     }
     return buildFreeHtmlSrcDoc({
@@ -97,6 +106,7 @@ export const FreeHtmlBoardFrame = ({
       usedLibraries,
       boardDatasets: boardDatasets ?? {},
       documentBaseHref,
+      frozenPreview,
     });
   }, [
     html,
@@ -108,14 +118,10 @@ export const FreeHtmlBoardFrame = ({
     usedDatasets,
     reloadKey,
     documentBaseHref,
+    frozenPreview,
   ]);
 
-  useLayoutEffect(() => {
-    const el = iframeRef.current;
-    if (el) {
-      el.srcdoc = srcDoc;
-    }
-  }, [srcDoc]);
+  const iframeMountKey = `${boardFrameId ?? 'board'}-${reloadKey}`;
 
   const expandInParent = fillHeight || fitContainer;
   const showAspectCard = !expandInParent;
@@ -137,15 +143,14 @@ export const FreeHtmlBoardFrame = ({
         )}
       >
         <iframe
-          key={reloadKey}
-          ref={iframeRef}
-          title="Tafelbild (Sandbox)"
+          key={iframeMountKey}
+          title={boardFrameId ? `Board ${boardFrameId}` : 'Board (Sandbox)'}
+          srcDoc={srcDoc}
           className="absolute inset-0 block h-full w-full min-h-0 border-0 bg-white"
           sandbox="allow-scripts"
-          srcDoc={srcDoc}
         />
       </div>
-      {!scriptsEnabled && (
+      {!scriptsEnabled && !hideScriptsDisabledNotice && (
         <p className="shrink-0 border-t border-slate-200 bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">
           JavaScript ist deaktiviert — nur HTML/CSS sichtbar.
         </p>

@@ -137,9 +137,17 @@ CURRICULUM_RESPONSE_SCHEMA: dict[str, Any] = {
 }
 
 
-def _gemini_extract_json(prompt: str) -> dict[str, Any]:
+def _gemini_extract_json(
+    prompt: str,
+    *,
+    log_user=None,
+    curriculum_job_id: str | None = None,
+) -> dict[str, Any]:
     from google import genai
     from google.genai import types
+
+    from apps.ai.gemini_model_fallback import generate_content_first_resolved_model
+    from apps.boards.services.pipeline_ai_meter import log_standalone_gemini_usage
 
     api_key = getattr(settings, 'GEMINI_API_KEY', '') or ''
     if not api_key.strip():
@@ -152,7 +160,21 @@ def _gemini_extract_json(prompt: str) -> dict[str, Any]:
         response_mime_type='application/json',
         response_schema=CURRICULUM_RESPONSE_SCHEMA,
     )
-    resp = client.models.generate_content(model=model, contents=prompt, config=cfg)
+    resp, resolved_model = generate_content_first_resolved_model(
+        client,
+        primary_model=model,
+        contents=prompt,
+        config=cfg,
+    )
+    extra = {'curriculum_job_id': curriculum_job_id} if curriculum_job_id else {}
+    log_standalone_gemini_usage(
+        resp=resp,
+        model=resolved_model,
+        step_type='curriculum_extraction',
+        user=log_user,
+        fallback_char_source=prompt,
+        metadata_extra=extra,
+    )
     text = resp.text or '{}'
     return json.loads(text)
 
@@ -220,7 +242,11 @@ class CurriculumAIExtractionService:
             if provider == 'mock':
                 raw_out = _mock_extract(job, excerpt)
             else:
-                raw_out = _gemini_extract_json(prompt)
+                raw_out = _gemini_extract_json(
+                    prompt,
+                    log_user=job.created_by,
+                    curriculum_job_id=str(job.pk),
+                )
             job.ai_raw_output = raw_out if isinstance(raw_out, dict) else {'raw': raw_out}
         except Exception as exc:
             logger.exception('Curriculum AI extraction failed')

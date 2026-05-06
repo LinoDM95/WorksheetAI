@@ -4,7 +4,8 @@
  * Reihenfolge im <head>:
  *  1. Reset-/Layout-CSS (Design-Bühne #board-root = feste Pixel, passiert zu allen Viewports)
  *  2. optional Leaflet-CSS, falls 'leaflet' in usedLibraries
- *  3. immer d3 + roughjs; optional chartjs, leaflet, turf, topojson je nach usedLibraries
+ *  3. immer d3 + roughjs; optional chartjs, leaflet, turf, topojson, gsap, konva, matterjs,
+ *     interactjs, confetti, howler je nach usedLibraries
  *  4. on-demand topojson, turf, leaflet
  *  5. BOARD_DATASETS-Injection (JSON → globales Objekt)
  *  6. Globaler Error-Handler
@@ -36,7 +37,29 @@ const LIBRARY_SCRIPTS: Record<LibraryId, string> = {
   leaflet: '/board-libs/leaflet.js',
   turf: '/board-libs/turf.min.js',
   topojson: '/board-libs/topojson-client.min.js',
+  interactjs: '/board-libs/interact.min.js',
+  matterjs: '/board-libs/matter.min.js',
+  gsap: '/board-libs/gsap.min.js',
+  confetti: '/board-libs/confetti.browser.js',
+  howler: '/board-libs/howler.min.js',
+  konva: '/board-libs/konva.min.js',
 };
+
+/** Reihenfolge der `<script>`-Tags: konsistent zum Backend `free_html_visual_doc`. */
+const LIBRARY_SCRIPT_ORDER: LibraryId[] = [
+  'd3',
+  'roughjs',
+  'chartjs',
+  'leaflet',
+  'topojson',
+  'turf',
+  'gsap',
+  'konva',
+  'matterjs',
+  'interactjs',
+  'confetti',
+  'howler',
+];
 
 const buildResetCss = (designW: number, designH: number): string => `
   html, body {
@@ -86,8 +109,39 @@ const buildResetCss = (designW: number, designH: number): string => `
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior: none;
   }
   .free-board *, .free-board *::before, .free-board *::after { box-sizing: border-box; }
+  .free-board button,
+  .free-board input:not([type="hidden"]),
+  .free-board select,
+  .free-board textarea,
+  .free-board [role="button"],
+  .free-board [role="tab"],
+  .free-board [role="switch"],
+  .free-board [role="slider"],
+  .free-board .touch-target {
+    min-width: 56px;
+    min-height: 56px;
+    cursor: pointer;
+  }
+  .free-board .draggable,
+  .free-board .drag-item,
+  .free-board .interactive-object {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .free-board .reset-button {
+    min-width: 56px;
+    min-height: 56px;
+  }
+  @media (max-width: 900px) {
+    .free-board { overflow: auto; }
+  }
 `;
 
 const boardDatasetsScript = (boardDatasets: Record<string, unknown> | undefined): string => {
@@ -107,6 +161,17 @@ const documentBaseTag = (href: string | undefined): string => {
   return `<base href="${esc}" />\n`;
 };
 
+/**
+ * CSP für den Sandbox-iframe (zusätzlich zur sandbox-Attribut-Restriktion).
+ *
+ * Wir erlauben Bilder explizit von 'self' + data: + blob: + http(s):,
+ * sodass sowohl inline-SVG-Data-URLs als auch URL-basierte generierte Assets
+ * (`/board-generated-assets/<uuid>.svg`, geliefert vom Parent-Host) laden können.
+ * Skripte/Styles bleiben durch die Sandbox-Restriktion und unsere Sanitize-Pipeline
+ * geschützt; CSP soll hier nicht enger sein als nötig, sonst brechen Libraries.
+ */
+const SRCDOC_CSP_META = `<meta http-equiv="Content-Security-Policy" content="img-src 'self' data: blob: http: https:;" />`;
+
 export type BuildSrcDocOptions = {
   html: string;
   css: string;
@@ -120,12 +185,24 @@ export type BuildSrcDocOptions = {
    * Ohne dieses `<base>` lösen manche Browser absolute Pfade im about:srcdoc-Kontext nicht zuverlässig.
    */
   documentBaseHref?: string;
+  /**
+   * Für Galerie-/Bibliotheks-Vorschau: keine Bewegung (Nutzer sollte scriptsEnabled:false setzen —
+   * zusätzlich werden Transition/Animation im #board-root abgeschaltet).
+   */
+  frozenPreview?: boolean;
 };
 
 const dedupe = <T>(arr: T[]): T[] => Array.from(new Set(arr));
 
+const librarySortIndex = (id: LibraryId): number => {
+  const i = LIBRARY_SCRIPT_ORDER.indexOf(id);
+  return i >= 0 ? i : LIBRARY_SCRIPT_ORDER.length + 99;
+};
+
 const libraryScriptTags = (usedLibraries: LibraryId[]): string => {
-  const wanted = dedupe<LibraryId>([...ALWAYS_LIBRARIES, ...(usedLibraries || []).filter(Boolean)]);
+  const wanted = dedupe<LibraryId>([...ALWAYS_LIBRARIES, ...(usedLibraries || []).filter(Boolean)]).sort(
+    (a, b) => librarySortIndex(a) - librarySortIndex(b),
+  );
   return wanted
     .map((id) => {
       const src = LIBRARY_SCRIPTS[id];
@@ -215,6 +292,19 @@ const buildSandboxBootstrap = (baseW: number, baseH: number): string => `
 <\/script>
 `;
 
+const FROZEN_PREVIEW_CSS = `
+  /* Frozen library thumbnail: keine laufenden Animationen/Transitions im Inhalt */
+  #board-root, #board-root * {
+    animation: none !important;
+    animation-name: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-property: none !important;
+    transition-duration: 0s !important;
+    caret-color: transparent !important;
+  }
+`;
+
 const errorOverlayScript = `
   window.addEventListener('error', function (event) {
     try {
@@ -229,7 +319,16 @@ const errorOverlayScript = `
 `;
 
 export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
-  const { html, css, javascript, scriptsEnabled, usedLibraries = [], boardDatasets, documentBaseHref } = opts;
+  const {
+    html,
+    css,
+    javascript,
+    scriptsEnabled,
+    usedLibraries = [],
+    boardDatasets,
+    documentBaseHref,
+    frozenPreview,
+  } = opts;
   const safeCss = escapeStyleFragment(css || '');
   const userJs = scriptsEnabled ? escapeScriptFragment(javascript || '') : '';
   const libsHtml = libraryScriptTags(usedLibraries);
@@ -237,6 +336,7 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
   const datasetsHtml = boardDatasetsScript(boardDatasets);
   const baseTag = documentBaseTag(documentBaseHref);
   const resetCss = buildResetCss(STAGE_BASE_W, STAGE_BASE_H);
+  const frozenBlock = frozenPreview ? `\n${FROZEN_PREVIEW_CSS}\n` : '';
   const sandboxBootstrapHtml = buildSandboxBootstrap(STAGE_BASE_W, STAGE_BASE_H);
 
   const userScriptBlock = scriptsEnabled
@@ -262,10 +362,12 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+${SRCDOC_CSP_META}
 ${baseTag}${leafletCss}
 <style>
 ${resetCss}
 ${safeCss}
+${frozenBlock}
 </style>
 ${libsHtml}
 ${datasetsHtml}

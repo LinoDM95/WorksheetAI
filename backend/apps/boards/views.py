@@ -1,18 +1,25 @@
+from datetime import timedelta
+
 from django.conf import settings
+from django.http import StreamingHttpResponse
 from django.db import transaction
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
+from django.utils.html import strip_tags
 import secrets
 from rest_framework import decorators, exceptions, permissions, response, status, viewsets
 from rest_framework.views import APIView
 
 from apps.ai.error_mapper import AIErrorMapper
+from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 
-from .models import Board, BoardFolder, BoardRating, BoardRevision
+from .models import Board, BoardFolder, BoardLibraryComment, BoardRating, BoardRevision
 from .owner import resolve_board_owner
 from .serializers import (
     BoardDetailSerializer,
     BoardFolderSerializer,
+    BoardLibraryCommentCreateSerializer,
+    BoardLibraryCommentSerializer,
     BoardLibraryEntrySerializer,
     BoardListSerializer,
     BoardRevisionSerializer,
@@ -26,6 +33,14 @@ from .services.free_html_block_generation import FreeHtmlBlockBoardGenerationSer
 from .services.blocks.registry import CATEGORIES, public_block_registry
 from .services.blocks.themes import theme_summary
 from .services.free_html_sanitize import validate_free_html_bundle
+from .services.creative_pipeline import generate_board_stream, generate_with_fallback, use_pipeline_enabled
+from .services.board_revision_head import (
+    append_manual_code_revision,
+    apply_revision_to_board,
+    board_metadata_snapshot,
+    create_initial_revision_if_absent,
+    require_board_at_revision_head,
+)
 
 
 class PublicBoardPlayView(APIView):
@@ -33,13 +48,21 @@ class PublicBoardPlayView(APIView):
     authentication_classes = ()
 
     def get(self, request, share_token):
+        now = timezone.now()
         board = (
-            Board.objects.filter(share_token=share_token, student_link_enabled=True)
+            Board.objects.filter(
+                share_token=share_token,
+                student_link_enabled=True,
+            )
+            .filter(Q(student_link_expires_at__isnull=True) | Q(student_link_expires_at__gt=now))
             .only('title', 'html', 'css', 'javascript', 'used_libraries', 'used_datasets')
             .first()
         )
         if not board:
-            return response.Response({'detail': 'Tafelbild nicht gefunden oder Link nicht aktiv.'}, status=404)
+            return response.Response(
+                {'detail': 'Board nicht gefunden, Link nicht aktiv oder Gültigkeit abgelaufen.'},
+                status=404,
+            )
         return response.Response(
             {
                 'title': board.title,
@@ -56,6 +79,8 @@ class PublicBoardPlayView(APIView):
 _PATCHABLE_TEXT_FIELDS = {'title', 'description'}
 _PATCHABLE_CODE_FIELDS = {'html', 'css', 'javascript'}
 _PATCHABLE_META_FIELDS = {'teacher_notes', 'usage_instructions', 'warnings'}
+
+_STUDENT_LINK_MAX_VALID_MINUTES = 60 * 24 * 7
 
 
 class BoardFolderViewSet(viewsets.ModelViewSet):
@@ -78,7 +103,7 @@ class BoardFolderViewSet(viewsets.ModelViewSet):
 
 
 class BoardViewSet(viewsets.ModelViewSet):
-    """CRUD + KI-Generierung/Revision für Free-HTML5-Tafelbilder."""
+    """CRUD + KI-Generierung/Revision für Free-HTML5-Boards."""
 
     def get_object(self):
         if self.action in ('rate', 'adopt_from_library'):
@@ -114,11 +139,20 @@ class BoardViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         body = request.data if isinstance(request.data, dict) else dict(request.data)
 
+        snapshot_before = {
+            'html': instance.html or '',
+            'css': instance.css or '',
+            'javascript': instance.javascript or '',
+            'metadata': board_metadata_snapshot(instance),
+        }
+
         text_changes = {k: body[k] for k in _PATCHABLE_TEXT_FIELDS if k in body}
         meta_changes = {k: body[k] for k in _PATCHABLE_META_FIELDS if k in body}
         code_changes = {k: body[k] for k in _PATCHABLE_CODE_FIELDS if k in body}
         folder_id_key = 'folder_id'
         folder_touched = folder_id_key in body
+
+        needs_history = bool(text_changes or meta_changes or code_changes)
 
         for k, v in text_changes.items():
             setattr(instance, k, str(v or '')[:5000 if k == 'description' else 255])
@@ -181,6 +215,22 @@ class BoardViewSet(viewsets.ModelViewSet):
             instance.student_link_enabled = bool(body['student_link_enabled'])
             if instance.student_link_enabled and not instance.share_token:
                 instance.share_token = secrets.token_urlsafe(32)[:64]
+            if not instance.student_link_enabled:
+                instance.student_link_expires_at = None
+
+        if 'student_link_valid_minutes' in body:
+            raw_m = body['student_link_valid_minutes']
+            if instance.student_link_enabled:
+                expires_at = None
+                if raw_m not in (None, '', False):
+                    try:
+                        minutes = int(raw_m)
+                    except (TypeError, ValueError):
+                        minutes = -1
+                    if minutes > 0:
+                        cap = min(minutes, _STUDENT_LINK_MAX_VALID_MINUTES)
+                        expires_at = timezone.now() + timedelta(minutes=cap)
+                instance.student_link_expires_at = expires_at
 
         if 'library_public' in body:
             instance.library_public = bool(body['library_public'])
@@ -190,6 +240,14 @@ class BoardViewSet(viewsets.ModelViewSet):
                 instance.library_published_at = None
 
         instance.save()
+
+        if needs_history:
+            try:
+                owner_user = resolve_board_owner(request.user)
+            except ValueError:
+                owner_user = None
+            append_manual_code_revision(instance, user=owner_user, previous_bundle=snapshot_before)
+
         return response.Response(BoardDetailSerializer(instance, context={'request': request}).data)
 
     @decorators.action(detail=False, methods=['get'], url_path='ai-options')
@@ -210,12 +268,52 @@ class BoardViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=False, methods=['post'], url_path='generate')
     def generate(self, request):
+        enforce_positive_ai_credits_balance(request.user)
+        body = request.data if isinstance(request.data, dict) else {}
+        wants_stream = request.query_params.get('stream') in ('1', 'true', 'yes')
+        if wants_stream:
+            def serialize_board(b: Board) -> dict:
+                return BoardDetailSerializer(b, context={'request': request}).data
+
+            def byte_stream():
+                import json
+
+                try:
+                    for chunk in generate_board_stream(
+                        user=request.user,
+                        payload=body,
+                        serialize_board=serialize_board,
+                    ):
+                        yield chunk
+                except ValueError as exc:
+                    line = json.dumps(
+                        {'event': 'error', 'detail': str(exc), 'error_code': 'validation'},
+                        ensure_ascii=False,
+                    ) + '\n'
+                    yield line.encode('utf-8')
+                except Exception as exc:
+                    mapper = AIErrorMapper(exc)
+                    _status, code, detail = mapper.parts()
+                    prefixed = (
+                        f'Board-Generierung fehlgeschlagen: {detail}'
+                        if detail else 'Board-Generierung fehlgeschlagen'
+                    )
+                    line = json.dumps(
+                        {'event': 'error', 'detail': prefixed, 'error_code': code},
+                        ensure_ascii=False,
+                    ) + '\n'
+                    yield line.encode('utf-8')
+
+            resp = StreamingHttpResponse(byte_stream(), content_type='application/x-ndjson; charset=utf-8')
+            resp.status_code = status.HTTP_201_CREATED
+            resp['Cache-Control'] = 'no-store'
+            return resp
         try:
-            board = FreeHtmlBoardGenerationService(request.user, request.data).run()
+            board = generate_with_fallback(request.user, body)
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
-            return AIErrorMapper.to_response(exc, detail_prefix='Tafelbild-Generierung fehlgeschlagen')
+            return AIErrorMapper.to_response(exc, detail_prefix='Board-Generierung fehlgeschlagen')
         return response.Response(BoardDetailSerializer(board, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     @decorators.action(detail=False, methods=['get'], url_path='blocks')
@@ -229,7 +327,8 @@ class BoardViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=False, methods=['post'], url_path='generate-blocks')
     def generate_from_blocks(self, request):
-        """Bausteinmodus: erzeugt ein Tafelbild deterministisch aus einer CompositionSpec."""
+        """Bausteinmodus: erzeugt ein Board deterministisch aus einer CompositionSpec."""
+        enforce_positive_ai_credits_balance(request.user)
         body = request.data if isinstance(request.data, dict) else {}
         try:
             board = FreeHtmlBlockBoardGenerationService(request.user, body).run()
@@ -244,21 +343,24 @@ class BoardViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'], url_path='revise')
     def revise(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
         board = self.get_object()
         body = request.data if isinstance(request.data, dict) else {}
         prompt = body.get('prompt') or ''
         tier = body.get('ai_quality_tier')
+        revision_mode = body.get('revision_mode') if isinstance(body.get('revision_mode'), str) else 'general'
         try:
             revision = FreeHtmlBoardRevisionService(
                 board,
                 prompt,
                 request.user,
                 ai_quality_tier=tier if isinstance(tier, str) else None,
+                revision_mode=revision_mode,
             ).run()
         except ValueError as exc:
             return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
-            return AIErrorMapper.to_response(exc, detail_prefix='Tafelbild-Revision fehlgeschlagen')
+            return AIErrorMapper.to_response(exc, detail_prefix='Board-Revision fehlgeschlagen')
         board.refresh_from_db()
         return response.Response(
             {
@@ -266,6 +368,255 @@ class BoardViewSet(viewsets.ModelViewSet):
                 'revision': BoardRevisionSerializer(revision).data,
             }
         )
+
+    @decorators.action(detail=True, methods=['post'], url_path='run-quality-check')
+    def run_quality_check(self, request, pk=None):
+        """Führt Validation + (Visual-QA) + TouchAudit + ScreenshotJudge erneut aus.
+
+        Aktualisiert nur die Report-Felder, **nicht** den Code.
+        """
+        from .services.touch_audit import TouchAuditService
+        from .services.screenshot_quality_judge import ScreenshotQualityJudge
+        from .services.ai_model_router import SmartboardAIModelRouter
+        from .services.free_html_visual_qa import (
+            run_visual_layout_qa,
+            visual_qa_playwright_available,
+            default_visual_qa_document_base,
+        )
+        from .services.quality_report import build_quality_report
+
+        enforce_positive_ai_credits_balance(request.user)
+        board = self.get_object()
+        bundle = {
+            'html': board.html or '',
+            'css': board.css or '',
+            'javascript': board.javascript or '',
+            'used_libraries': list(board.used_libraries or []),
+            'used_assets': list(board.used_assets or []),
+            'used_datasets': list(board.used_datasets or []),
+        }
+        ok, errors, warnings = validate_free_html_bundle(bundle)
+        visual_errs: list[str] = []
+        browser_test = {'ran': False, 'errors': [], 'warnings': []}
+        if visual_qa_playwright_available() and getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True):
+            href = default_visual_qa_document_base()
+            if href:
+                try:
+                    visual_errs, _ = run_visual_layout_qa(bundle, document_base_href=href)
+                    browser_test = {'ran': True, 'errors': visual_errs, 'warnings': []}
+                except Exception as exc:
+                    browser_test = {'ran': False, 'errors': [str(exc)[:300]], 'warnings': []}
+
+        touch_result: dict = {}
+        try:
+            touch_result = TouchAuditService(style_dna=board.style_dna or {}).run(bundle)
+        except Exception:
+            touch_result = {'ran': False, 'reason': 'touch audit failed'}
+
+        screen_result: dict = {}
+        try:
+            router = SmartboardAIModelRouter(user=request.user, board=board)
+            screen_result = ScreenshotQualityJudge(
+                router=router, style_dna=board.style_dna or {},
+                board_meta={'subject': board.subject, 'grade': board.grade, 'topic': board.topic},
+            ).run(bundle, board_id=str(board.id))
+        except Exception:
+            screen_result = {'ran': False, 'reason': 'screenshot judge failed'}
+
+        report = build_quality_report(
+            validation_errors=list(errors) + [f'[Visuell] {e}' for e in visual_errs],
+            validation_warnings=list(warnings),
+            browser_test_result=browser_test,
+            touch_audit_result=touch_result,
+            screenshot_quality_result=screen_result,
+            repair_history=board.repair_history or [],
+            risk_analysis=board.risk_analysis or {},
+            style_dna=board.style_dna or {},
+        )
+        board.validation_errors = list(errors)
+        board.validation_warnings = list(warnings)
+        board.browser_test_result = browser_test
+        board.touch_audit_result = touch_result
+        board.screenshot_quality_result = screen_result
+        board.quality_report = report
+        board.save(update_fields=[
+            'validation_errors', 'validation_warnings',
+            'browser_test_result', 'touch_audit_result', 'screenshot_quality_result',
+            'quality_report', 'updated_at',
+        ])
+        return response.Response(BoardDetailSerializer(board, context={'request': request}).data)
+
+    @decorators.action(detail=True, methods=['post'], url_path='auto-repair')
+    def auto_repair(self, request, pk=None):
+        """Führt RepairAgent auf Basis aktueller Reports aus und legt eine Revision an."""
+        from .services.repair_agent import RepairAgent, MODE_TO_PROMPT_KEY
+        from .services.free_html_generation import _select_provider
+
+        board = self.get_object()
+        try:
+            require_board_at_revision_head(board)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        body = request.data if isinstance(request.data, dict) else {}
+        mode = body.get('revision_mode') or body.get('mode') or 'general_repair'
+        if mode not in MODE_TO_PROMPT_KEY:
+            mode = 'general_repair'
+
+        prev_meta = board_metadata_snapshot(board)
+        prev_html, prev_css, prev_js = board.html or '', board.css or '', board.javascript or ''
+        quality_report_before = dict(board.quality_report or {})
+
+        bundle = {
+            'html': board.html or '',
+            'css': board.css or '',
+            'javascript': board.javascript or '',
+            'teacher_notes': board.teacher_notes or '',
+            'usage_instructions': list(board.usage_instructions or []),
+            'warnings': list(board.warnings or []),
+            'used_libraries': list(board.used_libraries or []),
+            'used_assets': list(board.used_assets or []),
+            'used_datasets': list(board.used_datasets or []),
+        }
+        provider = _select_provider(ai_quality_tier=None)
+        enforce_positive_ai_credits_balance(request.user)
+        from .services.pipeline_ai_meter import generation_meter_context
+
+        try:
+            agent = RepairAgent(
+                provider=provider,
+                style_dna=board.style_dna or {},
+                creative_brief=board.creative_brief or {},
+                risk_analysis=board.risk_analysis or {},
+                context_hint=str(body.get('hint') or '')[:600],
+                run_visual_qa=getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True),
+                run_touch_audit=getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True),
+            )
+            with generation_meter_context(user=request.user) as meter:
+                try:
+                    result = agent.run(
+                        bundle, mode=mode,
+                        touch_audit_result=board.touch_audit_result or {},
+                        screenshot_quality_result=board.screenshot_quality_result or {},
+                    )
+                finally:
+                    meter.flush_logs_to_board(board)
+        except Exception as exc:
+            return AIErrorMapper.to_response(exc, detail_prefix='Auto-Reparatur fehlgeschlagen')
+
+        new_bundle = result.get('bundle') or {}
+        rev_mode = body.get('revision_mode') if body.get(
+            'revision_mode',
+        ) in dict(BoardRevision._meta.get_field('revision_mode').choices) else 'general'
+
+        rev_user = resolve_board_owner(request.user)
+
+        if new_bundle and result.get('ok'):
+            merged = {
+                'html': new_bundle.get('html', board.html or ''),
+                'css': new_bundle.get('css', board.css or ''),
+                'javascript': new_bundle.get('javascript', board.javascript or ''),
+                'teacher_notes': new_bundle.get('teacher_notes', board.teacher_notes or ''),
+                'usage_instructions': new_bundle.get('usage_instructions', board.usage_instructions or []),
+                'warnings': new_bundle.get('warnings', board.warnings or []),
+                'used_libraries': new_bundle.get('used_libraries', board.used_libraries or []),
+                'used_assets': new_bundle.get('used_assets', board.used_assets or []),
+                'used_datasets': new_bundle.get('used_datasets', board.used_datasets or []),
+            }
+            sanitized = FreeHtmlBoardGenerationService.sanitize_payload(merged)
+            _ok, errors, warns = validate_free_html_bundle(sanitized)
+            board.html = sanitized['html']
+            board.css = sanitized['css']
+            board.javascript = sanitized['javascript']
+            board.teacher_notes = sanitized['teacher_notes']
+            board.usage_instructions = sanitized['usage_instructions']
+            board.warnings = sanitized['warnings']
+            board.used_libraries = sanitized['used_libraries']
+            board.used_assets = sanitized['used_assets']
+            board.used_datasets = sanitized['used_datasets']
+            board.validation_errors = list(errors)
+            board.validation_warnings = list(warns)
+            board.touch_audit_result = result.get('touch_audit') or board.touch_audit_result
+            board.repair_history = list(board.repair_history or []) + list(result.get('history') or [])
+            board.save(
+                update_fields=[
+                    'html', 'css', 'javascript', 'teacher_notes', 'usage_instructions', 'warnings',
+                    'used_libraries', 'used_assets', 'used_datasets',
+                    'validation_errors', 'validation_warnings',
+                    'touch_audit_result', 'repair_history', 'updated_at',
+                ],
+            )
+            nm = board_metadata_snapshot(board)
+            nm['auto_repair_mode'] = mode
+            nm['rounds'] = result.get('rounds')
+            revision = BoardRevision.objects.create(
+                board=board,
+                prompt=str(body.get('hint') or '')[:4000],
+                revision_mode=rev_mode,
+                previous_html=prev_html,
+                previous_css=prev_css,
+                previous_javascript=prev_js,
+                new_html=board.html or '',
+                new_css=board.css or '',
+                new_javascript=board.javascript or '',
+                previous_metadata=prev_meta,
+                new_metadata=nm,
+                ai_raw_output={'mode': mode, 'rounds': result.get('rounds')},
+                validation_errors=list(errors),
+                validation_warnings=list(warns),
+                quality_report_before=quality_report_before,
+                repair_notes=list(result.get('history') or []),
+                created_by=rev_user,
+            )
+        else:
+            revision = BoardRevision.objects.create(
+                board=board,
+                prompt=str(body.get('hint') or '')[:4000],
+                revision_mode=rev_mode,
+                previous_html=prev_html,
+                previous_css=prev_css,
+                previous_javascript=prev_js,
+                new_html=board.html or '',
+                new_css=board.css or '',
+                new_javascript=board.javascript or '',
+                previous_metadata=prev_meta,
+                new_metadata={**board_metadata_snapshot(board), 'auto_repair': 'no_board_update', 'mode': mode},
+                ai_raw_output={'mode': mode, 'rounds': result.get('rounds')},
+                validation_errors=list(result.get('errors') or []),
+                validation_warnings=list(result.get('warnings') or []),
+                quality_report_before=quality_report_before,
+                repair_notes=list(result.get('history') or []),
+                created_by=rev_user,
+            )
+        return response.Response({
+            'board': BoardDetailSerializer(board, context={'request': request}).data,
+            'revision': BoardRevisionSerializer(revision).data,
+            'ok': bool(result.get('ok')),
+        })
+
+    @decorators.action(detail=True, methods=['get'], url_path='quality-report')
+    def quality_report_action(self, request, pk=None):
+        board = self.get_object()
+        return response.Response(board.quality_report or {})
+
+    @decorators.action(detail=False, methods=['get'], url_path='pipeline-status')
+    def pipeline_status(self, request):
+        """Frontend-Status: ist die Pipeline aktiv? Welche Audits sind möglich?"""
+        from .services.free_html_visual_qa import visual_qa_playwright_available, default_visual_qa_document_base
+        return response.Response({
+            'use_pipeline': use_pipeline_enabled(),
+            'small_model': str(getattr(settings, 'SMARTBOARD_SMALL_MODEL', '')),
+            'large_model': str(getattr(settings, 'SMARTBOARD_LARGE_MODEL', '')),
+            'default_quality_mode': str(getattr(settings, 'SMARTBOARD_DEFAULT_QUALITY_MODE', 'balanced')),
+            'screenshot_judge_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_SCREENSHOT_JUDGE', True)),
+            'touch_audit_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True)),
+            'browser_smoke_test_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_BROWSER_SMOKE_TEST', True)),
+            'creative_brief_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_CREATIVE_BRIEF', True)),
+            'style_dna_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_STYLE_DNA', True)),
+            'vision_judge_enabled': bool(getattr(settings, 'SMARTBOARD_ENABLE_VISION_JUDGE', False)),
+            'playwright_available': visual_qa_playwright_available(),
+            'visual_qa_document_base_configured': bool(default_visual_qa_document_base()),
+        })
 
     @decorators.action(detail=True, methods=['post'], url_path='validate')
     def validate(self, request, pk=None):
@@ -314,6 +665,9 @@ class BoardViewSet(viewsets.ModelViewSet):
             library_public=False,
             library_published_at=None,
             source_board=None,
+        )
+        create_initial_revision_if_absent(
+            clone, user=resolve_board_owner(request.user), prompt='(Kopie)',
         )
         return response.Response(BoardDetailSerializer(clone, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
@@ -384,20 +738,153 @@ class BoardViewSet(viewsets.ModelViewSet):
         board.refresh_from_db()
         return response.Response(BoardDetailSerializer(board, context={'request': request}).data)
 
+    @decorators.action(detail=True, methods=['post'], url_path='apply-revision')
+    def apply_revision(self, request, pk=None):
+        board = self.get_object()
+        body = request.data if isinstance(request.data, dict) else {}
+        rid = body.get('revision_id')
+        if not rid:
+            return response.Response(
+                {'detail': 'Parameter revision_id fehlt.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target = board.revisions.filter(pk=rid).first()
+        if not target:
+            return response.Response(
+                {'detail': 'Revision nicht gefunden.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            rev_user = resolve_board_owner(request.user)
+        except ValueError:
+            rev_user = None
+        try:
+            apply_revision_to_board(board, target=target, user=rev_user)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        board.refresh_from_db()
+        return response.Response(BoardDetailSerializer(board, context={'request': request}).data)
+
+    @decorators.action(detail=True, methods=['post'], url_path='delete-revision')
+    def delete_revision(self, request, pk=None):
+        board = self.get_object()
+        body = request.data if isinstance(request.data, dict) else {}
+        rid = body.get('revision_id')
+        if not rid:
+            return response.Response(
+                {'detail': 'Parameter revision_id fehlt.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target = board.revisions.filter(pk=rid).first()
+        if not target:
+            return response.Response(
+                {'detail': 'Revision nicht gefunden.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        latest = board.revisions.order_by('-created_at').first()
+        if latest is not None and latest.id == target.id:
+            return response.Response(
+                {'detail': 'Die aktuelle Version kann nicht gelöscht werden.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target.delete()
+        board.refresh_from_db()
+        return response.Response(BoardDetailSerializer(board, context={'request': request}).data)
+
     @decorators.action(detail=False, methods=['get'], url_path='library')
     def library_list(self, request):
         try:
-            resolve_board_owner(request.user)
+            user = resolve_board_owner(request.user)
         except ValueError:
             return response.Response([])
         qs = (
             Board.objects.filter(library_public=True)
             .select_related('owner')
-            .annotate(avg_rating=Avg('ratings__stars'), rating_count=Count('ratings', distinct=True))
-            .order_by('-library_published_at', '-created_at')
+            .annotate(
+                avg_rating=Avg('ratings__stars'),
+                rating_count=Count('ratings', distinct=True),
+                comment_count=Count('library_comments', distinct=True),
+            )
         )
+        scope = (request.query_params.get('scope') or 'all').strip().lower()
+        if scope == 'mine':
+            qs = qs.filter(owner=user)
+        qs = qs.order_by('-library_published_at', '-created_at')
         return response.Response(
             BoardLibraryEntrySerializer(qs, many=True, context={'request': request}).data,
+        )
+
+    @decorators.action(detail=True, methods=['get'], url_path='library-entry')
+    def library_entry(self, request, pk=None):
+        """Einzelner öffentlicher Bibliotheks-Eintrag (Deep-Link zur Community-Vorschau)."""
+        try:
+            resolve_board_owner(request.user)
+        except ValueError:
+            return response.Response(
+                {'detail': 'Authentifizierung erforderlich.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        qs = (
+            Board.objects.filter(pk=pk, library_public=True)
+            .select_related('owner')
+            .annotate(
+                avg_rating=Avg('ratings__stars'),
+                rating_count=Count('ratings', distinct=True),
+                comment_count=Count('library_comments', distinct=True),
+            )
+        )
+        board = qs.first()
+        if not board:
+            raise exceptions.NotFound()
+        return response.Response(
+            BoardLibraryEntrySerializer(board, context={'request': request}).data,
+        )
+
+    @decorators.action(detail=True, methods=['get', 'post'], url_path='library-comments')
+    def library_comments(self, request, pk=None):
+        board = Board.objects.filter(pk=pk, library_public=True).first()
+        if not board:
+            raise exceptions.NotFound()
+
+        if request.method == 'GET':
+            rows = board.library_comments.order_by('-created_at')[:200]
+            return response.Response(BoardLibraryCommentSerializer(rows, many=True).data)
+
+        try:
+            user = resolve_board_owner(request.user)
+        except ValueError:
+            return response.Response(
+                {'detail': 'Authentifizierung erforderlich.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ser = BoardLibraryCommentCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return response.Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        raw_text = ser.validated_data['text']
+        text = strip_tags(raw_text).strip()
+        if not text:
+            return response.Response(
+                {'detail': 'Bitte einen kurzen Text ohne HTML eingeben.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(text) > 2000:
+            text = text[:2000]
+
+        hour_ago = timezone.now() - timedelta(hours=1)
+        recent_n = BoardLibraryComment.objects.filter(
+            board=board, user=user, created_at__gte=hour_ago
+        ).count()
+        if recent_n >= 24:
+            return response.Response(
+                {'detail': 'Zu viele Kommentare in kurzer Zeit. Bitte später erneut versuchen.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        c = BoardLibraryComment.objects.create(board=board, user=user, body=text)
+        return response.Response(
+            BoardLibraryCommentSerializer(c).data,
+            status=status.HTTP_201_CREATED,
         )
 
     @decorators.action(detail=True, methods=['post'], url_path='rate')
@@ -453,6 +940,9 @@ class BoardViewSet(viewsets.ModelViewSet):
             library_public=False,
             library_published_at=None,
             source_board=original,
+        )
+        create_initial_revision_if_absent(
+            clone, user=user, prompt='(Aus Bibliothek übernommen)',
         )
         return response.Response(
             BoardDetailSerializer(clone, context={'request': request}).data,

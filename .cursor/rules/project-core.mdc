@@ -53,8 +53,8 @@ alwaysApply: true
 - **Neue Feature-Page** = 1) Daten via `useQuery` (Key in `lib/listQueries.ts`), 2) Layout mit `<PageHeader>` + `<SectionCard>` / `<EmptyState>`, 3) feature-spezifische Listen/Tabellen lokal in `features/<bereich>/`.
 - **Vor jeder neuen Komponente** kurz `components/ui/` und `components/` lesen — dann erst entscheiden.
 
-## Tafelbild-Erstellung
+## Board-Erstellung
 
-Tafelbilder können in **zwei Modi** erzeugt werden — siehe [blocks-mode.mdc](mdc:.cursor/rules/blocks-mode.mdc) und für KI-Filling [blocks-mode-ai.mdc](mdc:.cursor/rules/blocks-mode-ai.mdc).
+Boards können in **zwei Modi** erzeugt werden — siehe [blocks-mode.mdc](mdc:.cursor/rules/blocks-mode.mdc) und für KI-Filling [blocks-mode-ai.mdc](mdc:.cursor/rules/blocks-mode-ai.mdc).
 - **Kreativ**: KI baut HTML/CSS/JS frei aus dem Lehrkraft-Prompt (`/api/boards/generate/`).
 - **Bausteine**: Lehrkraft wählt pro Seite Bausteine + Stichpunkte (CompositionPlan); KI füllt die Bausteine inhaltlich, gerendert wird deterministisch aus geprüften Templates (`/api/boards/generate-blocks/`).

@@ -28,7 +28,7 @@ export const Topbar = ({
 }: TopbarProps) => (
   <header
     className={cn(
-      'no-print sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-7',
+      'no-print sticky top-0 z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2 sm:gap-4 sm:px-6 lg:px-7',
       className,
     )}
   >
@@ -37,7 +37,9 @@ export const Topbar = ({
         <button
           type="button"
           className="btn btn-ghost btn-sm btn-icon shrink-0"
-          aria-label={sidebarOpen ? 'Seitenleiste einklappen' : 'Seitenleiste einblenden'}
+          aria-label={
+            sidebarOpen ? 'Seitenleiste einklappen (nur Symbole)' : 'Seitenleiste ausklappen (mit Beschriftungen)'
+          }
           aria-expanded={sidebarOpen}
           onClick={onDesktopSidebarToggle}
         >
@@ -74,7 +76,7 @@ export const Topbar = ({
         )}
         {title && (
           <div className="flex items-baseline gap-3">
-            <h1 className="truncate text-xl font-bold tracking-tight text-slate-900">{title}</h1>
+            <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 sm:text-xl">{title}</h1>
             {subtitle && (
               <span className="hidden truncate text-sm text-slate-500 md:inline">{subtitle}</span>
             )}

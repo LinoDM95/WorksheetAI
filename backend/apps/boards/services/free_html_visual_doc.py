@@ -9,6 +9,20 @@ STAGE_BASE_W = 1280
 STAGE_BASE_H = 720
 
 _ALWAYS_LIBS = ('d3', 'roughjs')
+_LIBRARY_SCRIPT_ORDER: tuple[str, ...] = (
+    'd3',
+    'roughjs',
+    'chartjs',
+    'leaflet',
+    'topojson',
+    'turf',
+    'gsap',
+    'konva',
+    'matterjs',
+    'interactjs',
+    'confetti',
+    'howler',
+)
 _LIBRARY_SCRIPTS: dict[str, str] = {
     'd3': '/board-libs/d3.min.js',
     'roughjs': '/board-libs/rough.min.js',
@@ -16,6 +30,12 @@ _LIBRARY_SCRIPTS: dict[str, str] = {
     'leaflet': '/board-libs/leaflet.js',
     'turf': '/board-libs/turf.min.js',
     'topojson': '/board-libs/topojson-client.min.js',
+    'interactjs': '/board-libs/interact.min.js',
+    'matterjs': '/board-libs/matter.min.js',
+    'gsap': '/board-libs/gsap.min.js',
+    'confetti': '/board-libs/confetti.browser.js',
+    'howler': '/board-libs/howler.min.js',
+    'konva': '/board-libs/konva.min.js',
 }
 
 _ESCAPE_STYLE_RE = re.compile(r'</style', re.IGNORECASE)
@@ -40,8 +60,16 @@ def _dedupe(seq: list[str]) -> list[str]:
     return out
 
 
+def _library_script_order_index(library_id: str) -> int:
+    try:
+        return _LIBRARY_SCRIPT_ORDER.index(library_id)
+    except ValueError:
+        return len(_LIBRARY_SCRIPT_ORDER) + 99
+
+
 def _library_script_tags(used_libraries: list[str]) -> str:
     wanted = _dedupe([*_ALWAYS_LIBS, *[str(x).strip() for x in (used_libraries or []) if x]])
+    wanted.sort(key=_library_script_order_index)
     lines: list[str] = []
     for lid in wanted:
         src = _LIBRARY_SCRIPTS.get(lid)

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Board, BoardFolder, BoardRating, BoardRevision
+from .models import Board, BoardFolder, BoardLibraryComment, BoardRating, BoardRevision
 
 
 @admin.register(BoardFolder)
@@ -31,6 +31,14 @@ class BoardRatingAdmin(admin.ModelAdmin):
     list_display = ('board', 'user', 'stars', 'updated_at')
     list_filter = ('stars',)
     raw_id_fields = ('board', 'user')
+
+
+@admin.register(BoardLibraryComment)
+class BoardLibraryCommentAdmin(admin.ModelAdmin):
+    list_display = ('board', 'created_at')
+    raw_id_fields = ('board', 'user')
+    search_fields = ('body', 'board__title')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(BoardRevision)

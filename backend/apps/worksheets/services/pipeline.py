@@ -120,19 +120,26 @@ class WorksheetGenerator(WorksheetPipeline):
         self._curriculum_warning: str | None = None
 
     def run(self) -> Worksheet:
+        from apps.boards.services.pipeline_ai_meter import generation_meter_context
+
         self._resolve_pattern()
         self.page_setup = self.normalize_setup(self.payload.get('page_setup'))
         self._resolve_curriculum_match()
-        content = self._generate_with_provider()
-        curriculum_alignment: dict[str, Any] = {}
-        if isinstance(content, dict):
-            curriculum_alignment = _sanitize_curriculum_alignment(content.pop('curriculum_alignment', None))
-        content = self._maybe_review(content)
-        if isinstance(content, dict):
-            content.pop('curriculum_alignment', None)
-        content, notes = self.repair(content, self.pattern, run_reflow=True)
-        render_model = self.render(content, self.page_setup, self.pattern, self.payload)
-        worksheet = self._persist(content, render_model, curriculum_alignment)
+        with generation_meter_context(user=self.user) as meter:
+            content = self._generate_with_provider()
+            curriculum_alignment: dict[str, Any] = {}
+            if isinstance(content, dict):
+                curriculum_alignment = _sanitize_curriculum_alignment(content.pop('curriculum_alignment', None))
+            content = self._maybe_review(content)
+            if isinstance(content, dict):
+                content.pop('curriculum_alignment', None)
+            content, notes = self.repair(content, self.pattern, run_reflow=True)
+            render_model = self.render(content, self.page_setup, self.pattern, self.payload)
+            worksheet = self._persist(content, render_model, curriculum_alignment)
+            meter.flush_logs_to_db(
+                board=None,
+                metadata_extra={'context': 'worksheet', 'worksheet_id': str(worksheet.pk)},
+            )
         if notes:
             worksheet.content['validation_errors'] = notes
             worksheet.save(update_fields=['content'])
@@ -341,29 +348,39 @@ class PageRegenerator(WorksheetPipeline):
         self._initial_content = content
 
     def run(self) -> tuple[dict, dict, list[str]]:
-        src = self._prepare_source()
-        old_page = src['pages'][self.page_index]
-        new_page = self.provider.regenerate_page(self._build_payload(src, old_page))
-        blocks = new_page.get('blocks')
-        if not isinstance(blocks, list) or len(blocks) == 0:
-            raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
-        src['pages'][self.page_index] = {
-            'page_label': str(
-                new_page.get('page_label')
-                if new_page.get('page_label') is not None
-                else old_page.get('page_label') or ''
-            ),
-            'blocks': blocks,
-        }
-        # Kein Reflow: dieser Lauf ersetzt *eine* Seite — keine zusätzlichen Dokumentseiten.
-        src, notes = self.repair(src, self.worksheet.pattern, run_reflow=False)
-        self.attach_validation_errors(src, notes)
-        render_model = self.render(
-            src,
-            self.worksheet.page_setup,
-            self.worksheet.pattern,
-            self._req_meta(),
-        )
+        from apps.boards.services.pipeline_ai_meter import generation_meter_context
+
+        with generation_meter_context(user=self.worksheet.owner) as meter:
+            src = self._prepare_source()
+            old_page = src['pages'][self.page_index]
+            new_page = self.provider.regenerate_page(self._build_payload(src, old_page))
+            blocks = new_page.get('blocks')
+            if not isinstance(blocks, list) or len(blocks) == 0:
+                raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
+            src['pages'][self.page_index] = {
+                'page_label': str(
+                    new_page.get('page_label')
+                    if new_page.get('page_label') is not None
+                    else old_page.get('page_label') or ''
+                ),
+                'blocks': blocks,
+            }
+            src, notes = self.repair(src, self.worksheet.pattern, run_reflow=False)
+            self.attach_validation_errors(src, notes)
+            render_model = self.render(
+                src,
+                self.worksheet.page_setup,
+                self.worksheet.pattern,
+                self._req_meta(),
+            )
+            meter.flush_logs_to_db(
+                board=None,
+                metadata_extra={
+                    'context': 'worksheet_page_regenerate',
+                    'worksheet_id': str(self.worksheet.pk),
+                    'page_index': self.page_index,
+                },
+            )
         return src, render_model, notes
 
     def _prepare_source(self) -> dict:

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Blocks, Sparkles, X } from 'lucide-react';
@@ -11,14 +11,11 @@ import {
   TextInput,
 } from '../../../components/ui';
 import { BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
-import { generateBoard } from '../boardsApi';
+import { generateBoardWithProgress } from '../boardsApi';
 import { BoardAiGenerationOverlay } from './BoardAiGenerationOverlay';
-import { BoardBuilderModal } from '../builder/BoardBuilderModal';
 import type { BoardGeneratePayload, VisualStyleId } from '../types';
 import { cn } from '../../../lib/cn';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
-
-type BoardCreationMode = 'creative' | 'blocks';
 
 const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
   { id: 'auto', label: 'Automatisch', hint: 'KI wählt Stil zum Thema.' },
@@ -34,7 +31,7 @@ const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
 
 const PROMPT_CHIPS = [
   'Erkläre den Wasserkreislauf interaktiv mit Buttons für Verdunstung, Kondensation, Niederschlag und Abfluss.',
-  'Baue ein Tafelbild zum Zweiten Weltkrieg mit Zeit-Slider 1938 → 1945 (vereinfachte Karte).',
+  'Baue ein Board zum Zweiten Weltkrieg mit Zeit-Slider 1938 → 1945 (vereinfachte Karte).',
   'Erstelle einen Mathe-Zahlenstrahl bis 100 mit Plus/Minus-Aufgaben und Quiz.',
   'Mache eine Physik-Simulation mit Schiebereglern für Masse und Geschwindigkeit.',
 ];
@@ -48,7 +45,6 @@ type NewBoardModalProps = {
 
 export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBoardModalProps) => {
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<BoardCreationMode>('creative');
 
   const [subject, setSubject] = useState('');
   const [grade, setGrade] = useState('');
@@ -57,17 +53,25 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const [visualStyle, setVisualStyle] = useState<VisualStyleId>('auto');
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [genOverlay, setGenOverlay] = useState<{ label: string; pct: number } | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: (payload: BoardGeneratePayload) => generateBoard(payload),
+    mutationFn: (payload: BoardGeneratePayload) =>
+      generateBoardWithProgress(payload, {
+        onPhase: (p) => setGenOverlay({ label: p.label, pct: p.pct }),
+      }),
+    onMutate: () =>
+      setGenOverlay({ label: 'Wir bereiten die Generierung vor …', pct: 4 }),
     onSuccess: (board) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       addPendingFirstOpenBoard(board.id);
       onPendingHighlightChange?.();
       onClose();
       setError(null);
+      setGenOverlay(null);
     },
     onError: (err: unknown) => {
+      setGenOverlay(null);
       const detail = (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail;
       setError(detail || (err as Error)?.message || 'Generierung fehlgeschlagen.');
     },
@@ -85,7 +89,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const handleSubmit = () => {
     setError(null);
     if (!prompt.trim()) {
-      setError('Bitte beschreibe in eigenen Worten, was das Tafelbild zeigen soll.');
+      setError('Bitte beschreibe in eigenen Worten, was das Board zeigen soll.');
       return;
     }
     const payload: BoardGeneratePayload = {
@@ -104,22 +108,14 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
 
   if (!open || typeof document === 'undefined') return null;
 
-  if (mode === 'blocks') {
-    return (
-      <BoardBuilderModal
-        open={open}
-        onClose={() => {
-          setMode('creative');
-          onClose();
-        }}
-        onPendingHighlightChange={onPendingHighlightChange}
-      />
-    );
-  }
-
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
-      <BoardAiGenerationOverlay open={busy} variant="generate" />
+      <BoardAiGenerationOverlay
+        open={busy}
+        variant="generate"
+        phaseDescription={genOverlay?.label ?? null}
+        progressPercent={genOverlay?.pct ?? null}
+      />
       <button
         type="button"
         className="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]"
@@ -137,9 +133,9 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900 sm:text-base">Neues interaktives Tafelbild</h2>
+            <h2 className="text-sm font-semibold text-slate-900 sm:text-base">Neues interaktives Board</h2>
             <p className="mt-0.5 text-[11px] leading-snug text-slate-500 sm:text-xs">
-              Wähle den Modus: Kreativ (KI baut das ganze Bild) oder Bausteine (geprüfte Templates).
+              Kreativ: die KI baut das Board aus deinem Prompt. Der Bausteinmodus mit geprüften Templates kommt demnächst.
             </p>
           </div>
           <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" disabled={busy} onClick={onClose}>
@@ -148,8 +144,14 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
         </div>
 
         <div className="flex shrink-0 items-center gap-1 border-b border-slate-100 px-4 pt-2 sm:px-5">
-          <ModeTab active={mode === 'creative'} onClick={() => setMode('creative')} label="Kreativ" hint="KI baut frei" icon={<Sparkles size={14} aria-hidden />} />
-          <ModeTab active={false} onClick={() => setMode('blocks')} label="Bausteine" hint="Geprüfte Templates" icon={<Blocks size={14} aria-hidden />} />
+          <ModeTab active label="Kreativ" hint="KI baut frei" icon={<Sparkles size={14} aria-hidden />} />
+          <ModeTab
+            disabled
+            comingSoonLabel="Demnächst"
+            label="Bausteine"
+            hint="Geprüfte Templates"
+            icon={<Blocks size={14} aria-hidden />}
+          />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
@@ -256,7 +258,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
                   loading={busy}
                   leftIcon={<Sparkles size={16} aria-hidden />}
                 >
-                  <span className="truncate">Interaktives Tafelbild erzeugen</span>
+                  <span className="truncate">Interaktives Board erzeugen</span>
                 </Button>
               </div>
             </Card>
@@ -274,26 +276,54 @@ const ModeTab = ({
   hint,
   icon,
   onClick,
+  disabled,
+  comingSoonLabel,
 }: {
-  active: boolean;
+  active?: boolean;
   label: string;
   hint: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-pressed={active}
-    className={cn(
-      'flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-2 text-xs font-medium transition',
-      active
-        ? 'border-indigo-500 text-indigo-700'
-        : 'border-transparent text-slate-500 hover:text-slate-700',
-    )}
-  >
-    <span className="flex h-5 w-5 items-center justify-center text-slate-500">{icon}</span>
-    <span className="font-semibold">{label}</span>
-    <span className="hidden text-[10px] text-slate-400 sm:inline">· {hint}</span>
-  </button>
-);
+  icon: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  comingSoonLabel?: string;
+}) => {
+  if (disabled) {
+    return (
+      <div
+        className={cn(
+          'flex cursor-not-allowed items-center gap-2 rounded-t-lg border-b-2 border-transparent px-3 py-2 text-xs font-medium text-slate-400 opacity-[0.72]',
+        )}
+        role="note"
+        aria-label={`${label}: ${comingSoonLabel ?? 'Demnächst verfügbar'}`}
+        title={`${comingSoonLabel ?? 'Demnächst'} — ${hint}`}
+      >
+        <span className="flex h-5 w-5 items-center justify-center text-slate-400">{icon}</span>
+        <span className="font-semibold">{label}</span>
+        {comingSoonLabel ? (
+          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            {comingSoonLabel}
+          </span>
+        ) : null}
+        <span className="hidden text-[10px] text-slate-400 sm:inline">· {hint}</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active ?? false}
+      className={cn(
+        'flex items-center gap-2 rounded-t-lg border-b-2 px-3 py-2 text-xs font-medium transition',
+        active
+          ? 'border-indigo-500 text-indigo-700'
+          : 'border-transparent text-slate-500 hover:text-slate-700',
+      )}
+    >
+      <span className="flex h-5 w-5 items-center justify-center text-slate-500">{icon}</span>
+      <span className="font-semibold">{label}</span>
+      <span className="hidden text-[10px] text-slate-400 sm:inline">· {hint}</span>
+    </button>
+  );
+};

@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import decorators, response, status, viewsets
 from rest_framework.views import APIView
 
+from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.curricula.models import CurriculumContext, CurriculumExtractionJob, CurriculumSource
 from apps.curricula.serializers import (
     CurriculumApproveSerializer,
@@ -92,6 +93,7 @@ class CurriculumSourceViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'], url_path='auto-discover')
     def auto_discover(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
         source = self.get_object()
         if source.extraction_status != CurriculumSource.EXTRACTION_DONE:
             CurriculumPDFExtractionService.extract_source(source)
@@ -104,6 +106,7 @@ class CurriculumSourceViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'], url_path='auto-extract')
     def auto_extract(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
         source = self.get_object()
         ser = CurriculumAutoExtractRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -241,6 +244,7 @@ class CurriculumExtractionJobViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['post'], url_path='run')
     def run(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
         job = self.get_object()
         CurriculumAIExtractionService.extract_context(job)
         job.refresh_from_db()

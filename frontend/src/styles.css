@@ -79,6 +79,12 @@
 html {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  overflow-x: clip;
+}
+
+#root {
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 html, body {
@@ -155,24 +161,27 @@ input, select, textarea { font-family: inherit; }
 .btn-icon.btn-sm { width: 30px; }
 
 /* ---------- Inputs ---------- */
-.input, .select, .textarea {
-  width: 100%;
-  height: 38px;
-  padding: 0 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-strong);
-  background: #fff;
-  color: var(--color-ink-900);
-  font-size: 14px;
-  transition: border-color 120ms, box-shadow 120ms;
+/* @layer components: Tailwind-Utilities (z. B. pl-* auf SearchInput) dürfen Padding überschreiben */
+@layer components {
+  .input, .select, .textarea {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-strong);
+    background: #fff;
+    color: var(--color-ink-900);
+    font-size: 14px;
+    transition: border-color 120ms, box-shadow 120ms;
+  }
+  .textarea { height: auto; padding: 10px 12px; line-height: 1.5; resize: vertical; }
+  .input:focus, .select:focus, .textarea:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+  }
+  .input::placeholder, .textarea::placeholder { color: var(--color-ink-400); }
 }
-.textarea { height: auto; padding: 10px 12px; line-height: 1.5; resize: vertical; }
-.input:focus, .select:focus, .textarea:focus {
-  outline: none;
-  border-color: var(--color-primary-500);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
-}
-.input::placeholder, .textarea::placeholder { color: var(--color-ink-400); }
 
 .field-label {
   display: block;
@@ -660,29 +669,10 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
-/* Tafelbild KI — Warteanimation (Vollbild) */
-@keyframes board-ai-glow-rotate {
+/* Board KI — Warteanimation (Vollbild, hell, App-Tokens) */
+@keyframes board-ai-overlay-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes board-ai-float {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.92;
-  }
-  50% {
-    transform: translateY(-5px);
-    opacity: 1;
-  }
-}
-@keyframes board-ai-shimmer-move {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
   }
 }
 @keyframes board-ai-dot {
@@ -697,23 +687,13 @@ input[type="range"]::-moz-range-thumb {
     transform: scale(1);
   }
 }
-.board-ai-overlay__ring {
-  animation: board-ai-glow-rotate 10s linear infinite;
+.board-ai-overlay__spinner-ring {
+  animation: board-ai-overlay-spin 0.9s linear infinite;
 }
-.board-ai-overlay__core {
-  animation: board-ai-float 2.6s ease-in-out infinite;
-}
-.board-ai-overlay__shimmer {
-  background-image: linear-gradient(
-    125deg,
-    rgba(99, 102, 241, 0.08) 0%,
-    rgba(129, 140, 248, 0.04) 25%,
-    rgba(56, 189, 248, 0.07) 50%,
-    rgba(129, 140, 248, 0.04) 75%,
-    rgba(99, 102, 241, 0.08) 100%
-  );
-  background-size: 200% 200%;
-  animation: board-ai-shimmer-move 4.5s ease-in-out infinite;
+@media (prefers-reduced-motion: reduce) {
+  .board-ai-overlay__spinner-ring {
+    animation: none;
+  }
 }
 .board-ai-overlay__dot:nth-child(1) {
   animation: board-ai-dot 1.2s ease-in-out infinite;
@@ -723,4 +703,34 @@ input[type="range"]::-moz-range-thumb {
 }
 .board-ai-overlay__dot:nth-child(3) {
   animation: board-ai-dot 1.2s ease-in-out 0.4s infinite;
+}
+
+/* Credits-Bubble (Header): Iris-/Seifenblasen-Schimmer im Füllbereich */
+@keyframes credits-bubble-shimmer-move {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+.credits-bubble-fill-shimmer {
+  background-size: 220% 220%;
+  animation: credits-bubble-shimmer-move 9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .credits-bubble-fill-shimmer {
+    animation: none;
+  }
+}
+
+/* Live-Vorschau / Smartboard: sanfter Morph beim nativen Vollbild (View Transitions API) */
+@supports (view-transition-name: none) {
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-group(board-library-live-fs-root),
+    ::view-transition-group(board-editor-fs-root) {
+      animation-duration: 520ms;
+      animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+  }
 }

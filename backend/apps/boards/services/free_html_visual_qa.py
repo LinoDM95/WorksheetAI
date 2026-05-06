@@ -1,4 +1,4 @@
-"""Headless-Browser-Visuelle QA für Free-HTML-Tafelbilder (Überlappungen, Bühne, Laufzeitfehler)."""
+"""Headless-Browser-Visuelle QA für Free-HTML-Boards (Überlappungen, Bühne, Laufzeitfehler)."""
 from __future__ import annotations
 
 import json
@@ -26,7 +26,7 @@ LAYOUT_EVAL_JS = """
   for (const p of bodies) {
     const t = (p.textContent || '').trim();
     if (t.startsWith('Skriptfehler:')) {
-      errors.push('Laufzeitfehler im Tafelbild: ' + t.slice(0, 220));
+      errors.push('Laufzeitfehler im Board: ' + t.slice(0, 220));
     }
   }
 

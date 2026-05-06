@@ -1,6 +1,6 @@
-# Auftrag: Interaktives Tafelbild — Revision (Free HTML5)
+# Auftrag: Interaktives Board — Revision (Free HTML5)
 
-Du bekommst ein bestehendes Tafelbild und einen Änderungswunsch. Liefere eine **vollständig überarbeitete Fassung** von HTML, CSS und JavaScript zurück. Es bleiben dieselben Sicherheits- und Sandbox-Regeln wie bei der Erstgenerierung gültig.
+Du bekommst ein bestehendes Board und einen Änderungswunsch. Liefere eine **vollständig überarbeitete Fassung** von HTML, CSS und JavaScript zurück. Es bleiben dieselben Sicherheits- und Sandbox-Regeln wie bei der Erstgenerierung gültig.
 
 **Design-Bühne:** Der Loader verwendet eine feste Arbeitsfläche **1280×720 px** und skaliert sie **proportional als Ganzes**. Dein Inhalt liegt in **`#board-root`**; **alles Wesentliche** bleibt **innerhalb dieser Fläche** (`.free-board` füllt **100 %** mit `box-sizing: border-box`).
 
@@ -46,7 +46,7 @@ Du bekommst ein bestehendes Tafelbild und einen Änderungswunsch. Liefere eine *
 ### Libraries
 {{ libraries_summary }}
 
-**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (z. B. `chartjs` bei `window.Chart` / `new Chart`).
+**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`).
 
 ### Assets
 {{ assets_summary }}
@@ -78,7 +78,7 @@ Du bekommst ein bestehendes Tafelbild und einen Änderungswunsch. Liefere eine *
 - Verbote unverändert: kein `<script>` im HTML, keine `on*=` Inline-Handler, keine `<form>`/`<iframe>`/`<object>`/`<embed>`, kein `javascript:`-href.
 - JS in IIFE mit `'use strict';` + `try/catch`. Keine verbotenen APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `localStorage`/`sessionStorage`/`indexedDB`, `document.cookie`, `eval`, `new Function`, `Function('…')`, `import()`, `alert/prompt/confirm`, `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`).
 - Defensive DOM-Zugriffe: alle `getElementById/querySelector` Ergebnisse vor Nutzung prüfen.
-- Optional: **Chart.js** (`window.Chart`), **nur** wenn `chartjs` in `used_libraries` steht — für Balken-, Linien-, Kreisdiagramme und kleine Dashboards auf **Canvas**. Sonst **d3** für maßgeschneiderte SVG-Charts.
+- Optional: **`chartjs` → `Chart`**, wenn in `used_libraries`. **`interactjs`/`matterjs`/`gsap`/`confetti`/`howler`/`konva`/`leaflet`/`turf`/`topojson`** analog — immer ID setzen, sobald das globale API im Code vorkommt. Sonst **d3**/Vanilla wie in der Haupt-Prompt-Anleitung.
 - Werte aus `<input type="range">` mit `parseInt/parseFloat` lesen und auf Range klemmen.
 - Kein `setInterval` ohne `clearInterval`. Kein endloser `requestAnimationFrame` ohne Abbruchbedingung.
 - **Touch / Smartboard:** Regeln im Abschnitt „Pflicht: Touch / Smartboard“ vollständig erfüllen — nicht nur Hover, Mindestgrößen für alle Bedienelemente.

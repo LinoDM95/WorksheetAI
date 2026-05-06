@@ -14,12 +14,14 @@ export type PublicBoardPayload = {
 export const fetchPublicBoardByToken = (shareToken: string) =>
   axios
     .get<PublicBoardPayload>(`${baseURL}/boards/public-play/${encodeURIComponent(shareToken)}/`, {
-      timeout: 660_000,
+      timeout: 60_000,
     })
     .then((r) => r.data);
 
 export const buildStudentBoardUrl = (shareToken: string): string => {
   if (typeof window === 'undefined') return '';
+  const configured = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.trim().replace(/\/$/, '');
+  const origin = configured || window.location.origin;
   const prefix = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
-  return `${window.location.origin}${prefix}/s/${encodeURIComponent(shareToken)}`;
+  return `${origin}${prefix}/s/${encodeURIComponent(shareToken)}`;
 };

@@ -1,8 +1,10 @@
-# Auftrag: Automatische Reparatur — Free-HTML5 Tafelbild (Server-Validierung)
+# Auftrag: Automatische Reparatur — Free-HTML5 Board (Server-Validierung)
 
 Die **letzte KI-Fassung** hat die **serverseitige Prüfung** nicht bestanden. Deine Aufgabe: **nur** die genannten Mängel beheben — mit **minimalen Änderungen** an HTML, CSS und JavaScript. Didaktik, Layout-Idee und Touch-Konzept bleiben erhalten, soweit sie nicht mit den Regeln kollidieren.
 
 Fehler, die mit **`[Visuell]`** beginnen, stammen aus einer **Headless-Layoutprüfung** (Überlappungen von Bedienelementen, Elemente außerhalb der **1280×720**-Bühne, sichtbare Skriptfehler-Overlays, harte Konsolen-/Lade-Fehler). Behebe sie durch Layout- und CSS-Anpassungen, nicht durch neue Features.
+
+Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z. B. zu kleine Ziele). Nur nötige CSS-/HTML-Anpassungen: größere Klick-/Touchflächen, sinnvolle Abstände, **Pointer-Events** statt reiner Mauspflicht; keine inhaltliche Neuerfindung.
 
 **Design-Bühne:** Unverändert **1280×720 px** in `#board-root`; `.free-board` füllt **100 %** Höhe/Breite mit `box-sizing:border-box` (wie bei Erstgenerierung und Revision).
 

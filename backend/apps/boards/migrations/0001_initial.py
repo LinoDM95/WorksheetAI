@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
                 ('subject', models.CharField(blank=True, max_length=120)),
                 ('grade', models.CharField(blank=True, max_length=60)),
                 ('topic', models.CharField(blank=True, max_length=220)),
-                ('board_type', models.CharField(choices=[('interactive_board', 'Interaktives Tafelbild'), ('lesson_intro', 'Stundeneinstieg'), ('practice_board', 'Übungstafel'), ('explanation_board', 'Erklärtafel'), ('quiz_board', 'Quiz-Tafel')], default='interactive_board', max_length=40)),
+                ('board_type', models.CharField(choices=[('interactive_board', 'Interaktives Board'), ('lesson_intro', 'Stundeneinstieg'), ('practice_board', 'Übungstafel'), ('explanation_board', 'Erklärtafel'), ('quiz_board', 'Quiz-Tafel')], default='interactive_board', max_length=40)),
                 ('status', models.CharField(choices=[('draft', 'Entwurf'), ('generated', 'Erzeugt'), ('archived', 'Archiviert')], default='draft', max_length=20)),
                 ('spec', models.JSONField(default=dict)),
                 ('generation_prompt', models.TextField(blank=True)),

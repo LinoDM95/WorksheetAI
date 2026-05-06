@@ -1,9 +1,9 @@
 ---
-description: Bausteinmodus für interaktive Tafelbilder — Architektur, Pflichten, Limits
+description: Bausteinmodus für interaktive Boards — Architektur, Pflichten, Limits
 alwaysApply: true
 ---
 
-# Bausteinmodus interaktiver Tafelbilder
+# Bausteinmodus interaktiver Boards
 
 Der Bausteinmodus ist die **strukturierte** Alternative zum freien KI-Modus. Die Lehrkraft gibt **nur** Titel/Fach/Klasse/optionale Stilrichtung an und pro Seite **stichpunktartige Themen** sowie die gewünschten **Bausteine** (Typen, keine Inhalte). Die KI füllt die Bausteine inhaltlich; gerendert wird strikt deterministisch über geprüfte Templates.
 
@@ -40,7 +40,7 @@ Der Bausteinmodus ist die **strukturierte** Alternative zum freien KI-Modus. Die
 
 6. **Eine Bühne, mehrere Slides.** Alle Seiten landen in **einem** 1280×720-iframe; Slide-Navigation kommt aus `compose.py`.
 
-7. **Keine Vorschau im Builder.** Der Builder zeigt nur Plan-Struktur (Bullets + Slot-Liste). Lehrer sehen das fertige Tafelbild erst nach dem Generieren — das hält den Builder schnell und entkoppelt ihn vom Render-Code.
+7. **Keine Vorschau im Builder.** Der Builder zeigt nur Plan-Struktur (Bullets + Slot-Liste). Lehrer sehen das fertige Board erst nach dem Generieren — das hält den Builder schnell und entkoppelt ihn vom Render-Code.
 
 ## Wo liegt was?
 

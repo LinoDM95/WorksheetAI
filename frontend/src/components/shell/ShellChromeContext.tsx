@@ -7,7 +7,7 @@ const BREADCRUMB_HREF: Record<string, string> = {
   'Meine Arbeitsblätter': '/app/worksheets',
   Vorlagen: '/app/patterns',
   Lehrpläne: '/app/curriculum',
-  'Bibliothek & Teilen': '/app/library',
+  Bibliothek: '/app/boards/library',
   Einstellungen: '/app/settings',
 };
 

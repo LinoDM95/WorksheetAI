@@ -13,6 +13,7 @@ from django.conf import settings
 
 from ..models import Board
 from ..owner import resolve_board_owner
+from .board_revision_head import create_initial_revision_if_absent
 from .blocks import (
     SpecValidationError,
     compose_board,
@@ -39,7 +40,7 @@ def _finishing_enabled() -> bool:
 
 
 class FreeHtmlBlockBoardGenerationService:
-    """Erzeugt ein Tafelbild aus einem CompositionPlan (Bausteinmodus).
+    """Erzeugt ein Board aus einem CompositionPlan (Bausteinmodus).
 
     Public API:
         run() -> Board
@@ -52,100 +53,103 @@ class FreeHtmlBlockBoardGenerationService:
         self.raw_plan = raw_plan or {}
 
     def run(self) -> Board:
+        from .pipeline_ai_meter import generation_meter_context
+
         try:
             plan = validate_plan(self.raw_plan)
         except SpecValidationError as exc:
             raise ValueError('; '.join(exc.errors)) from exc
 
-        spec, fill_notes = fill_plan_with_ai(plan)
-        finishing = self._finishing_pass(spec)
-        theme = resolve_theme(finishing.get('theme_id') or spec.theme_id)
-        composed = compose_board(spec, theme=theme)
+        with generation_meter_context(user=self.user) as meter:
+            spec, fill_notes = fill_plan_with_ai(plan)
+            finishing = self._finishing_pass(spec)
+            theme = resolve_theme(finishing.get('theme_id') or spec.theme_id)
+            composed = compose_board(spec, theme=theme)
 
-        sanitized = sanitize_free_html_bundle({
-            'html': composed['html'],
-            'css': composed['css'],
-            'javascript': composed['javascript'],
-            'teacher_notes': finishing.get('teacher_notes') or '',
-            'usage_instructions': finishing.get('usage_instructions') or [],
-            'warnings': [],
-            'used_libraries': composed['used_libraries'],
-            'used_assets': composed['used_assets'],
-            'used_datasets': composed['used_datasets'],
-        })
-        ok, errs, warns = validate_free_html_bundle(sanitized)
+            sanitized = sanitize_free_html_bundle({
+                'html': composed['html'],
+                'css': composed['css'],
+                'javascript': composed['javascript'],
+                'teacher_notes': finishing.get('teacher_notes') or '',
+                'usage_instructions': finishing.get('usage_instructions') or [],
+                'warnings': [],
+                'used_libraries': composed['used_libraries'],
+                'used_assets': composed['used_assets'],
+                'used_datasets': composed['used_datasets'],
+            })
+            ok, errs, warns = validate_free_html_bundle(sanitized)
 
-        repair_trace: list[dict[str, Any]] = [{
-            'round': 0,
-            'ok': ok,
-            'structural_ok': ok,
-            'structural_error_count': len(errs),
-            'visual_error_count': 0,
-            'error_count': len(errs),
-            'errors': list(errs),
-            'warning_count': len(warns),
-            'mode': 'blocks',
-        }]
+            repair_trace: list[dict[str, Any]] = [{
+                'round': 0,
+                'ok': ok,
+                'structural_ok': ok,
+                'structural_error_count': len(errs),
+                'visual_error_count': 0,
+                'error_count': len(errs),
+                'errors': list(errs),
+                'warning_count': len(warns),
+                'mode': 'blocks',
+            }]
 
-        if ok and _visual_qa_for_pipeline():
-            # Bei Bedarf in Reparaturschleife einklinken: KI hat nichts zu reparieren,
-            # aber Visual-QA als Sicherheitsnetz; max_repairs=0 → reine Prüfung.
-            try:
-                from .free_html_visual_qa import run_visual_layout_qa
-                vis_errs, vis_warns = run_visual_layout_qa(sanitized, document_base_href=None)
-                if vis_errs:
-                    ok = False
-                    errs = list(errs) + [f'[Visuell] {e}' for e in vis_errs]
-                warns = list(warns) + list(vis_warns)
-                repair_trace.append({
-                    'round': 1,
-                    'ok': ok,
-                    'visual_error_count': len(vis_errs),
-                    'warning_count': len(vis_warns),
-                    'mode': 'blocks-visual-qa',
-                })
-            except Exception:
-                logger.exception('Visuelle QA für Bausteinmodus übersprungen.')
+            if ok and _visual_qa_for_pipeline():
+                try:
+                    from .free_html_visual_qa import run_visual_layout_qa
+                    vis_errs, vis_warns = run_visual_layout_qa(sanitized, document_base_href=None)
+                    if vis_errs:
+                        ok = False
+                        errs = list(errs) + [f'[Visuell] {e}' for e in vis_errs]
+                    warns = list(warns) + list(vis_warns)
+                    repair_trace.append({
+                        'round': 1,
+                        'ok': ok,
+                        'visual_error_count': len(vis_errs),
+                        'warning_count': len(vis_warns),
+                        'mode': 'blocks-visual-qa',
+                    })
+                except Exception:
+                    logger.exception('Visuelle QA für Bausteinmodus übersprungen.')
 
-        title = (spec.title or composed.get('title') or 'Tafelbild')[:255]
-        desc = (spec.description or composed.get('description') or '')[:5000]
+            title = (spec.title or composed.get('title') or 'Board')[:255]
+            desc = (spec.description or composed.get('description') or '')[:5000]
 
-        gen_input: dict[str, Any] = {
-            'composition_mode': 'blocks',
-            'composition_plan': self.raw_plan,
-            'composition_spec': spec.model_dump(mode='python'),
-            'theme_id': theme.id,
-            'finishing_used': bool(finishing.get('source') == 'ai'),
-            'finishing_payload': finishing,
-            'fill_notes': fill_notes,
-            'validation_repair_trace': repair_trace,
-            'visual_qa_pipeline': 'on' if _visual_qa_for_pipeline() else 'off',
-        }
+            gen_input: dict[str, Any] = {
+                'composition_mode': 'blocks',
+                'composition_plan': self.raw_plan,
+                'composition_spec': spec.model_dump(mode='python'),
+                'theme_id': theme.id,
+                'finishing_used': bool(finishing.get('source') == 'ai'),
+                'finishing_payload': finishing,
+                'fill_notes': fill_notes,
+                'validation_repair_trace': repair_trace,
+                'visual_qa_pipeline': 'on' if _visual_qa_for_pipeline() else 'off',
+            }
 
-        board = Board.objects.create(
-            owner=self.user,
-            title=title,
-            description=desc,
-            subject=str(spec.subject or '')[:120],
-            grade=str(spec.grade or '')[:60],
-            topic=str(spec.topic or '')[:220],
-            board_type='interactive_board',
-            status='generated' if ok else 'draft',
-            html=sanitized['html'],
-            css=sanitized['css'],
-            javascript=sanitized['javascript'],
-            teacher_notes=sanitized['teacher_notes'],
-            usage_instructions=sanitized['usage_instructions'],
-            warnings=sanitized['warnings'],
-            used_libraries=sanitized['used_libraries'],
-            used_assets=sanitized['used_assets'],
-            used_datasets=sanitized['used_datasets'],
-            generation_prompt='',
-            generation_input=gen_input,
-            ai_raw_output=finishing,
-            validation_errors=errs,
-            validation_warnings=warns,
-        )
+            board = Board.objects.create(
+                owner=self.user,
+                title=title,
+                description=desc,
+                subject=str(spec.subject or '')[:120],
+                grade=str(spec.grade or '')[:60],
+                topic=str(spec.topic or '')[:220],
+                board_type='interactive_board',
+                status='generated' if ok else 'draft',
+                html=sanitized['html'],
+                css=sanitized['css'],
+                javascript=sanitized['javascript'],
+                teacher_notes=sanitized['teacher_notes'],
+                usage_instructions=sanitized['usage_instructions'],
+                warnings=sanitized['warnings'],
+                used_libraries=sanitized['used_libraries'],
+                used_assets=sanitized['used_assets'],
+                used_datasets=sanitized['used_datasets'],
+                generation_prompt='',
+                generation_input=gen_input,
+                ai_raw_output=finishing,
+                validation_errors=errs,
+                validation_warnings=warns,
+            )
+            meter.flush_logs_to_board(board)
+            create_initial_revision_if_absent(board, user=self.user, prompt='(Bausteine, Erstfassung)')
         return board
 
     # ------------------------------------------------------------------ KI

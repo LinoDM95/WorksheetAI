@@ -127,7 +127,18 @@ export const Button = forwardRef<HTMLButtonElement | HTMLAnchorElement, ButtonPr
       );
     }
 
-    const { as: _as, ...rest } = props as ButtonAsButtonProps;
+    const {
+      as: _as,
+      variant: _v,
+      size: _s,
+      leftIcon: _li,
+      rightIcon: _ri,
+      loading: _lo,
+      fullWidth: _fw,
+      className: _cn,
+      children: _ch,
+      ...rest
+    } = props as ButtonAsButtonProps;
     return (
       <button
         ref={ref as React.Ref<HTMLButtonElement>}

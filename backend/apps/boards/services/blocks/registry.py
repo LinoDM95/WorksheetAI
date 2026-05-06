@@ -1,4 +1,4 @@
-"""Registry der v1-Bausteine für interaktive Tafelbilder.
+"""Registry der v1-Bausteine für interaktive Boards.
 
 Jeder Baustein liefert:
   * id            — stabile Kennung (Frontend ↔ Backend)

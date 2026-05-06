@@ -15,6 +15,12 @@ const LIBRARY_LABELS: Record<LibraryId, string> = {
   leaflet: 'Leaflet — interaktive Karten',
   turf: 'Turf — Geo-Berechnungen',
   topojson: 'TopoJSON-Client — TopoJSON entpacken',
+  interactjs: 'Interact.js — Touch-Drag / Resize / Mehrfinger-Geste (DOM)',
+  matterjs: 'Matter.js — 2D-Physik (Canvas)',
+  gsap: 'GSAP — Timelines & flüssige Bewegung (Core, kein Club-Plugin)',
+  confetti: 'canvas-confetti — Konfetti / Belohnung',
+  howler: 'Howler — Sound (lokale Audiodateien unter /board-assets/…)',
+  konva: 'Konva — 2D-Canvas-Staging (Mindmaps, viele Knoten)',
 };
 
 const SectionList = ({ title, items, emptyHint }: { title: string; items: string[]; emptyHint: string }) => (

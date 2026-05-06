@@ -4,9 +4,8 @@ import {
   BoardExplorerPlaceholder,
   BoardsWorkspacePage,
 } from './pages/BoardsWorkspacePage';
-import { BoardLibraryPage } from './pages/BoardLibraryPage';
 
-/** Wenn ein NavLink fälschlich relativ war, entstand z. B. /app/boards/<alt>/<neu> — auf das eigentliche Tafelbild leiten. */
+/** Wenn ein NavLink fälschlich relativ war, entstand z. B. /app/boards/<alt>/<neu> — auf das eigentliche Board leiten. */
 function DoubleBoardSegmentRedirect() {
   const { id } = useParams<{ stale?: string; id: string }>();
   if (!id || id === 'library' || id === 'new') {
@@ -18,7 +17,6 @@ function DoubleBoardSegmentRedirect() {
 export function BoardsRoutes() {
   return (
     <Routes>
-      <Route path="library" element={<BoardLibraryPage />} />
       <Route path="new" element={<Navigate to="/app/boards" replace />} />
       <Route element={<BoardsWorkspacePage />}>
         <Route index element={<BoardExplorerPlaceholder />} />

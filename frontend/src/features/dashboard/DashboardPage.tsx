@@ -13,25 +13,39 @@ import {
   Lightbulb,
   Pencil,
   Plus,
+  Presentation,
   Save,
-  Share2,
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import type { Pattern, Worksheet } from '../../types';
 import {
+  BOARDS_LIST_QUERY_KEY,
   PATTERNS_LIST_QUERY_KEY,
   WORKSHEET_LIST_QUERY_KEY,
   WORKSHEET_LIST_STALE_MS,
   fetchPatternsList,
   fetchWorksheetList,
 } from '../../lib/listQueries';
+import { fetchBoards } from '../../features/boards/boardsApi';
+import type { BoardListItem } from '../../features/boards/types';
 import { formatLongDate, formatRelative } from '../../lib/formatDate';
-import { MockBadge } from '../../components/MockBadge';
+import { useAuth } from '../../lib/authContext';
 import { UpcomingBadge } from '../../components/UpcomingBadge';
 import { Button, MiniThumbnail, SectionCard, StatCard, StatusBadge } from '../../components/ui';
 
 type RecentItem = Pick<Worksheet, 'id' | 'title' | 'subject' | 'grade' | 'status' | 'updated_at'>;
+
+const MS_DAY = 86_400_000;
+const USABLE_PATTERN_STATUSES = new Set(['active', 'validated']);
+
+const countUpdatedWithinDays = (items: { updated_at?: string }[], days: number): number => {
+  const cutoff = Date.now() - days * MS_DAY;
+  return items.filter((x) => {
+    const t = x.updated_at ? Date.parse(x.updated_at) : NaN;
+    return Number.isFinite(t) && t >= cutoff;
+  }).length;
+};
 
 type QuickAction = { icon: LucideIcon; label: string; desc: string };
 
@@ -47,6 +61,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export function DashboardPage() {
+  const { user } = useAuth();
   const { data: wsData, isPending: worksheetsPending, isError: worksheetsError } = useQuery({
     queryKey: WORKSHEET_LIST_QUERY_KEY,
     queryFn: () => fetchWorksheetList<RecentItem>(),
@@ -57,62 +72,117 @@ export function DashboardPage() {
     queryFn: () => fetchPatternsList<Pattern>(),
     staleTime: WORKSHEET_LIST_STALE_MS,
   });
+  const { data: boardsData, isPending: boardsPending, isError: boardsError } = useQuery({
+    queryKey: BOARDS_LIST_QUERY_KEY,
+    queryFn: fetchBoards,
+    staleTime: WORKSHEET_LIST_STALE_MS,
+  });
 
   const worksheets: RecentItem[] | null = worksheetsPending ? null : worksheetsError ? [] : (wsData ?? []);
   const patterns: Pattern[] | null = patternsPending ? null : patternsError ? [] : (patData ?? []);
+  const boards: BoardListItem[] | null = boardsPending ? null : boardsError ? [] : (boardsData ?? []);
 
   const recent = useMemo(() => (worksheets ?? []).slice(0, 5), [worksheets]);
   const recommended = useMemo(() => (patterns ?? []).slice(0, 4), [patterns]);
   const today = useMemo(() => formatLongDate(), []);
 
-  return (
-    <div className="mx-auto w-full max-w-[1280px] space-y-7">
-      <HeroSection today={today} />
+  const draftCount = useMemo(() => {
+    if (!worksheets) return null;
+    return worksheets.filter((w) => (w.status ?? 'draft') === 'draft').length;
+  }, [worksheets]);
 
-      <section className="space-y-3">
+  const worksheetsWeeklyTouch = useMemo(
+    () => (worksheets ? countUpdatedWithinDays(worksheets, 7) : null),
+    [worksheets],
+  );
+
+  const activePatternCount = useMemo(() => {
+    if (!patterns) return null;
+    return patterns.filter((p) => USABLE_PATTERN_STATUSES.has(p.status)).length;
+  }, [patterns]);
+
+  const lastDraftHint = useMemo(() => {
+    if (!worksheets || draftCount === null || draftCount === 0) return undefined;
+    const drafts = worksheets.filter((w) => (w.status ?? 'draft') === 'draft');
+    let best = 0;
+    for (const w of drafts) {
+      const t = w.updated_at ? Date.parse(w.updated_at) : 0;
+      if (t > best) best = t;
+    }
+    return best ? `Zuletzt ${formatRelative(new Date(best).toISOString())}` : undefined;
+  }, [worksheets, draftCount]);
+
+  const boardsLibraryHint = useMemo(() => {
+    if (!boards || boards.length === 0) return undefined;
+    const pub = boards.filter((b) => b.library_public).length;
+    return `${pub} öffentlich in Bibliothek`;
+  }, [boards]);
+
+  const greetingName = user?.first_name?.trim();
+
+  return (
+    <div className="mx-auto w-full max-w-[1280px] space-y-5 px-3 pb-8 pt-4 sm:px-4 sm:pt-5 lg:px-6">
+      <HeroSection today={today} greetingName={greetingName} />
+
+      <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-slate-900">Überblick</h2>
-          <MockBadge
-            variant="banner"
-            label="Statistiken sind Mockup-Daten"
-            tooltip="Diese Zahlen sind Beispieldaten. Sobald die Statistik-API verfügbar ist, werden echte Werte angezeigt."
-          />
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Erstellte Arbeitsblätter"
-            value={worksheets ? String(worksheets.length) : '—'}
-            hint="+6 diese Woche"
+            value={worksheets === null ? '—' : String(worksheets.length)}
+            hint={
+              worksheets !== null && worksheetsWeeklyTouch !== null && worksheetsWeeklyTouch > 0
+                ? `${worksheetsWeeklyTouch} aktiv in 7 Tagen`
+                : undefined
+            }
             icon={FileText}
             tone="primary"
           />
           <StatCard
-            label="Aktive Vorlagen"
-            value={patterns ? String(patterns.length) : '—'}
-            hint="2 neu"
+            label="Vorlagen verfügbar"
+            value={patterns === null ? '—' : String(patterns.length)}
+            hint={
+              patterns !== null && activePatternCount !== null && activePatternCount > 0
+                ? `${activePatternCount} aktiv oder freigegeben`
+                : undefined
+            }
             icon={LayoutGrid}
             tone="success"
           />
-          <StatCard label="Gespeicherte Entwürfe" value="3" hint="Letzter: gestern" icon={Save} tone="accent" />
-          <StatCard label="Geteilt im Kollegium" value="8" hint="3 Kollegen" icon={Share2} tone="neutral" />
+          <StatCard
+            label="Entwürfe"
+            value={draftCount === null ? '—' : String(draftCount)}
+            hint={lastDraftHint}
+            icon={Save}
+            tone="accent"
+          />
+          <StatCard
+            label="Smartboards"
+            value={boards === null ? '—' : String(boards.length)}
+            hint={boardsLibraryHint}
+            icon={Presentation}
+            tone="neutral"
+          />
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-base font-bold text-slate-900">Schnellaktionen</h2>
           <span className="hidden text-sm text-slate-500 sm:inline">
             Kurzstarter demnächst — bis dahin „Neues Arbeitsblatt erstellen“ nutzen
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {QUICK_ACTIONS.map((qa) => (
             <QuickActionCard key={qa.label} {...qa} />
           ))}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.6fr_1fr]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <RecentSection items={recent} loading={worksheets === null} />
         <RecommendedSection items={recommended} loading={patterns === null} />
       </section>
@@ -120,9 +190,9 @@ export function DashboardPage() {
   );
 }
 
-const HeroSection = ({ today }: { today: string }) => (
+const HeroSection = ({ today, greetingName }: { today: string; greetingName?: string }) => (
   <section
-    className="relative overflow-hidden rounded-[18px] px-6 py-7 text-white shadow-md sm:px-8"
+    className="relative overflow-hidden rounded-xl border border-indigo-600/20 px-5 py-6 text-white shadow-sm sm:px-7 sm:py-6"
     style={{ background: 'linear-gradient(120deg, #4f46e5 0%, #4338ca 60%, #3730a3 100%)' }}
   >
     <FileText
@@ -131,13 +201,15 @@ const HeroSection = ({ today }: { today: string }) => (
       className="pointer-events-none absolute -right-5 -top-5 text-white/10"
       aria-hidden
     />
-    <div className="text-[13px] font-medium text-indigo-200">{today}</div>
-    <h2 className="mt-1 max-w-2xl text-2xl font-bold tracking-tight sm:text-[26px]">Guten Morgen.</h2>
-    <p className="mt-1.5 max-w-xl text-[15px] leading-relaxed text-indigo-100">
+    <div className="text-[12px] font-medium text-indigo-200">{today}</div>
+    <h2 className="mt-1 max-w-2xl text-xl font-bold tracking-tight sm:text-[22px]">
+      Guten Morgen{greetingName ? `, ${greetingName}` : ''}.
+    </h2>
+    <p className="mt-1 max-w-xl text-[14px] leading-relaxed text-indigo-100">
       Neue Stunde vorbereiten? Beschreibe Thema und Niveau, die KI baut das druckfertige
       Arbeitsblatt nach deiner Vorlage.
     </p>
-    <div className="mt-5 flex flex-wrap gap-2.5">
+    <div className="mt-4 flex flex-wrap gap-2">
       <Button
         as="link"
         to="/app/create"

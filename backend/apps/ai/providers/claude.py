@@ -1,4 +1,4 @@
-"""Anthropic Claude — `AI_PROVIDER=claude` oder Ultra-Modus für Free-HTML-Tafelbilder."""
+"""Anthropic Claude — `AI_PROVIDER=claude` oder Ultra-Modus für Free-HTML-Boards."""
 from __future__ import annotations
 
 import json
@@ -52,7 +52,14 @@ class ClaudeWorksheetProvider:
         self.model = str(getattr(settings, 'CLAUDE_MODEL', 'claude-sonnet-4-20250514') or 'claude-sonnet-4-20250514')
         self.max_tokens = int(getattr(settings, 'CLAUDE_MAX_OUTPUT_TOKENS', 32768))
 
-    def _complete(self, *, system: str | None, user: str, temperature: float) -> str:
+    def _complete(
+        self,
+        *,
+        system: str | None,
+        user: str,
+        temperature: float,
+        trace_step: str | None = None,
+    ) -> str:
         kwargs: dict[str, Any] = {
             'model': self.model,
             'max_tokens': self.max_tokens,
@@ -75,7 +82,25 @@ class ClaudeWorksheetProvider:
         for block in msg.content:
             if hasattr(block, 'type') and block.type == 'text' and hasattr(block, 'text'):
                 parts.append(block.text)
-        return ''.join(parts)
+        text = ''.join(parts)
+        if trace_step:
+            from apps.boards.services.pipeline_ai_meter import parse_claude_usage, route_provider_usage
+
+            inp, out, ex = parse_claude_usage(msg)
+            if inp == 0 and out == 0:
+                inp = max(0, int(len(user) / 4))
+                out = max(0, int(len(text) / 4))
+            route_provider_usage(
+                provider_self=self,
+                step_type=trace_step,
+                provider_label='claude',
+                model_name=self.model,
+                input_tokens=inp,
+                output_tokens=out,
+                success=True,
+                metadata=ex,
+            )
+        return text
 
     def generate(self, payload: dict) -> dict[str, Any]:
         req = payload.get('request') or {}
@@ -86,7 +111,7 @@ class ClaudeWorksheetProvider:
             curriculum_context=payload.get('curriculum_context'),
         )
         temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
-        text = self._complete(system=system_instr, user=user_content, temperature=temp)
+        text = self._complete(system=system_instr, user=user_content, temperature=temp, trace_step='worksheet_generation')
         return _extract_json_object(text)
 
     def review_worksheet(
@@ -98,13 +123,13 @@ class ClaudeWorksheetProvider:
     ) -> dict[str, Any]:
         prompt = build_worksheet_review_prompt(content, request, page_setup, pattern)
         temp = 0.15
-        text = self._complete(system=None, user=prompt, temperature=temp)
+        text = self._complete(system=None, user=prompt, temperature=temp, trace_step='worksheet_review')
         return _extract_json_object(text)
 
     def regenerate_page(self, payload: dict) -> dict[str, Any]:
         prompt = build_page_regeneration_prompt(payload)
         temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
-        text = self._complete(system=None, user=prompt, temperature=temp)
+        text = self._complete(system=None, user=prompt, temperature=temp, trace_step='worksheet_page_regenerate')
         return _extract_json_object(text)
 
     def generate_free_html_board(self, payload: dict) -> dict[str, Any]:
@@ -118,7 +143,7 @@ class ClaudeWorksheetProvider:
             '(kein Markdown, keine Code-Fences, kein Fließtext davor oder danach).'
         )
         temp = float(getattr(settings, 'BOARDS_FREE_HTML_GENERATION_TEMPERATURE', 0.55))
-        text = self._complete(system=None, user=user, temperature=temp)
+        text = self._complete(system=None, user=user, temperature=temp, trace_step='code_generation')
         return _extract_json_object(text)
 
     def revise_free_html_board(self, payload: dict) -> dict[str, Any]:
@@ -132,7 +157,7 @@ class ClaudeWorksheetProvider:
             '(kein Markdown, keine Code-Fences, kein Fließtext davor oder danach).'
         )
         temp = float(getattr(settings, 'BOARDS_FREE_HTML_REVISION_TEMPERATURE', 0.4))
-        text = self._complete(system=None, user=user, temperature=temp)
+        text = self._complete(system=None, user=user, temperature=temp, trace_step='revision')
         return _extract_json_object(text)
 
     def repair_free_html_board(self, payload: dict) -> dict[str, Any]:
@@ -143,7 +168,7 @@ class ClaudeWorksheetProvider:
             '(kein Markdown, keine Code-Fences, kein Fließtext davor oder danach).'
         )
         temp = float(getattr(settings, 'BOARDS_FREE_HTML_REPAIR_TEMPERATURE', 0.25))
-        text = self._complete(system=None, user=user, temperature=temp)
+        text = self._complete(system=None, user=user, temperature=temp, trace_step='repair')
         return _extract_json_object(text)
 
     def generate_block_contents(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -155,5 +180,28 @@ class ClaudeWorksheetProvider:
             'kein Markdown, keine Code-Fences, kein Fließtext davor oder danach.'
         )
         temp = float(getattr(settings, 'BOARDS_BLOCKS_FILLING_TEMPERATURE', 0.45))
-        text = self._complete(system=None, user=user, temperature=temp)
+        text = self._complete(system=None, user=user, temperature=temp, trace_step='blocks_slot_fill')
         return _extract_json_object(text)
+
+    def call_with_model(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        response_schema: dict | None = None,  # noqa: ARG002 — Claude validiert Schema textbasiert
+        temperature: float = 0.3,
+        max_output_tokens: int | None = None,  # noqa: ARG002 — Claude nutzt eigenen Cap
+        trace_step: str | None = None,
+    ) -> dict[str, Any]:
+        """Strict-JSON-Call ohne Schema (Claude). Modellname wird aktuell ignoriert
+        (Claude-Provider hält ein einziges Modell aus Settings); Parameter ist für
+        zukünftige Multi-Modell-Erweiterung Teil der gemeinsamen Router-API.
+        """
+        user = (
+            prompt
+            + '\n\n---\n\n**Wichtig:** Antworte ausschließlich mit einem einzigen JSON-Objekt '
+            '(kein Markdown, keine Code-Fences, kein Fließtext davor oder danach).'
+        )
+        text = self._complete(system=None, user=user, temperature=temperature, trace_step=trace_step)
+        data = _extract_json_object(text)
+        return data if isinstance(data, dict) else {}

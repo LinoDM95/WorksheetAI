@@ -156,7 +156,7 @@ def compose_board(spec: CompositionSpec, theme: Theme | None = None) -> dict[str
     head_subtitle = (
         '<p class="bb-stage__sub">' + esc(spec.description) + '</p>'
     ) if spec.description else ''
-    title_text = esc(spec.title or spec.topic or 'Tafelbild')
+    title_text = esc(spec.title or spec.topic or 'Board')
     title_html = (
         '<header class="bb-stage__head">'
         '<div>'
@@ -200,6 +200,6 @@ def compose_board(spec: CompositionSpec, theme: Theme | None = None) -> dict[str
         'teacher_notes': '',
         'usage_instructions': [],
         'warnings': [],
-        'title': (spec.title or spec.topic or 'Tafelbild')[:255],
+        'title': (spec.title or spec.topic or 'Board')[:255],
         'description': spec.description[:5000],
     }
