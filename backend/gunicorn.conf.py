@@ -1,9 +1,11 @@
 """
 Gunicorn-Defaults für Produktion (z. B. Render.com).
 
-Das Standard-Worker-Timeout liegt bei nur 30s — kreative Smartboard-Pipelines warten jedoch
-bis zu GEMINI_TIMEOUT_SECONDS (standardmäßig 600s) auf die Provider-Antwort, daher ohne
-Angleichung WORKER TIMEOUT + abgebrochene Streams.
+Das Standard-Worker-Timeout liegt bei nur 30s — Smartboard-Pipelines können mehrere
+Gemini-Aufrufe à bis zu GEMINI_TIMEOUT_SECONDS (standardmäßig 600s) und Validierung kombinieren.
+Zusätzlich: Bei SIGTERM (z. B. Render-Deploy) erlaubt ``graceful_timeout`` dem Worker Zeit,
+die laufende Anfrage noch zu Ende zu bedienen — sonst bricht eine lange Generation trotz
+hohem ``timeout`` nach wenigen Sekunden/Minuten ab.
 
 Start (Arbeitsverzeichnis backend/):
     gunicorn --config gunicorn.conf.py config.wsgi:application
@@ -39,6 +41,8 @@ def _resolved_workers() -> int:
 
 port = os.environ.get('PORT', '8000')
 bind = os.environ.get('GUNICORN_BIND', f'0.0.0.0:{port}')
-timeout = _int_env('GUNICORN_TIMEOUT', 900, minimum=60)
-graceful_timeout = _int_env('GUNICORN_GRACEFUL_TIMEOUT', 120, minimum=10)
+# Mindestens ~10 Minuten realistisches Budget; mehrstufige Pipelines können länger brauchen.
+timeout = _int_env('GUNICORN_TIMEOUT', 1800, minimum=600)
+# Bei Deploy muss dieser Wert ebenfalls zur längsten Anfrage passen — sonst SIGKILL während Gemini.
+graceful_timeout = _int_env('GUNICORN_GRACEFUL_TIMEOUT', 1800, minimum=600)
 workers = _resolved_workers()

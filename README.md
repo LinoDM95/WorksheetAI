@@ -90,7 +90,7 @@ Diese Schritte setzen eine **eigene** TLS-Terminierung (z. B. Nginx/Caddy) und
 6. **Optional eine Origin:** `SERVE_FRONTEND=True`, `FRONTEND_DIST_DIR` auf `../frontend/dist`; dann liefert Django das Vite-Build (`WHITENOISE_ROOT`). Catch-All für Client-Routing ist eingebaut. Alternativ Frontend separat ausliefern und nur die API unter `/api/` betreiben.
 7. **Medien:** Ohne separates Gateway `SERVE_MEDIA_WITH_DJANGO=True` nur für **einen** App-Prozess; bei mehreren Instanzen gemeinsames Storage (Volume/S3) nötig.
 8. **Cache:** Ohne `REDIS_URL` ist der Standard-Cache Lokmem (z. B. Passwort-Reset-Throttle nur pro Worker). Für mehrere Gunicorn-Worker `REDIS_URL` setzen (`django-redis`).
-9. **App-Server:** z. B. `cd backend && gunicorn --config gunicorn.conf.py config.wsgi:application` (setzt Worker-Timeouts per `GUNICORN_TIMEOUT`, Standard 900 s — verhindert `WORKER TIMEOUT` bei langer Gemini-/Pipeline-Arbeit). Zusätzlich **Timeouts** des Reverse Proxy für lange Streams hoch setzen (viele Minuten).
+9. **App-Server:** z. B. `cd backend && gunicorn --config gunicorn.conf.py config.wsgi:application` (`GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT`, Standard je 1800 s — auch Deploy-SIGTERM verträgt laufende Pipelines länger). Bei Bedarf per Env erhöhen.
 10. **Fehlerdiagnose:** optional `SENTRY_DSN`; Log-Level `DJANGO_LOG_LEVEL`.
 
 ## Vorlagenformat
