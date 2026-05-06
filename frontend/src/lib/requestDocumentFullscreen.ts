@@ -1,17 +1,29 @@
+/** True, wenn das Dokument gerade im Browser-Vollbild ist (inkl. älteres WebKit). */
+export function isDocumentFullscreenActive(): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.fullscreenElement) return true;
+  const d = document as Document & { webkitFullscreenElement?: Element | null };
+  return Boolean(d.webkitFullscreenElement);
+}
+
 /** Beendet Element-Vollbild (z. B. Tafel-Vorschau), damit Overlays im normalen Dokument sichtbar sind. */
 export async function exitElementFullscreen(): Promise<void> {
-  if (typeof document === 'undefined' || !document.fullscreenElement) return;
+  if (typeof document === 'undefined' || !isDocumentFullscreenActive()) return;
   try {
-    await document.exitFullscreen();
-  } catch {
-    try {
-      const doc = document as Document & { webkitExitFullscreen?: () => void };
-      if (typeof doc.webkitExitFullscreen === 'function') {
-        doc.webkitExitFullscreen();
-      }
-    } catch {
-      /* ignore */
+    if (typeof document.exitFullscreen === 'function' && document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
     }
+  } catch {
+    /* Fall-through zu WebKit */
+  }
+  try {
+    const doc = document as Document & { webkitExitFullscreen?: () => void };
+    if (typeof doc.webkitExitFullscreen === 'function') {
+      doc.webkitExitFullscreen();
+    }
+  } catch {
+    /* ignore */
   }
 }
 

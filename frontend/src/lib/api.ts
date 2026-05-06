@@ -43,6 +43,9 @@ const runRefresh = (): Promise<void> => {
   return refreshPromise;
 };
 
+/** Erneuert HttpOnly-JWT-Cookies; für lange `fetch`-Streams nötig (kein Axios-401-Interceptor). */
+export const refreshAuthCookies = (): Promise<void> => runRefresh();
+
 api.interceptors.response.use(
   (r) => r,
   async (error: AxiosError) => {

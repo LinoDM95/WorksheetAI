@@ -1,4 +1,4 @@
-import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
+import { api, LONG_RUNNING_BOARD_TIMEOUT_MS, refreshAuthCookies } from '../../lib/api';
 import { getApiBaseUrl } from '../../lib/apiBaseUrl';
 import type { BoardLibraryScope } from '../../lib/listQueries';
 import type {
@@ -99,15 +99,23 @@ export const generateBoardWithProgress = async (
   },
 ): Promise<BoardDetail> => {
   const url = `${getApiBaseUrl().replace(/\/$/, '')}/boards/generate/?stream=1`;
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-    signal: options.signal,
-  });
+  const fetchStream = () =>
+    fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: options.signal,
+    });
+
+  await refreshAuthCookies().catch(() => undefined);
+  let res = await fetchStream();
+  if (res.status === 401) {
+    await refreshAuthCookies();
+    res = await fetchStream();
+  }
   if (!res.ok || !res.body) {
     let detail = `HTTP ${res.status}`;
     try {

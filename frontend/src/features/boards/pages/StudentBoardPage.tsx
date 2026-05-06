@@ -1,10 +1,14 @@
 import axios from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { Logo } from '../../../components/Logo';
 import { Button, IconButton } from '../../../components/ui';
-import { exitElementFullscreen, requestDocumentFullscreen } from '../../../lib/requestDocumentFullscreen';
+import {
+  exitElementFullscreen,
+  isDocumentFullscreenActive,
+  requestDocumentFullscreen,
+} from '../../../lib/requestDocumentFullscreen';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
 import { fetchPublicBoardByToken, type PublicBoardPayload } from '../publicBoardApi';
 import type { DatasetId, LibraryId } from '../types';
@@ -16,6 +20,7 @@ export function StudentBoardPage() {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const immersiveSessionRef = useRef(false);
 
   useEffect(() => {
     if (!token) {
@@ -53,6 +58,7 @@ export function StudentBoardPage() {
 
   const handleStart = useCallback(async () => {
     setStarting(true);
+    immersiveSessionRef.current = true;
     try {
       await requestDocumentFullscreen();
     } finally {
@@ -62,9 +68,59 @@ export function StudentBoardPage() {
   }, []);
 
   const handleExitToLobby = useCallback(async () => {
+    immersiveSessionRef.current = false;
     await exitElementFullscreen();
     setSessionStarted(false);
   }, []);
+
+  useEffect(() => {
+    if (!sessionStarted) return;
+
+    let raf1 = 0;
+    let raf2 = 0;
+    let t1 = 0;
+    let t2 = 0;
+
+    const tryRestoreFullscreen = () => {
+      if (!immersiveSessionRef.current) return;
+      if (isDocumentFullscreenActive()) return;
+      void requestDocumentFullscreen();
+    };
+
+    const scheduleRestore = () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          tryRestoreFullscreen();
+          t1 = window.setTimeout(tryRestoreFullscreen, 120);
+          t2 = window.setTimeout(tryRestoreFullscreen, 380);
+        });
+      });
+    };
+
+    const onFullscreenChange = () => {
+      tryRestoreFullscreen();
+    };
+
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener);
+    window.addEventListener('orientationchange', scheduleRestore);
+    window.addEventListener('resize', scheduleRestore);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener);
+      window.removeEventListener('orientationchange', scheduleRestore);
+      window.removeEventListener('resize', scheduleRestore);
+    };
+  }, [sessionStarted]);
 
   if (error) {
     return (

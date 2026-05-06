@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { exitElementFullscreen, requestDocumentFullscreen } from './requestDocumentFullscreen';
+import {
+  exitElementFullscreen,
+  isDocumentFullscreenActive,
+  requestDocumentFullscreen,
+} from './requestDocumentFullscreen';
 
 describe('exitElementFullscreen', () => {
   const orig = globalThis.document;
@@ -20,6 +24,39 @@ describe('exitElementFullscreen', () => {
     await exitElementFullscreen();
 
     expect(exit).toHaveBeenCalledOnce();
+  });
+});
+
+describe('isDocumentFullscreenActive', () => {
+  const orig = globalThis.document;
+
+  afterEach(() => {
+    globalThis.document = orig as Document;
+  });
+
+  it('ist false ohne aktives Vollbild', () => {
+    (globalThis as unknown as { document: Document }).document = {
+      fullscreenElement: null,
+    } as unknown as Document;
+
+    expect(isDocumentFullscreenActive()).toBe(false);
+  });
+
+  it('ist true mit fullscreenElement', () => {
+    (globalThis as unknown as { document: Document }).document = {
+      fullscreenElement: {},
+    } as unknown as Document;
+
+    expect(isDocumentFullscreenActive()).toBe(true);
+  });
+
+  it('ist true mit webkitFullscreenElement', () => {
+    (globalThis as unknown as { document: Document }).document = {
+      fullscreenElement: null,
+      webkitFullscreenElement: {},
+    } as unknown as Document;
+
+    expect(isDocumentFullscreenActive()).toBe(true);
   });
 });
 

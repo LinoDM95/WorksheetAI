@@ -110,8 +110,12 @@ if not DISABLE_API_THROTTLE:
         'user': env.str('API_THROTTLE_USER', default='5000/hour'),
     }
 
+JWT_ACCESS_TOKEN_LIFETIME_MINUTES = env.int(
+    'JWT_ACCESS_TOKEN_LIFETIME_MINUTES',
+    default=120,
+)
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=120),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=JWT_ACCESS_TOKEN_LIFETIME_MINUTES),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
