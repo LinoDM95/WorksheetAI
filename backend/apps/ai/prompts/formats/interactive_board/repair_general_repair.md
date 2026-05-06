@@ -45,4 +45,4 @@ Libraries: {{ libraries_summary }}
 Assets: {{ assets_summary }}
 Datasets: {{ datasets_summary }}
 
-Liefere ein einziges JSON-Objekt (gleiche Felder wie Generation).
+Liefere ein einziges JSON-Objekt (gleiche Felder wie Generation; Pflicht **revision_kind**, bei kleinen Änderungen bevorzugt **surgical** + **surgical_edits**).

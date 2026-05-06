@@ -1,7 +1,8 @@
 """Validierungs-Reparatur-Schleife für KI-erzeugte Free-HTML5-Bundles.
 
-Nach Modellantwort: sanitizen + ``validate_free_html_bundle``. Schlägt die Prüfung fehl und
-Liegt noch Reparatur-Budget (**max. eine** zusätzliche KI-Reparaturrunde beim
+Nach Modellantwort: chirurgische Edits (``revision_kind`` / ``surgical_edits``) werden mit
+``normalize_provider_free_html_response`` auf den Basis-Code angewandt, danach sanitizen +
+``validate_free_html_bundle``. Schlägt die Prüfung fehl und liegt noch Reparatur-Budget (**max. eine** zusätzliche KI-Reparaturrunde beim
 Standard-Setting ``BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS``), wird **einmal** repariert
 und erneut geprüft — kein iterative „bis alles grün ist“ ohne weiteres Budget.
 """
@@ -13,6 +14,7 @@ from typing import Any
 from django.conf import settings
 
 from apps.boards.services.free_html_sanitize import validate_free_html_bundle
+from apps.boards.services.free_html_surgical_edits import normalize_provider_free_html_response
 from apps.boards.services.free_html_visual_qa import (
     default_visual_qa_document_base,
     run_visual_layout_qa,
@@ -145,6 +147,13 @@ def run_validation_repairs(
             raise
         if not isinstance(repaired, dict):
             repaired = {}
+
+        repaired = normalize_provider_free_html_response(
+            repaired,
+            base_html=bundle.get('html') or '',
+            base_css=bundle.get('css') or '',
+            base_javascript=bundle.get('javascript') or '',
+        )
 
         last_ai_raw = repaired
         merged = {**bundle, **{k: v for k, v in repaired.items() if v is not None}}

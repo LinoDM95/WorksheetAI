@@ -48,5 +48,5 @@ Datasets: {{ datasets_summary }}
 
 ## Antwort
 
-Liefere **ausschließlich** ein einziges JSON-Objekt (gleiche Felder wie Generation).
+Liefere **ausschließlich** ein einziges JSON-Objekt (gleiche Felder wie Generation; Pflicht **revision_kind**, bei kleinen Änderungen bevorzugt **surgical** + **surgical_edits**).
 Keine Code-Fences, kein Markdown.

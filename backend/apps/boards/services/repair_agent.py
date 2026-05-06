@@ -2,7 +2,8 @@
 
 Wickelt den existierenden Provider-Pfad ``repair_free_html_board`` ein, nutzt aber
 **modusabhängige** Prompts (z. B. ``bug_fix`` minimal-invasiv vs. ``design_improve``
-mit größerem Spielraum). Nach jeder Runde:
+mit größerem Spielraum). Antworten können ``revision_kind`` / ``surgical_edits`` nutzen;
+``normalize_provider_free_html_response`` wendet diese vor dem Merge an. Nach jeder Runde:
 - ``sanitize_payload`` → ``validate_free_html_bundle``
 - optionales ``run_visual_layout_qa`` (Playwright)
 - optionales ``TouchAuditService``
@@ -17,11 +18,13 @@ from typing import Any
 
 from django.conf import settings
 
+from apps.ai.providers.gemini import FREE_HTML_REVISION_SCHEMA, GeminiWorksheetProvider
 from apps.ai.prompt_loader import build_repair_mode_prompt
 
 from .ai_model_router import SmartboardAIModelRouter
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import validate_free_html_bundle
+from .free_html_surgical_edits import normalize_provider_free_html_response
 from .free_html_visual_qa import (
     default_visual_qa_document_base,
     run_visual_layout_qa,
@@ -219,6 +222,12 @@ class RepairAgent:
 
             if not isinstance(repaired, dict):
                 repaired = {}
+            repaired = normalize_provider_free_html_response(
+                repaired,
+                base_html=sanitized.get('html') or '',
+                base_css=sanitized.get('css') or '',
+                base_javascript=sanitized.get('javascript') or '',
+            )
             current = {**sanitized, **{k: v for k, v in repaired.items() if v is not None}}
 
         # Theoretisch unerreichbar — for-Loop endet immer in einem return.
@@ -233,11 +242,12 @@ class RepairAgent:
         """
         large_model = str(getattr(settings, 'SMARTBOARD_LARGE_MODEL',
                                    getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-pro')))
+        response_schema = FREE_HTML_REVISION_SCHEMA if isinstance(self._provider, GeminiWorksheetProvider) else None
         if hasattr(self._provider, 'call_with_model'):
             data = self._provider.call_with_model(
                 model=large_model,
                 prompt=prompt,
-                response_schema=None,
+                response_schema=response_schema,
                 temperature=float(getattr(settings, 'BOARDS_FREE_HTML_REPAIR_TEMPERATURE', 0.25)),
                 trace_step='repair',
             )

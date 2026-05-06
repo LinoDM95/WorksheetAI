@@ -19,6 +19,7 @@ from .free_html_sanitize import (
     sanitize_free_html_bundle,
     validate_free_html_bundle,
 )
+from .free_html_surgical_edits import normalize_provider_free_html_response
 from .free_html_validate_repair import run_validation_repairs
 from .visual_resource_registry import (
     filter_used_assets,
@@ -378,6 +379,13 @@ class FreeHtmlBoardRevisionService:
 
             if not isinstance(raw, dict):
                 raw = {}
+
+            raw = normalize_provider_free_html_response(
+                raw,
+                base_html=self.board.html or '',
+                base_css=self.board.css or '',
+                base_javascript=self.board.javascript or '',
+            )
 
             defaults = {
                 'html': self.board.html or '',

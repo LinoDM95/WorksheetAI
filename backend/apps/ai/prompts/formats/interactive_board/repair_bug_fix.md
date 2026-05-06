@@ -41,7 +41,7 @@ Datasets: {{ datasets_summary }}
 ## Antwort
 
 Liefere **ausschließlich** ein einziges JSON-Objekt mit den Feldern
-``html``, ``css``, ``javascript``, ``teacher_notes``, ``usage_instructions``,
+``revision_kind``, ``html``, ``css``, ``javascript``, ``teacher_notes``, ``usage_instructions``,
 ``warnings``, ``used_libraries``, ``used_assets``, ``used_datasets``,
-``title``, ``description``. Behalte Title/Description so weit wie möglich bei.
+``title``, ``description``. Optional ``surgical_edits`` wenn ``revision_kind`` = ``surgical``. Behalte Title/Description so weit wie möglich bei.
 Keine Code-Fences, kein Markdown, kein Fließtext außerhalb des JSON.

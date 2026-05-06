@@ -1,6 +1,12 @@
 # Auftrag: Interaktives Board — Revision (Free HTML5)
 
-Du bekommst ein bestehendes Board und einen Änderungswunsch. Liefere eine **vollständig überarbeitete Fassung** von HTML, CSS und JavaScript zurück. Es bleiben dieselben Sicherheits- und Sandbox-Regeln wie bei der Erstgenerierung gültig.
+Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselben Sicherheits- und Sandbox-Regeln wie bei der Erstgenerierung gültig.
+
+## Zwei Antwort-Wege (wähle den passenden)
+
+1. **`revision_kind`: `"surgical"`** — **bevorzugt für kleine, lokale Änderungen** (ein Wort, eine Zeile, ein Block, eine Regel, eine Funktion): Du listest **`surgical_edits`**: mehrere Einträge mit **`target`** (`html`, `css` oder `javascript`), **`old_text`** (exakter Ausschnitt aus dem **aktuellen** Code oben — Zeichen für Zeichen kopieren) und **`new_text`** (Ersatz). Der Server wendet die Ersetzungen **der Reihe nach** an. **`old_text` muss in der betreffenden Datei genau einmal vorkommen** — wähle einen etwas längeren, eindeutigen Kontext, nie nur ein einzelnes Zeichen. Nach den Edits kannst du **`html`**, **`css`**, **`javascript`** als **leere Strings** `""` lassen, um Ausgabe zu sparen. Metadaten (`title`, `teacher_notes`, …) wie gewohnt füllen.
+
+2. **`revision_kind`: `"full"`** — bei **großen Umbauten**, vielen gleichzeitigen Änderungen oder wenn chirurgische Ersetzungen unpraktisch wären: Liefere die **komplette neue Fassung** von HTML, CSS und JavaScript (kein Diff im Fließtext).
 
 **Design-Bühne:** Der Loader verwendet eine feste Arbeitsfläche **1280×720 px** und skaliert sie **proportional als Ganzes**. Dein Inhalt liegt in **`#board-root`**; **alles Wesentliche** bleibt **innerhalb dieser Fläche** (`.free-board` füllt **100 %** mit `box-sizing: border-box`).
 
@@ -72,7 +78,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Liefere eine **vol
 
 ## Qualitätsregeln (Pflicht)
 
-- Liefere **die komplette neue Fassung** (kein Diff, keine Patch-Notes).
+- Bei **`full`**: Liefere **die komplette neue Fassung** der drei Code-Strings (keine Patch-Notes im Fließtext). Bei **`surgical`**: keine vollständige Neu-Ausgabe nötig — nutze **`surgical_edits`**; der Server setzt den Code zusammen.
 - Lasse das, was funktioniert, intakt — refactor nur, was der Wunsch verlangt oder offensichtlich fehlerhaft ist.
 - **Umfang bewahren:** Keine Folien, Spielstände, Level oder inhaltlichen Hauptblöcke weglassen oder zusammenlegen, **wenn** der Änderungswunsch der Lehrkraft das **nicht ausdrücklich** verlangt (ein Modus wie „Vereinfachen“ allein **kein** Freibrief zum Kürzen der Seitenanzahl).
 - Wickle alles in **ein** Element **`<div class="free-board ...">`** mit **`width:100%; height:100%; min-height:100%; max-height:100%; box-sizing:border-box;`** — exakt die **1280×720**-Bühne füllen. **`100vh`/`100dvh` auf der Hauptfläche vermeiden** (Prozent/`100%` zu `.free-board` bevorzugen). Keine eigenen Wrapper `#wa-*`/`#board-root`.
@@ -88,8 +94,39 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Liefere eine **vol
 
 ## Antwort-JSON (Pflicht)
 
+**Pflichtfelder immer:** `title`, `html`, `css`, `javascript`, **`revision_kind`**. Bei **`revision_kind`: `"surgical"`** dürfen `html` / `css` / `javascript` leer sein, wenn `surgical_edits` den Code erzeugt.
+
+### Beispiel „surgical“ (lokal)
+
 ```json
 {
+  "revision_kind": "surgical",
+  "title": "Titel ggf. anpassen",
+  "description": "1–2 Sätze",
+  "html": "",
+  "css": "",
+  "javascript": "",
+  "surgical_edits": [
+    {
+      "target": "css",
+      "old_text": ".btn { padding: 8px; }",
+      "new_text": ".btn { padding: 16px; }"
+    }
+  ],
+  "teacher_notes": "kurz, was geändert wurde",
+  "usage_instructions": ["Schritt 1"],
+  "warnings": [],
+  "used_libraries": [],
+  "used_assets": [],
+  "used_datasets": []
+}
+```
+
+### Beispiel „full“ (komplette Neu-Fassung)
+
+```json
+{
+  "revision_kind": "full",
   "title": "Titel ggf. anpassen",
   "description": "1–2 Sätze",
   "html": "neue komplette HTML-Fassung",

@@ -273,6 +273,41 @@ FREE_HTML_SCHEMA = {
     'required': ['title', 'html', 'css', 'javascript'],
 }
 
+_FREE_HTML_REV_BASE_PROPS = dict(FREE_HTML_SCHEMA['properties'])
+FREE_HTML_REVISION_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Board revision. revision_kind: "full" = return complete html, css, javascript. '
+        '"surgical" = return surgical_edits with exact snippets copied from the current code; '
+        'the server applies edits in order. For surgical, html/css/javascript may be empty '
+        'strings to reduce output size. Each old_text must occur exactly once in its target.'
+    ),
+    'properties': {
+        **_FREE_HTML_REV_BASE_PROPS,
+        'revision_kind': {
+            'type': 'STRING',
+            'description': 'full | surgical — use surgical for small localized changes.',
+        },
+        'surgical_edits': {
+            'type': 'ARRAY',
+            'description': 'Only when revision_kind is surgical: ordered find-replace steps.',
+            'items': {
+                'type': 'OBJECT',
+                'properties': {
+                    'target': {
+                        'type': 'STRING',
+                        'description': 'html | css | javascript — which string old_text belongs to.',
+                    },
+                    'old_text': {'type': 'STRING'},
+                    'new_text': {'type': 'STRING'},
+                },
+                'required': ['target', 'old_text', 'new_text'],
+            },
+        },
+    },
+    'required': ['title', 'html', 'css', 'javascript', 'revision_kind'],
+}
+
 
 BLOCK_SLOT_FILL_SCHEMA = {
     'type': 'OBJECT',
@@ -586,7 +621,7 @@ class GeminiWorksheetProvider:
             'temperature': float(getattr(settings, 'BOARDS_FREE_HTML_REVISION_TEMPERATURE', 0.4)),
             'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
             'response_mime_type': 'application/json',
-            'response_schema': FREE_HTML_SCHEMA,
+            'response_schema': FREE_HTML_REVISION_SCHEMA,
         }
         resp = self._generate_content(
             model=settings.GEMINI_MODEL,
@@ -604,7 +639,7 @@ class GeminiWorksheetProvider:
             'temperature': float(getattr(settings, 'BOARDS_FREE_HTML_REPAIR_TEMPERATURE', 0.25)),
             'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
             'response_mime_type': 'application/json',
-            'response_schema': FREE_HTML_SCHEMA,
+            'response_schema': FREE_HTML_REVISION_SCHEMA,
         }
         resp = self._generate_content(
             model=settings.GEMINI_MODEL,

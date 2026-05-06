@@ -196,6 +196,7 @@ class MockWorksheetProvider:
                 html += badge
 
         result = {
+            'revision_kind': 'full',
             'title': 'Überarbeitet (Mock)',
             'description': 'Mock-Revision auf bestehenden Code angewendet.',
             'html': html,

@@ -64,8 +64,8 @@ Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z.
 
 1. **Jeden** aufgeführten Validierungsfehler adressieren (verbotene JS-APIs entfernen oder ersetzen, HTML/CSS-Regeln einhalten).
 2. **Keine** neuen Features, kein inhaltlicher Umbau — nur **Reparatur + konsistente Anpassungen**.
-3. **Komplette** neue `html`, `css`, `javascript` liefern (kein Diff).
-4. Gleiche JSON-Struktur wie bei der Erstgenerierung: `title`, `description`, `teacher_notes`, `usage_instructions`, `warnings`, `used_libraries`, `used_assets`, `used_datasets`.
+3. **Ausgabe:** **`revision_kind`: `"surgical"`** bevorzugt: **`surgical_edits`** mit `target` (`html`|`css`|`javascript`), exaktem `old_text` aus dem Code oben und `new_text`. Dann dürfen `html`/`css`/`javascript` leer sein. Oder **`revision_kind`: `"full"`** mit **kompletten** neuen `html`, `css`, `javascript` (bei größeren Eingriffen).
+4. JSON enthält immer **`revision_kind`** plus dieselben Metafelder wie die Erstgenerierung: `title`, `description`, `teacher_notes`, `usage_instructions`, `warnings`, `used_libraries`, `used_assets`, `used_datasets`.
 5. **Bühne 1280×720:** keine `vh`/`vw`/`dvh` auf Haupt-UI; kein Überstehen/abgeschnittene Pflicht-Buttons; interner Scroll nur kontrolliert — wie in `free_html_generation.md`.
 
 ### Qualitäts- und Sicherheitsregeln (wie Generation)
@@ -78,8 +78,11 @@ Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z.
 
 ## Antwort-JSON (Pflicht)
 
+**Pflicht:** `title`, `html`, `css`, `javascript`, **`revision_kind`** (`full` oder `surgical`). Bei **`surgical`**: `surgical_edits` (Liste); bei **`full`**: vollständige Code-Strings.
+
 ```json
 {
+  "revision_kind": "full",
   "title": "…",
   "description": "…",
   "html": "…",
@@ -93,5 +96,7 @@ Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z.
   "used_datasets": []
 }
 ```
+
+Kompakte Variante bei **`surgical`** (Beispiel): `"revision_kind":"surgical"`, `"html":"", "css":"", "javascript":"", `"surgical_edits":[{"target":"javascript","old_text":"fetch(","new_text":"/* entfernt */"}]` — `old_text` muss im jeweiligen String **genau einmal** vorkommen.
 
 Antworte **ausschließlich** mit JSON, ohne Markdown-Code-Fences.

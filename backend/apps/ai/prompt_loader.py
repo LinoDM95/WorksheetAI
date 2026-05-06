@@ -167,6 +167,10 @@ _REPAIR_CONTENT_PRESERVATION_PREAMBLE = """## Schutzregel: Kein unkontrolliertes
 - **Kein Inhaltsverlust ohne klaren Lehrkraft-Auftrag:** Entferne oder überspringe **keine** Folien/Slides, Szenen, Spielebenen, Fragen oder zentralen Inhaltsblöcke und ändere **nicht** **Anzahl** oder **Reihenfolge**, es sei denn, im **Lehrkraft-Hinweis** / **Zusatzkontext** ist das **ausdrücklich** gewünscht (z. B. „nur noch acht Folien“, „Übungen 3–5 entfernen“).
 - **Modus „vereinfachen“ u. Ä.** bezieht sich auf **verständlichere Texte/UI**, schlankeren Code, **lokale** Animation/Text-Straffung — **nicht** darauf, das Board ohne Anweisung kürzer oder ärmer zu machen.
 
+## Ausgabe: surgical vs. full
+
+Bei **kleinen** Korrekturen bevorzuge **`revision_kind`: `"surgical"`** mit **`surgical_edits`** (exakte `old_text`-Ausschnitte aus dem obigen Code). Bei **größeren** Änderungen **`revision_kind`: `"full"`** und vollständige `html`/`css`/`javascript`. Sparsamere Ausgabe = weniger Tokens — wie bei der normalen Board-Revision.
+
 """
 
 def _board_format_dir() -> Path:
