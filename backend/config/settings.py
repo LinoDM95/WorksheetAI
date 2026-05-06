@@ -240,6 +240,8 @@ BOARDS_FREE_HTML_REPAIR_TEMPERATURE = env.float('BOARDS_FREE_HTML_REPAIR_TEMPERA
 # Nach Erst- oder Revisions-Generierung: max. zusätzliche KI-Reparaturrunden bei serverseitigen Validierungsfehlern (0–5).
 # Standard jetzt **1**: ein einziger struktureller Reparatur-Versuch, kein iterative „bis grün“.
 BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=1)
+# Pro HTML-/CSS-/JS-Block im Nachprompt (`build_free_html_revision_prompt`); zu klein → Slides am Ende „verschwinden“.
+AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS = env.int('AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', default=200_000)
 # Visuelle QA (Playwright/Chromium): URL des Frontends, damit <base href> /board-libs und /board-assets auflöst.
 BOARDS_VISUAL_QA_DOCUMENT_BASE = env('BOARDS_VISUAL_QA_DOCUMENT_BASE', default='http://127.0.0.1:5173/')
 # Visuelle Layout-QA (Playwright): bei True läuft sie bei jeder Board-Erzeugung und -Revision
@@ -354,8 +356,13 @@ AI_GEMINI_COUNT_THINKING_TOKENS_AS_OUTPUT = env.bool(
     'AI_GEMINI_COUNT_THINKING_TOKENS_AS_OUTPUT',
     default=True,
 )
-AI_CLAUDE_INPUT_PRICE_PER_MILLION_USD = env.float('AI_CLAUDE_INPUT_PRICE_PER_MILLION_USD', default=0)
-AI_CLAUDE_OUTPUT_PRICE_PER_MILLION_USD = env.float('AI_CLAUDE_OUTPUT_PRICE_PER_MILLION_USD', default=0)
+# Wenn True: Thinking-Tokens nicht zur Kostenschätzung addieren (überschreibt das Legacy-Flag oben nicht — siehe Pipeline).
+AI_GEMINI_EXCLUDE_THINKING_FROM_BILLING = env.bool(
+    'AI_GEMINI_EXCLUDE_THINKING_FROM_BILLING',
+    default=False,
+)
+AI_CLAUDE_INPUT_PRICE_PER_MILLION_USD = env.float('AI_CLAUDE_INPUT_PRICE_PER_MILLION_USD', default=3.0)
+AI_CLAUDE_OUTPUT_PRICE_PER_MILLION_USD = env.float('AI_CLAUDE_OUTPUT_PRICE_PER_MILLION_USD', default=15.0)
 AI_FALLBACK_INPUT_PRICE_PER_MILLION_USD = env.float('AI_FALLBACK_INPUT_PRICE_PER_MILLION_USD', default=2.0)
 AI_FALLBACK_OUTPUT_PRICE_PER_MILLION_USD = env.float('AI_FALLBACK_OUTPUT_PRICE_PER_MILLION_USD', default=12.0)
 

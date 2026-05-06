@@ -83,23 +83,23 @@ class ClaudeWorksheetProvider:
             if hasattr(block, 'type') and block.type == 'text' and hasattr(block, 'text'):
                 parts.append(block.text)
         text = ''.join(parts)
-        if trace_step:
-            from apps.boards.services.pipeline_ai_meter import parse_claude_usage, route_provider_usage
+        step = (trace_step or '').strip() or 'risk'
+        from apps.boards.services.pipeline_ai_meter import parse_claude_usage, route_provider_usage
 
-            inp, out, ex = parse_claude_usage(msg)
-            if inp == 0 and out == 0:
-                inp = max(0, int(len(user) / 4))
-                out = max(0, int(len(text) / 4))
-            route_provider_usage(
-                provider_self=self,
-                step_type=trace_step,
-                provider_label='claude',
-                model_name=self.model,
-                input_tokens=inp,
-                output_tokens=out,
-                success=True,
-                metadata=ex,
-            )
+        inp, out, ex = parse_claude_usage(msg)
+        if inp == 0 and out == 0:
+            inp = max(0, int(len(user) / 4))
+            out = max(0, int(len(text) / 4))
+        route_provider_usage(
+            provider_self=self,
+            step_type=step,
+            provider_label='claude',
+            model_name=self.model,
+            input_tokens=inp,
+            output_tokens=out,
+            success=True,
+            metadata=ex,
+        )
         return text
 
     def generate(self, payload: dict) -> dict[str, Any]:

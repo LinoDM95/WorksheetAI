@@ -290,11 +290,11 @@ _REVISION_MODES = {
 class FreeHtmlBoardRevisionService:
     """Nachprompten für Free-HTML5-Boards.
 
-    ``revision_mode`` steuert, wie aggressiv die KI ändern darf
-    (vgl. :data:`apps.boards.models.REVISION_MODE_CHOICES`). Bei ``general`` läuft
-    der klassische Revisions-Prompt; in spezialisierten Modi wird der
-    :class:`apps.boards.services.repair_agent.RepairAgent` verwendet, damit der
-    Mode-Dispatcher greift (z. B. ``bug_fix`` minimal-invasiv).
+    ``revision_mode`` steuert den Pfad: bei ``general`` klassischer Revisions-Prompt;
+    sonst :class:`~apps.boards.services.repair_agent.RepairAgent` mit modus-spezifischem
+    Prompt (z. B. ``bug_fix`` minimal-invasiv, ``simplify`` Lesbarkeit). Inhaltlicher
+    Umfang (Slides, Level) darf nur gekürzt werden, wenn die Lehrkraft das im Freitext
+    ausdrücklich verlangt — siehe Prompt-Schutzregeln in den Repair-Templates.
     """
 
     def __init__(self, board: Board, user_prompt: str, user, *,

@@ -9,9 +9,14 @@ oder späteres ``flush_logs_to_db``.
 Kosten sind **Schätzungen** über ``settings.AI_*_PRICE_*`` (USD je 1M Tokens).
 Bei **Gemini ohne „flash“** (Pro/Preview/Gemini‑3-Pfad): über ``AI_GEMINI_PROMPT_TOKEN_THRESHOLD_LONG_CONTEXT``
 (z. B. 200 000) Umschalten auf ``AI_GEMINI_LONG_CONTEXT_*`` (Google: höhere $/1M bei großen Prompts).
+**Gemini-Thinking** (``thoughts_token_count``) wird standardmäßig wie **Output-Tokens** mit abgerechnet
+(Kostenbasis identisch zu Output), sofern nicht ``AI_GEMINI_EXCLUDE_THINKING_FROM_BILLING`` gesetzt ist;
+``AI_GEMINI_COUNT_THINKING_TOKENS_AS_OUTPUT=False`` (Legacy) schließt Thinking ebenfalls aus.
+**Claude Prompt-Cache** (``cache_read`` / ``cache_creation``) wird zur **Input-Token-Summe** für die $/1M-Rechnung addiert.
 Fehlen passende Modellpreise, greifen ``AI_FALLBACK_*`` (Default in ``settings``).
 Am Ende kann ``flush_logs_to_db`` über ``apps.accounts.services.credits`` die
 Nutzer-Credits abbuchen (USD→EUR via ``AI_COST_USD_TO_EUR``, dann Credits).
+``generation_meter_context`` flushed verbleibende Einträge beim Verlassen automatisch (verhindert vergessene Abrechnung).
 """
 from __future__ import annotations
 
@@ -164,7 +169,18 @@ def parse_gemini_usage(resp: Any) -> tuple[int, int, dict[str, Any]]:
         v = getattr(um, attr, None)
         if v is not None:
             extras[attr] = int(v)
+    _merge_gemini_thought_aliases(um, extras)
     return inp, out, extras
+
+
+def _merge_gemini_thought_aliases(um: Any, extras: dict[str, Any]) -> None:
+    if extras.get('thoughts_token_count'):
+        return
+    for attr in ('thinking_tokens', 'reasoning_tokens', 'thinking_token_count'):
+        v = getattr(um, attr, None)
+        if v is not None:
+            extras['thoughts_token_count'] = int(v)
+            return
 
 
 def parse_claude_usage(message: Any) -> tuple[int, int, dict[str, Any]]:
@@ -184,11 +200,35 @@ def parse_claude_usage(message: Any) -> tuple[int, int, dict[str, Any]]:
 PRINT_PREFIX = '[AIUsage]'
 
 
-def _billable_gemini_output(out: int, extras: dict[str, Any]) -> int:
-    thinking = int(extras.get('thoughts_token_count') or 0)
-    if getattr(settings, 'AI_GEMINI_COUNT_THINKING_TOKENS_AS_OUTPUT', False) and thinking:
-        return out + thinking
-    return out
+def _gemini_thinking_tokens_from_extras(extras: dict[str, Any] | None) -> int:
+    if not extras:
+        return 0
+    t = extras.get('thoughts_token_count')
+    if t is None:
+        return 0
+    return max(0, int(t))
+
+
+def _exclude_gemini_thinking_from_billing() -> bool:
+    if getattr(settings, 'AI_GEMINI_EXCLUDE_THINKING_FROM_BILLING', False):
+        return True
+    return not getattr(settings, 'AI_GEMINI_COUNT_THINKING_TOKENS_AS_OUTPUT', True)
+
+
+def _billable_gemini_output(out: int, extras: dict[str, Any] | None) -> int:
+    thinking = _gemini_thinking_tokens_from_extras(extras)
+    if thinking <= 0 or _exclude_gemini_thinking_from_billing():
+        return out
+    return out + thinking
+
+
+def _billable_claude_input(inp: int, extras: dict[str, Any] | None) -> int:
+    """Prompt + Prompt-Cache am effektiven Input-Tarif (gleicher $/MTok wie ``input_tokens``)."""
+    if not extras:
+        return inp
+    read = int(extras.get('cache_read_input_tokens') or 0)
+    create = int(extras.get('cache_creation_input_tokens') or 0)
+    return max(0, int(inp)) + max(0, read) + max(0, create)
 
 
 def log_standalone_gemini_usage(
@@ -207,11 +247,7 @@ def log_standalone_gemini_usage(
     inp, out, ex = parse_gemini_usage(resp)
     if inp == 0 and out == 0 and fallback_char_source:
         inp = max(0, int(len(fallback_char_source) / 4))
-    bill_out = (
-        _billable_gemini_output(out, ex)
-        if ex.get('thoughts_token_count')
-        else out
-    )
+    bill_out = _billable_gemini_output(out, ex)
     cents = estimate_cost_cents(
         provider='gemini',
         model=model,
@@ -229,7 +265,7 @@ def log_standalone_gemini_usage(
         md['thinking_tokens_reported'] = ex['thoughts_token_count']
     if bill_out != out:
         md['output_tokens_billed_for_cost'] = bill_out
-    note = _pricing_metadata_note(model_name=model, cents=cents, input_tokens=inp, output_tokens=out)
+    note = _pricing_metadata_note(model_name=model, cents=cents, input_tokens=inp, output_tokens=bill_out)
     if note:
         md['pricing_note'] = note
 
@@ -238,7 +274,6 @@ def log_standalone_gemini_usage(
 
     meter = _active.get()
     if meter is not None:
-        use_override = bill_out != out
         meter.record(
             step_type=db_step[:40],
             provider='gemini',
@@ -247,7 +282,7 @@ def log_standalone_gemini_usage(
             output_tokens=out,
             success=True,
             metadata=md,
-            estimated_cost_override_cents=cents if use_override else None,
+            estimated_cost_override_cents=cents,
         )
         return
 
@@ -285,37 +320,48 @@ def route_provider_usage(
 ) -> None:
     """Schreibt in aktiven Meter **oder** setzt ``_pending_ai_usage_log`` auf der Provider-Instanz."""
     extras = metadata or {}
-    bill_out = (
-        _billable_gemini_output(output_tokens, extras)
-        if extras.get('thoughts_token_count')
-        else output_tokens
-    )
+    pl = (provider_label or '').lower()
+    raw_in = max(0, int(input_tokens))
+    raw_out = max(0, int(output_tokens))
+    bill_in = raw_in
+    bill_out = raw_out
+    if pl == 'gemini':
+        bill_out = _billable_gemini_output(output_tokens, extras)
+    elif pl == 'claude':
+        bill_in = _billable_claude_input(input_tokens, extras)
 
     cents = estimate_cost_cents(
         provider=provider_label,
         model=model_name,
-        input_tokens=input_tokens,
+        input_tokens=bill_in,
         output_tokens=bill_out,
     )
-    md = {**extras, 'api_output_tokens': output_tokens}
-    thinking = extras.get('thoughts_token_count')
-    if thinking:
-        md['thinking_tokens_reported'] = thinking
-    if bill_out != output_tokens:
-        md['output_tokens_billed_for_cost'] = bill_out
+    md = {
+        **extras,
+        'api_output_tokens': raw_out,
+        'api_input_tokens': raw_in,
+    }
+    if pl == 'gemini':
+        thinking = extras.get('thoughts_token_count')
+        if thinking:
+            md['thinking_tokens_reported'] = thinking
+        if bill_out != raw_out:
+            md['output_tokens_billed_for_cost'] = bill_out
+    elif pl == 'claude':
+        if bill_in != raw_in:
+            md['input_tokens_billed_for_cost'] = bill_in
 
     meter = _active.get()
     if meter is not None:
-        use_override = bill_out != output_tokens
         meter.record(
             step_type=step_type[:40],
             provider=provider_label[:40],
             model_name=model_name[:100],
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=raw_in,
+            output_tokens=raw_out,
             success=success,
             metadata=md,
-            estimated_cost_override_cents=cents if use_override else None,
+            estimated_cost_override_cents=max(0, int(cents)),
         )
         return
 
@@ -325,9 +371,9 @@ def route_provider_usage(
         {
             'step_type': step_type[:40],
             'model_name': model_name[:100],
-            'input_tokens': max(0, int(input_tokens)),
-            'output_tokens': max(0, int(output_tokens)),
-            'estimated_cost_cents': cents,
+            'input_tokens': raw_in,
+            'output_tokens': raw_out,
+            'estimated_cost_cents': max(0, int(cents)),
             'success': bool(success),
             'metadata': {**md, 'provider': provider_label},
         },
@@ -428,6 +474,8 @@ class PipelineAIMeter:
         board=None,
         metadata_extra: dict[str, Any] | None = None,
     ) -> None:
+        if not self._entries:
+            return
         from apps.boards.models import AIUsageLog
 
         extra = metadata_extra or {}
@@ -448,6 +496,7 @@ class PipelineAIMeter:
             from apps.accounts.services.credits import charge_ai_usage_usd_cents
 
             charge_ai_usage_usd_cents(self.user, total_usd)
+        self._entries.clear()
 
     def flush_logs_to_board(self, board: Any) -> None:
         self.flush_logs_to_db(board=board)
@@ -507,4 +556,13 @@ def generation_meter_context(*, user: 'AbstractUser | None') -> Iterator[Pipelin
         yield meter
         meter.print_totals()
     finally:
-        _active.reset(token)
+        try:
+            if meter._entries:
+                logger.info(
+                    '%s generation_meter_context: Auto-Abrechnung (%s Einträge, kein explizites flush)',
+                    PRINT_PREFIX,
+                    len(meter._entries),
+                )
+                meter.flush_logs_to_db(metadata_extra={'meter_auto_flush': True})
+        finally:
+            _active.reset(token)

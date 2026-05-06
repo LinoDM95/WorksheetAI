@@ -241,20 +241,20 @@ class MockWorksheetProvider:
         Liefert ein leeres Dict — die aufrufenden Pipeline-Services haben
         Heuristik-Fallbacks, die lokal/offline zuverlässig greifen.
         """
-        if trace_step:
-            from apps.boards.services.pipeline_ai_meter import route_provider_usage
+        step = (trace_step or '').strip() or 'risk'
+        from apps.boards.services.pipeline_ai_meter import route_provider_usage
 
-            approx_in = max(0, int(len(prompt) / 4))
-            route_provider_usage(
-                provider_self=self,
-                step_type=trace_step,
-                provider_label='mock',
-                model_name=model or 'mock',
-                input_tokens=approx_in,
-                output_tokens=2,
-                success=True,
-                metadata={'token_source': 'approx_mock', 'note': 'mock_response'},
-            )
+        approx_in = max(0, int(len(prompt) / 4))
+        route_provider_usage(
+            provider_self=self,
+            step_type=step,
+            provider_label='mock',
+            model_name=model or 'mock',
+            input_tokens=approx_in,
+            output_tokens=2,
+            success=True,
+            metadata={'token_source': 'approx_mock', 'note': 'mock_response'},
+        )
         return {}
 
     def repair_free_html_board(self, payload: dict[str, Any]) -> dict[str, Any]:

@@ -74,6 +74,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Liefere eine **vol
 
 - Liefere **die komplette neue Fassung** (kein Diff, keine Patch-Notes).
 - Lasse das, was funktioniert, intakt — refactor nur, was der Wunsch verlangt oder offensichtlich fehlerhaft ist.
+- **Umfang bewahren:** Keine Folien, Spielstände, Level oder inhaltlichen Hauptblöcke weglassen oder zusammenlegen, **wenn** der Änderungswunsch der Lehrkraft das **nicht ausdrücklich** verlangt (ein Modus wie „Vereinfachen“ allein **kein** Freibrief zum Kürzen der Seitenanzahl).
 - Wickle alles in **ein** Element **`<div class="free-board ...">`** mit **`width:100%; height:100%; min-height:100%; max-height:100%; box-sizing:border-box;`** — exakt die **1280×720**-Bühne füllen. **`100vh`/`100dvh` auf der Hauptfläche vermeiden** (Prozent/`100%` zu `.free-board` bevorzugen). Keine eigenen Wrapper `#wa-*`/`#board-root`.
 - Verbote unverändert: kein `<script>` im HTML, keine `on*=` Inline-Handler, keine `<form>`/`<iframe>`/`<object>`/`<embed>`, kein `javascript:`-href.
 - JS in IIFE mit `'use strict';` + `try/catch`. Keine verbotenen APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `localStorage`/`sessionStorage`/`indexedDB`, `document.cookie`, `eval`, `new Function`, `Function('…')`, `import()`, `alert/prompt/confirm`, `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`).

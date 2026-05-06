@@ -161,6 +161,14 @@ def build_worksheet_review_prompt(
 _BOARD_FORMAT_DIR = _FORMATS_DIR / 'interactive_board'
 
 
+# Vor jedem Repair-Modus-Prompt (RepairAgent / spezialisierte Revision): keine willkürliche Reduktion von Slides o. Ä.
+_REPAIR_CONTENT_PRESERVATION_PREAMBLE = """## Schutzregel: Kein unkontrolliertes Kürzen
+
+- **Kein Inhaltsverlust ohne klaren Lehrkraft-Auftrag:** Entferne oder überspringe **keine** Folien/Slides, Szenen, Spielebenen, Fragen oder zentralen Inhaltsblöcke und ändere **nicht** **Anzahl** oder **Reihenfolge**, es sei denn, im **Lehrkraft-Hinweis** / **Zusatzkontext** ist das **ausdrücklich** gewünscht (z. B. „nur noch acht Folien“, „Übungen 3–5 entfernen“).
+- **Modus „vereinfachen“ u. Ä.** bezieht sich auf **verständlichere Texte/UI**, schlankeren Code, **lokale** Animation/Text-Straffung — **nicht** darauf, das Board ohne Anweisung kürzer oder ärmer zu machen.
+
+"""
+
 def _board_format_dir() -> Path:
     if _BOARD_FORMAT_DIR.is_dir():
         return _BOARD_FORMAT_DIR
@@ -276,10 +284,11 @@ def build_free_html_generation_prompt(payload: dict) -> str:
 def build_free_html_revision_prompt(payload: dict) -> str:
     md = (_board_format_dir() / 'free_html_revision.md').read_text(encoding='utf-8')
     user_prompt = (payload.get('user_prompt') or '').strip() or '*(Kein Änderungswunsch.)*'
+    cap = max(1_000, int(getattr(settings, 'AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', 200_000)))
     return (
-        md.replace('{{ html }}', _truncate_block(str(payload.get('html') or '')))
-        .replace('{{ css }}', _truncate_block(str(payload.get('css') or '')))
-        .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or '')))
+        md.replace('{{ html }}', _truncate_block(str(payload.get('html') or ''), cap))
+        .replace('{{ css }}', _truncate_block(str(payload.get('css') or ''), cap))
+        .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or ''), cap))
         .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
@@ -379,7 +388,7 @@ def build_repair_mode_prompt(mode: str, payload: dict) -> str:
     else:
         err_block = '*(Keine Fehlerliste übermittelt — prüfe den Code dennoch auf Sandbox-Konformität.)*'
     ctx = str(payload.get('context_hint') or '').strip() or '*(Kein Zusatzkontext.)*'
-    return (
+    body = (
         md.replace('{{ mode }}', safe_mode or 'general_repair')
         .replace('{{ validation_errors }}', err_block)
         .replace('{{ repair_attempt }}', str(int(payload.get('repair_attempt') or 1)))
@@ -395,6 +404,7 @@ def build_repair_mode_prompt(mode: str, payload: dict) -> str:
         .replace('{{ touch_audit }}', _json_block(payload.get('touch_audit') or {}))
         .replace('{{ screenshot_quality }}', _json_block(payload.get('screenshot_quality') or {}))
     )
+    return _REPAIR_CONTENT_PRESERVATION_PREAMBLE + body
 
 
 def build_screenshot_judge_prompt(payload: dict) -> str:

@@ -339,17 +339,16 @@ class GeminiWorksheetProvider:
         trace_step: str | None,
         fallback_char_source: str,
     ) -> None:
-        if not trace_step:
-            return
         try:
             from apps.boards.services.pipeline_ai_meter import parse_gemini_usage, route_provider_usage
 
+            step = (trace_step or '').strip() or 'risk'
             inp, out, ex = parse_gemini_usage(resp)
             if inp == 0 and out == 0 and fallback_char_source:
                 inp = max(0, int(len(fallback_char_source) / 4))
             route_provider_usage(
                 provider_self=self,
-                step_type=trace_step,
+                step_type=step,
                 provider_label='gemini',
                 model_name=model,
                 input_tokens=inp,

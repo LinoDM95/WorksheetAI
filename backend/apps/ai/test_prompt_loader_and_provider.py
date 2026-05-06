@@ -6,6 +6,7 @@ from apps.ai.prompt_loader import (
     build_free_html_generation_prompt,
     build_free_html_repair_prompt,
     build_free_html_revision_prompt,
+    build_repair_mode_prompt,
     build_page_regeneration_prompt,
     build_worksheet_generation_prompt,
     build_worksheet_generation_prompt_for_gemini,
@@ -75,10 +76,18 @@ class PromptLoaderBoardTests(SimpleTestCase):
         self.assertIn('Mach ein Poster', p)
 
     def test_free_html_revision_truncates_huge_html(self) -> None:
-        huge = 'x' * 20_000
+        huge = 'x' * 210_000
         p = build_free_html_revision_prompt({'html': huge, 'user_prompt': 'fix'})
         self.assertIn('gekürzt', p)
         self.assertLess(len(p), len(huge) + 5000)
+
+    def test_repair_mode_prompt_includes_content_preservation(self) -> None:
+        p = build_repair_mode_prompt(
+            'simplify',
+            {'html': '<div>x</div>', 'css': '', 'javascript': '', 'context_hint': 'nur Button größer'},
+        )
+        self.assertIn('Kein unkontrolliertes Kürzen', p)
+        self.assertIn('nur Button größer', p)
 
     def test_free_html_repair_lists_errors(self) -> None:
         p = build_free_html_repair_prompt({'validation_errors': ['a', 'b'], 'repair_attempt': 2})

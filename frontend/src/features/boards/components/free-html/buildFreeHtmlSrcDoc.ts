@@ -186,11 +186,15 @@ export type BuildSrcDocOptions = {
    */
   documentBaseHref?: string;
   /**
-   * Für Galerie-/Bibliotheks-Vorschau: keine Bewegung (Nutzer sollte scriptsEnabled:false setzen —
-   * zusätzlich werden Transition/Animation im #board-root abgeschaltet).
+   * Für Galerie-/Bibliotheks-Vorschau: nach kurzer Verzögerung Transition/Animation im #board-root
+   * „einfrieren“ (sodass typische Intro-Animationen erst sichtbar werden; Nutzer sollte
+   * scriptsEnabled:false setzen).
    */
   frozenPreview?: boolean;
 };
+
+/** Zeit, die CSS-Animationen im Thumbnail-iframe laufen dürfen, bevor „Freeze“ greift. */
+const FROZEN_THUMB_FREEZE_DELAY_MS = 1600;
 
 const dedupe = <T>(arr: T[]): T[] => Array.from(new Set(arr));
 
@@ -305,6 +309,45 @@ const FROZEN_PREVIEW_CSS = `
   }
 `;
 
+const buildFrozenThumbFreezeScript = (delayMs: number): string => {
+  const cssLiteral = JSON.stringify(`${FROZEN_PREVIEW_CSS.trim()}\n`);
+  return `
+<script>
+(function () {
+  var CSS = ${cssLiteral};
+  function freeze() {
+    if (document.getElementById('wa-frozen-thumb')) return;
+    var el = document.createElement('style');
+    el.id = 'wa-frozen-thumb';
+    el.setAttribute('data-wa-frozen-thumb', '1');
+    el.textContent = CSS;
+    document.head.appendChild(el);
+  }
+  var reduced = false;
+  try {
+    reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (_) {}
+  function runDelayed() {
+    window.setTimeout(function () {
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(freeze);
+      });
+    }, ${delayMs});
+  }
+  if (reduced) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', freeze);
+    } else {
+      freeze();
+    }
+    return;
+  }
+  runDelayed();
+})();
+<\/script>
+`;
+};
+
 const errorOverlayScript = `
   window.addEventListener('error', function (event) {
     try {
@@ -336,7 +379,9 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
   const datasetsHtml = boardDatasetsScript(boardDatasets);
   const baseTag = documentBaseTag(documentBaseHref);
   const resetCss = buildResetCss(STAGE_BASE_W, STAGE_BASE_H);
-  const frozenBlock = frozenPreview ? `\n${FROZEN_PREVIEW_CSS}\n` : '';
+  const frozenThumbScript = frozenPreview
+    ? buildFrozenThumbFreezeScript(FROZEN_THUMB_FREEZE_DELAY_MS)
+    : '';
   const sandboxBootstrapHtml = buildSandboxBootstrap(STAGE_BASE_W, STAGE_BASE_H);
 
   const userScriptBlock = scriptsEnabled
@@ -367,7 +412,6 @@ ${baseTag}${leafletCss}
 <style>
 ${resetCss}
 ${safeCss}
-${frozenBlock}
 </style>
 ${libsHtml}
 ${datasetsHtml}
@@ -387,6 +431,7 @@ ${sandboxBootstrapHtml}
 <script>
 ${userScriptBlock}
 </script>
+${frozenThumbScript}
 </body>
 </html>`;
 }
