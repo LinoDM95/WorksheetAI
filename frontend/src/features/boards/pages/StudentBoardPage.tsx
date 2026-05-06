@@ -7,7 +7,7 @@ import { Button, IconButton } from '../../../components/ui';
 import { exitElementFullscreen, requestDocumentFullscreen } from '../../../lib/requestDocumentFullscreen';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
 import { fetchPublicBoardByToken, type PublicBoardPayload } from '../publicBoardApi';
-import type { LibraryId } from '../types';
+import type { DatasetId, LibraryId } from '../types';
 
 export function StudentBoardPage() {
   const { token = '' } = useParams<{ token: string }>();
@@ -31,7 +31,7 @@ export function StudentBoardPage() {
           setData(payload);
           document.title = payload.title ? `${payload.title} · Übung` : 'Board · Übung';
         }
-      } catch (e) {
+      } catch (e: unknown) {
         if (!cancelled) {
           let msg = 'Diese Übung ist nicht erreichbar oder der Link ist nicht aktiv.';
           if (axios.isAxiosError(e)) {
@@ -139,13 +139,13 @@ export function StudentBoardPage() {
         </IconButton>
       }
       reloadKey={reloadKey}
-      onReload={() => setReloadKey((k) => k + 1)}
+      onReload={() => setReloadKey((k: number) => k + 1)}
       html={data.html}
       css={data.css}
       javascript={data.javascript}
       boardFrameId={token}
       usedLibraries={data.used_libraries as LibraryId[]}
-      usedDatasets={data.used_datasets}
+      usedDatasets={data.used_datasets as DatasetId[]}
       scriptsEnabled
     />
   );
