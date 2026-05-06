@@ -57,6 +57,26 @@ JWT_AUTH_COOKIE_DOMAIN = env('JWT_AUTH_COOKIE_DOMAIN', default=None) or None
 # Nur für Tests/Debug: Klartext-Tokens in Login/Refresh-JSON zusätzlich ausgeben (Standard aus)
 JWT_AUTH_EXPOSE_BODY_TOKENS = env.bool('JWT_AUTH_EXPOSE_BODY_TOKENS', default=False)
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'worksheet-ai',
+    }
+}
+
+FRONTEND_PUBLIC_URL = env('FRONTEND_PUBLIC_URL', default='http://localhost:5173')
+PASSWORD_RESET_EMAIL_SITE_NAME = env('PASSWORD_RESET_EMAIL_SITE_NAME', default='WorksheetAI')
+PASSWORD_RESET_MAX_PER_IP_PER_HOUR = env.int('PASSWORD_RESET_MAX_PER_IP_PER_HOUR', default=10)
+PASSWORD_RESET_THROTTLE_WINDOW_SECONDS = env.int('PASSWORD_RESET_THROTTLE_WINDOW_SECONDS', default=3600)
+
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='WorksheetAI <noreply@localhost>')
+
 # ── KI-Credits (Abrechnung aus geschätzten USD-Tokenkosten → EUR → Credits)
 # 10000 Credits = 10 EUR ⇒ USER_CREDITS_PER_EUR=1000
 AI_CREDITS_ENABLED = env.bool('AI_CREDITS_ENABLED', default=True)

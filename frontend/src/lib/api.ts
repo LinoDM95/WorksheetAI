@@ -23,7 +23,8 @@ const shouldSkipRefreshRetry = (url?: string) => {
     url.includes('/auth/login') ||
     url.includes('/auth/register') ||
     url.includes('/auth/logout') ||
-    url.includes('/auth/token/refresh')
+    url.includes('/auth/token/refresh') ||
+    url.includes('/auth/password-reset')
   );
 };
 

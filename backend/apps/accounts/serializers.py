@@ -1,6 +1,9 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 
 
@@ -24,6 +27,40 @@ class RegisterSerializer(serializers.ModelSerializer):
             first_name=data.get('first_name', ''),
             last_name=data.get('last_name', ''),
         )
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError(
+                {'password_confirm': 'Die Passwörter stimmen nicht überein.'}
+            )
+        try:
+            uid = force_str(urlsafe_base64_decode(attrs['uid']))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise serializers.ValidationError(
+                'Der Link ist ungültig oder abgelaufen. Bitte fordere eine neue E-Mail an.'
+            )
+        if not user.is_active:
+            raise serializers.ValidationError(
+                'Der Link ist ungültig oder abgelaufen. Bitte fordere eine neue E-Mail an.'
+            )
+        if not default_token_generator.check_token(user, attrs['token']):
+            raise serializers.ValidationError(
+                'Der Link ist ungültig oder abgelaufen. Bitte fordere eine neue E-Mail an.'
+            )
+        attrs['user'] = user
+        return attrs
 
 
 class UserSerializer(serializers.ModelSerializer):

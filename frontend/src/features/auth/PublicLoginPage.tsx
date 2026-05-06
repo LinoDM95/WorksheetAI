@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { LogIn, UserPlus } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -245,6 +245,14 @@ export const PublicLoginPage = () => {
                       invalid={Boolean(fieldErrors.password)}
                     />
                   </Field>
+                  <div className="flex justify-end pt-0.5">
+                    <Link
+                      to="/passwort-vergessen"
+                      className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      Passwort vergessen?
+                    </Link>
+                  </div>
                   {generalError ? (
                     <Alert tone="error" className="mt-2">
                       {generalError}

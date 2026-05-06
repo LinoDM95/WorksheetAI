@@ -1,4 +1,7 @@
+import logging
+
 from django.conf import settings
+
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,7 +10,15 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .cookies import clear_auth_cookies, set_auth_cookies
-from .serializers import RegisterSerializer, UserSerializer
+from .services.password_reset import is_password_reset_request_throttled, send_password_reset_email
+from .serializers import (
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -73,3 +84,50 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        if is_password_reset_request_throttled(request):
+            return Response(
+                {'detail': 'Zu viele Anfragen. Bitte versuche es später erneut.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        ser = PasswordResetRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            send_password_reset_email(request, ser.validated_data['email'])
+        except Exception:
+            logger.exception('password_reset email send failed')
+            return Response(
+                {
+                    'detail': 'Die E-Mail konnte nicht versendet werden. Bitte versuche es später erneut.',
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response(
+            {
+                'detail': (
+                    'Wenn ein Konto mit dieser E-Mail existiert, haben wir dir '
+                    'eine Nachricht mit einem Link zum Zurücksetzen gesendet.'
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        ser = PasswordResetConfirmSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        user = ser.validated_data['user']
+        user.set_password(ser.validated_data['password'])
+        user.save()
+        return Response(
+            {'detail': 'Dein Passwort wurde geändert. Du kannst dich jetzt anmelden.'},
+            status=status.HTTP_200_OK,
+        )

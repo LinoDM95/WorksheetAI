@@ -15,6 +15,8 @@ import { BoardLibraryCommunityPreviewPage } from './features/boards/pages/BoardL
 import { BoardLibraryListPage } from './features/boards/pages/BoardLibraryListPage';
 import { BoardPlayPage } from './features/boards/pages/BoardPlayPage';
 import { StudentBoardPage } from './features/boards/pages/StudentBoardPage';
+import { PasswordForgotPage } from './features/auth/PasswordForgotPage';
+import { PasswordResetConfirmPage } from './features/auth/PasswordResetConfirmPage';
 import { PublicLoginPage } from './features/auth/PublicLoginPage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
@@ -115,6 +117,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<AuthRootRedirect />} />
         <Route path="/login" element={<PublicLoginPage />} />
+        <Route path="/passwort-vergessen" element={<PasswordForgotPage />} />
+        <Route path="/passwort/zuruecksetzen" element={<PasswordResetConfirmPage />} />
         <Route path="/s/:token" element={<StudentBoardPage />} />
         <Route path="/app" element={<ProtectedAppLayout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
