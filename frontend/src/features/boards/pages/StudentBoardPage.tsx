@@ -61,6 +61,13 @@ export function StudentBoardPage() {
     immersiveSessionRef.current = true;
     try {
       await requestDocumentFullscreen();
+      if (
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(orientation: landscape)').matches
+      ) {
+        window.setTimeout(() => void requestDocumentFullscreen(), 180);
+        window.setTimeout(() => void requestDocumentFullscreen(), 550);
+      }
     } finally {
       setSessionStarted(true);
       setStarting(false);
@@ -80,6 +87,7 @@ export function StudentBoardPage() {
     let raf2 = 0;
     let t1 = 0;
     let t2 = 0;
+    const landscapeTimeouts: number[] = [];
 
     const tryRestoreFullscreen = () => {
       if (!immersiveSessionRef.current) return;
@@ -101,8 +109,26 @@ export function StudentBoardPage() {
       });
     };
 
+    const scheduleLandscapeBurst = () => {
+      if (typeof window.matchMedia !== 'function') return;
+      if (!window.matchMedia('(orientation: landscape)').matches) return;
+      const delays = [80, 260, 620, 1300, 2400];
+      delays.forEach((ms) => {
+        landscapeTimeouts.push(
+          window.setTimeout(() => {
+            if (!immersiveSessionRef.current || isDocumentFullscreenActive()) return;
+            void requestDocumentFullscreen();
+          }, ms),
+        );
+      });
+    };
+
+    scheduleRestore();
+    scheduleLandscapeBurst();
+
     const onFullscreenChange = () => {
       tryRestoreFullscreen();
+      scheduleLandscapeBurst();
     };
 
     document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -110,15 +136,23 @@ export function StudentBoardPage() {
     window.addEventListener('orientationchange', scheduleRestore);
     window.addEventListener('resize', scheduleRestore);
 
+    const vv = window.visualViewport;
+    const onVisualViewport = () => scheduleRestore();
+    vv?.addEventListener('resize', onVisualViewport);
+    vv?.addEventListener('scroll', onVisualViewport);
+
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
       window.clearTimeout(t1);
       window.clearTimeout(t2);
+      landscapeTimeouts.forEach((id) => window.clearTimeout(id));
       document.removeEventListener('fullscreenchange', onFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener);
       window.removeEventListener('orientationchange', scheduleRestore);
       window.removeEventListener('resize', scheduleRestore);
+      vv?.removeEventListener('resize', onVisualViewport);
+      vv?.removeEventListener('scroll', onVisualViewport);
     };
   }, [sessionStarted]);
 
@@ -165,7 +199,7 @@ export function StudentBoardPage() {
           🚀 Übung starten
         </Button>
         <p className="max-w-xs text-center text-xs text-slate-500">
-          Auf manchen iPhones schaltet Safari kein Seiten-Vollbild — die Übung startet trotzdem normal.
+          Auf manchen iPhones blendet Safari im Querformat die Adresszeile oft nicht aus — dann Hochformat nutzen oder die Seite zum Home-Bildschirm hinzufügen. Sonst startet die Übung wie gewohnt.
         </p>
       </div>
     );

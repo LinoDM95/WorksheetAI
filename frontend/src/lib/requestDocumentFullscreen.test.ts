@@ -79,7 +79,22 @@ describe('requestDocumentFullscreen', () => {
 
     await requestDocumentFullscreen();
 
-    expect(req).toHaveBeenCalledOnce();
+    expect(req).toHaveBeenCalledTimes(1);
+    expect(req).toHaveBeenCalledWith({ navigationUI: 'hide' });
+  });
+
+  it('versucht body wenn documentElement zweimal fehlschlägt', async () => {
+    const htmlReq = vi.fn().mockRejectedValueOnce(new Error('a')).mockRejectedValueOnce(new Error('b'));
+    const bodyReq = vi.fn().mockResolvedValue(undefined);
+    (globalThis as unknown as { document: Document }).document = {
+      documentElement: { requestFullscreen: htmlReq },
+      body: { requestFullscreen: bodyReq },
+    } as unknown as Document;
+
+    await requestDocumentFullscreen();
+
+    expect(htmlReq).toHaveBeenCalledTimes(2);
+    expect(bodyReq).toHaveBeenCalledTimes(1);
   });
 
   it('fällt auf webkitRequestFullscreen zurück', async () => {

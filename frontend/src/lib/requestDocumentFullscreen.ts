@@ -27,24 +27,47 @@ export async function exitElementFullscreen(): Promise<void> {
   }
 }
 
-export async function requestDocumentFullscreen(): Promise<void> {
-  const el = document.documentElement;
+type FsElement = HTMLElement & {
+  requestFullscreen?: (options?: FullscreenOptions) => Promise<void>;
+  webkitRequestFullscreen?: () => void;
+};
 
-  if (typeof el.requestFullscreen === 'function') {
+async function requestFullscreenOnElement(el: FsElement): Promise<boolean> {
+  const rf = el.requestFullscreen;
+  if (typeof rf === 'function') {
     try {
-      await el.requestFullscreen();
-      return;
+      await rf.call(el, { navigationUI: 'hide' });
+      return true;
     } catch {
-      return;
+      try {
+        await rf.call(el);
+        return true;
+      } catch {
+        /* WebKit / nächster Kandidat */
+      }
     }
   }
-
-  const wk = el as HTMLElement & { webkitRequestFullscreen?: () => void };
-  if (typeof wk.webkitRequestFullscreen === 'function') {
+  const wk = el.webkitRequestFullscreen;
+  if (typeof wk === 'function') {
     try {
-      wk.webkitRequestFullscreen();
+      wk.call(el);
+      return true;
     } catch {
-      /* nicht unterstützt oder blockiert */
+      /* ignore */
     }
+  }
+  return false;
+}
+
+/** Fragt Vollbild an: zuerst `document.documentElement`, dann `document.body` (hilft bei Querformat-Quirks). */
+export async function requestDocumentFullscreen(): Promise<void> {
+  if (typeof document === 'undefined') return;
+
+  const candidates: FsElement[] = [document.documentElement, document.body].filter(
+    (node): node is FsElement => Boolean(node),
+  );
+
+  for (const el of candidates) {
+    if (await requestFullscreenOnElement(el)) return;
   }
 }
