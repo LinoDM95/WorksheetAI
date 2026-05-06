@@ -59,7 +59,7 @@ export const BoardShareQrModal = ({ open, title, studentUrl, expiresAt, onClose 
           </p>
         ) : (
           <p className="mb-4 text-sm text-slate-500">
-            Kein automatisches Ablaufdatum (Schüler-Link im Menü wieder deaktivierbar).
+            Es ist immer ein Ablaufdatum gesetzt (maximal 3 Tage). Du kannst den Schüler-Link danach erneut aktivieren.
           </p>
         )}
         <div className="flex justify-center rounded-xl bg-white p-4 ring-1 ring-slate-100 sm:p-6">

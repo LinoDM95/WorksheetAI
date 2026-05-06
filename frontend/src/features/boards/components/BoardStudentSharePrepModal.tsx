@@ -4,18 +4,19 @@ import { X } from 'lucide-react';
 import { Button, IconButton } from '../../../components/ui';
 import { cn } from '../../../lib/cn';
 
-export const STUDENT_SHARE_DURATION_OPTIONS: { label: string; minutes: number | null }[] = [
+export const STUDENT_SHARE_DURATION_OPTIONS: { label: string; minutes: number }[] = [
   { label: '15 Minuten', minutes: 15 },
   { label: '45 Minuten', minutes: 45 },
   { label: '2 Stunden', minutes: 120 },
   { label: '8 Stunden', minutes: 480 },
-  { label: 'Ohne Ablauf', minutes: null },
+  { label: '1 Tag', minutes: 60 * 24 },
+  { label: '3 Tage (Maximum)', minutes: 60 * 24 * 3 },
 ];
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  onConfirm: (validMinutes: number | null) => void;
+  onConfirm: (validMinutes: number) => void;
   busy?: boolean;
 };
 
@@ -53,8 +54,9 @@ export function BoardStudentSharePrepModal({ open, onClose, onConfirm, busy }: P
           </IconButton>
         </div>
         <p className="mb-3 text-sm text-slate-600">
-          Wähle, wie lange der Zugang gültig sein soll. Anschließend wird der Schüler-Link aktiv, du siehst den Link und
-          den QR-Code — ohne weiteres Anhaken im Menü.
+          Wähle, wie lange der Zugang gültig sein soll (höchstens 3 Tage, zum Schutz vor dauerhafter
+          öffentlicher Nutzung). Anschließend wird der Schüler-Link aktiv; du siehst den Link und den
+          QR-Code.
         </p>
         <fieldset className="space-y-2">
           <legend className="sr-only">Gültigkeitsdauer</legend>

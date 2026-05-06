@@ -194,7 +194,8 @@ export type BuildSrcDocOptions = {
 };
 
 /** Zeit, die CSS-Animationen im Thumbnail-iframe laufen dürfen, bevor „Freeze“ greift. */
-const FROZEN_THUMB_FREEZE_DELAY_MS = 1600;
+/** Kurz warten, damit Charts/Libs zeichnen; dann einfrieren. */
+const FROZEN_THUMB_FREEZE_DELAY_MS = 2200;
 
 const dedupe = <T>(arr: T[]): T[] => Array.from(new Set(arr));
 
@@ -297,15 +298,22 @@ const buildSandboxBootstrap = (baseW: number, baseH: number): string => `
 `;
 
 const FROZEN_PREVIEW_CSS = `
-  /* Frozen library thumbnail: keine laufenden Animationen/Transitions im Inhalt */
+  /* Frozen library thumbnail: nichts soll sich weiter bewegen */
   #board-root, #board-root * {
     animation: none !important;
     animation-name: none !important;
     animation-duration: 0s !important;
     animation-delay: 0s !important;
+    animation-play-state: paused !important;
     transition-property: none !important;
     transition-duration: 0s !important;
+    scroll-behavior: auto !important;
     caret-color: transparent !important;
+  }
+  #board-root svg animateMotion,
+  #board-root svg animate,
+  #board-root svg set {
+    animation-play-state: paused !important;
   }
 `;
 
@@ -322,6 +330,19 @@ const buildFrozenThumbFreezeScript = (delayMs: number): string => {
     el.setAttribute('data-wa-frozen-thumb', '1');
     el.textContent = CSS;
     document.head.appendChild(el);
+    try {
+      var media = document.querySelectorAll('video, audio');
+      for (var mi = 0; mi < media.length; mi++) {
+        try { media[mi].pause(); } catch (_) {}
+      }
+    } catch (_) {}
+    try {
+      var noopRaf = function () { return 0; };
+      window.requestAnimationFrame = noopRaf;
+      if (window.webkitRequestAnimationFrame) window.webkitRequestAnimationFrame = noopRaf;
+      if (window.mozRequestAnimationFrame) window.mozRequestAnimationFrame = noopRaf;
+      if (window.msRequestAnimationFrame) window.msRequestAnimationFrame = noopRaf;
+    } catch (_) {}
   }
   var reduced = false;
   try {

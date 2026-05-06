@@ -21,7 +21,7 @@ type Props = {
   fillHeight?: boolean;
   /** Eltern-Box definiert Größe (z. B. 16:9-Stage im Play-Modus) — iframe füllt exakt diese Fläche. */
   fitContainer?: boolean;
-  /** Statische Vorschau (#board-root ohne laufende Anim/Transition); sinnvoll mit scriptsEnabled:false. */
+  /** Nach kurzer Zeit Anim/Transition stoppen, Medien pausieren, rAF abstellen — auch mit laufenden Skripten (Thumbnails). */
   frozenPreview?: boolean;
   /** Bei scriptsEnabled:false kein gelber Hinweis-Balken (z. B. kleine Thumbnails). */
   hideScriptsDisabledNotice?: boolean;

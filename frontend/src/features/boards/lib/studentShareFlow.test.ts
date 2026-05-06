@@ -22,14 +22,14 @@ describe('needsStudentSharePrep', () => {
     ).toBe(true);
   });
 
-  it('false wenn aktiv und ohne Ablaufdatum', () => {
+  it('true wenn aktiv aber kein Ablaufdatum (Server verlangt begrenzte Gültigkeit)', () => {
     expect(
       needsStudentSharePrep({
         share_token: 'abc',
         student_link_enabled: true,
         student_link_expires_at: null,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('true wenn Ablauf in der Vergangenheit', () => {

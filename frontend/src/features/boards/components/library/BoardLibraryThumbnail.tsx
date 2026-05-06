@@ -80,7 +80,7 @@ export const BoardLibraryThumbnail = ({
                 html={html}
                 css={css}
                 javascript={javascript}
-                scriptsEnabled={false}
+                scriptsEnabled
                 frozenPreview
                 hideScriptsDisabledNotice
                 reloadKey={0}

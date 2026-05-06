@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.http import StreamingHttpResponse
 from django.db import transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count
 from django.utils import timezone
 from django.utils.html import strip_tags
 import secrets
@@ -53,8 +53,8 @@ class PublicBoardPlayView(APIView):
             Board.objects.filter(
                 share_token=share_token,
                 student_link_enabled=True,
+                student_link_expires_at__gt=now,
             )
-            .filter(Q(student_link_expires_at__isnull=True) | Q(student_link_expires_at__gt=now))
             .only('title', 'html', 'css', 'javascript', 'used_libraries', 'used_datasets')
             .first()
         )
@@ -80,7 +80,9 @@ _PATCHABLE_TEXT_FIELDS = {'title', 'description'}
 _PATCHABLE_CODE_FIELDS = {'html', 'css', 'javascript'}
 _PATCHABLE_META_FIELDS = {'teacher_notes', 'usage_instructions', 'warnings'}
 
-_STUDENT_LINK_MAX_VALID_MINUTES = 60 * 24 * 7
+# Schüler-Link: immer zeitlich begrenzt (Lastenschutz); max. und Standard = 3 Tage.
+_STUDENT_LINK_MAX_VALID_MINUTES = 60 * 24 * 3
+_STUDENT_LINK_DEFAULT_VALID_MINUTES = 60 * 24 * 3
 
 
 class BoardFolderViewSet(viewsets.ModelViewSet):
@@ -221,16 +223,24 @@ class BoardViewSet(viewsets.ModelViewSet):
         if 'student_link_valid_minutes' in body:
             raw_m = body['student_link_valid_minutes']
             if instance.student_link_enabled:
-                expires_at = None
-                if raw_m not in (None, '', False):
+                if raw_m in (None, '', False):
+                    expires_at = timezone.now() + timedelta(minutes=_STUDENT_LINK_DEFAULT_VALID_MINUTES)
+                else:
                     try:
                         minutes = int(raw_m)
                     except (TypeError, ValueError):
                         minutes = -1
-                    if minutes > 0:
+                    if minutes <= 0:
+                        expires_at = timezone.now() + timedelta(minutes=_STUDENT_LINK_DEFAULT_VALID_MINUTES)
+                    else:
                         cap = min(minutes, _STUDENT_LINK_MAX_VALID_MINUTES)
                         expires_at = timezone.now() + timedelta(minutes=cap)
                 instance.student_link_expires_at = expires_at
+
+        if instance.student_link_enabled and instance.student_link_expires_at is None:
+            instance.student_link_expires_at = timezone.now() + timedelta(
+                minutes=_STUDENT_LINK_DEFAULT_VALID_MINUTES,
+            )
 
         if 'library_public' in body:
             instance.library_public = bool(body['library_public'])

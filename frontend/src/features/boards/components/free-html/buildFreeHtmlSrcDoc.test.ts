@@ -113,7 +113,7 @@ describe('buildFreeHtmlSrcDoc', () => {
     expect(on).toContain('Frozen library thumbnail');
     expect(on).toContain('animation: none !important');
     expect(on).toContain('wa-frozen-thumb');
-    expect(on).toContain('1600');
+    expect(on).toContain('2200');
   });
 
   it('injects touch-friendly base css (min 56px, touch-action manipulation)', () => {

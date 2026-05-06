@@ -398,7 +398,7 @@ export function BoardDetailPage() {
   );
 
   const handleConfirmStudentShare = useCallback(
-    (validMinutes: number | null) => {
+    (validMinutes: number) => {
       patchMutation.mutate(
         { student_link_enabled: true, student_link_valid_minutes: validMinutes },
         {
@@ -553,7 +553,9 @@ export function BoardDetailPage() {
             />
             <span className="text-sm text-slate-700">
               <span className="font-medium text-slate-900">Schüler-Link</span>
-              <span className="mt-0.5 block text-xs text-slate-600">Kurzlink und QR ohne Anmeldung.</span>
+              <span className="mt-0.5 block text-xs text-slate-600">
+                Kurzlink und QR ohne Anmeldung; gültig bis zu 3 Tage (dann erneut freigeben).
+              </span>
             </span>
           </label>
           {board.student_link_enabled && board.share_token ? (

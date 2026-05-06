@@ -77,7 +77,7 @@ export function BoardPlayPage() {
   }, [board, openExistingShareQr]);
 
   const handleConfirmStudentShare = useCallback(
-    (validMinutes: number | null) => {
+    (validMinutes: number) => {
       patchMutation.mutate(
         { student_link_enabled: true, student_link_valid_minutes: validMinutes },
         {
