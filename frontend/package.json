@@ -44,6 +44,8 @@
     "topojson-client": "^3.1.0"
   },
   "devDependencies": {
+    "@emnapi/core": "1.10.0",
+    "@emnapi/runtime": "1.10.0",
     "@tailwindcss/vite": "^4.2.4",
     "@types/katex": "^0.16.8",
     "@types/react": "^19.2.14",
