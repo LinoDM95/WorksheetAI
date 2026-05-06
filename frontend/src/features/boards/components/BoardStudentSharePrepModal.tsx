@@ -22,7 +22,7 @@ type Props = {
 
 export function BoardStudentSharePrepModal({ open, onClose, onConfirm, busy }: Props) {
   const defaultMinutes = STUDENT_SHARE_DURATION_OPTIONS[1]!.minutes;
-  const [selectedMinutes, setSelectedMinutes] = useState<number | null>(defaultMinutes);
+  const [selectedMinutes, setSelectedMinutes] = useState<number>(defaultMinutes);
 
   useEffect(() => {
     if (!open) return;
