@@ -7,6 +7,9 @@
 oder späteres ``flush_logs_to_db``.
 
 Kosten sind **Schätzungen** über ``settings.AI_*_PRICE_*`` (USD je 1M Tokens).
+Bei **Gemini ohne „flash“** (Pro/Preview/Gemini‑3-Pfad): über ``AI_GEMINI_PROMPT_TOKEN_THRESHOLD_LONG_CONTEXT``
+(z. B. 200 000) Umschalten auf ``AI_GEMINI_LONG_CONTEXT_*`` (Google: höhere $/1M bei großen Prompts).
+Fehlen passende Modellpreise, greifen ``AI_FALLBACK_*`` (Default in ``settings``).
 Am Ende kann ``flush_logs_to_db`` über ``apps.accounts.services.credits`` die
 Nutzer-Credits abbuchen (USD→EUR via ``AI_COST_USD_TO_EUR``, dann Credits).
 """
@@ -77,6 +80,51 @@ def _price_per_mtok(model_hint: str) -> tuple[float | None, float | None]:
     return (pro_in, pro_out)
 
 
+def _gemini_non_flash_model(model_hint: str) -> bool:
+    mh = (model_hint or '').lower()
+    if 'gemini' not in mh and 'google' not in mh:
+        return False
+    if 'embedding' in mh:
+        return False
+    return 'flash' not in mh
+
+
+def _effective_usd_per_mtok(model_hint: str, *, input_tokens: int = 0) -> tuple[float | None, float | None]:
+    """Modellspezifische USD/1M; Gemini-Pro-Pfad optional Long-Context-Tarif; Lücken mit AI_FALLBACK_*."""
+    pi, po = _price_per_mtok(model_hint)
+    if _gemini_non_flash_model(model_hint):
+        thresh = max(0, int(getattr(settings, 'AI_GEMINI_PROMPT_TOKEN_THRESHOLD_LONG_CONTEXT', 200_000) or 0))
+        if thresh > 0 and max(0, input_tokens) > thresh:
+            long_in = _fprice(getattr(settings, 'AI_GEMINI_LONG_CONTEXT_INPUT_PRICE_PER_MILLION_USD', None))
+            long_out = _fprice(getattr(settings, 'AI_GEMINI_LONG_CONTEXT_OUTPUT_PRICE_PER_MILLION_USD', None))
+            if long_in is not None:
+                pi = long_in
+            if long_out is not None:
+                po = long_out
+
+    fi = _fprice(getattr(settings, 'AI_FALLBACK_INPUT_PRICE_PER_MILLION_USD', None))
+    fo = _fprice(getattr(settings, 'AI_FALLBACK_OUTPUT_PRICE_PER_MILLION_USD', None))
+    return (pi if pi is not None else fi, po if po is not None else fo)
+
+
+def _pricing_metadata_note(
+    *,
+    model_name: str,
+    cents: int,
+    input_tokens: int,
+    output_tokens: int,
+) -> str | None:
+    pi0, po0 = _price_per_mtok(model_name)
+    eff_pi, eff_po = _effective_usd_per_mtok(model_name, input_tokens=input_tokens)
+    if max(0, input_tokens) == 0 and max(0, output_tokens) == 0:
+        return None
+    if cents == 0 and (eff_pi is None or eff_po is None):
+        return 'no_usd_estimate_all_prices_missing'
+    if cents > 0 and (pi0 is None or po0 is None):
+        return 'fallback_usd_per_mtok'
+    return None
+
+
 def estimate_cost_cents(
     *,
     provider: str,
@@ -84,7 +132,7 @@ def estimate_cost_cents(
     input_tokens: int,
     output_tokens: int,
 ) -> int:
-    pi, po = _price_per_mtok(model)
+    pi, po = _effective_usd_per_mtok(model, input_tokens=input_tokens)
     if pi is None or po is None:
         return 0
     usd = (max(0, input_tokens) * pi / 1_000_000) + (max(0, output_tokens) * po / 1_000_000)
@@ -181,8 +229,9 @@ def log_standalone_gemini_usage(
         md['thinking_tokens_reported'] = ex['thoughts_token_count']
     if bill_out != out:
         md['output_tokens_billed_for_cost'] = bill_out
-    if cents == 0 and _price_per_mtok(model)[0] is None:
-        md['pricing_note'] = 'no_matching_price_setting'
+    note = _pricing_metadata_note(model_name=model, cents=cents, input_tokens=inp, output_tokens=out)
+    if note:
+        md['pricing_note'] = note
 
     allowed = {c[0] for c in AIUsageLog.STEP_TYPE_CHOICES}
     db_step = step_type if step_type in allowed else 'risk'
@@ -339,8 +388,14 @@ class PipelineAIMeter:
             )
         else:
             cents = max(0, int(cents_raw))
-        if cents == 0 and _price_per_mtok(model_name)[0] is None:
-            md = {**md, 'pricing_note': 'no_matching_price_setting'}
+        note = _pricing_metadata_note(
+            model_name=model_name,
+            cents=cents,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        if note:
+            md = {**md, 'pricing_note': note}
         entry = _LedgerEntry(
             step_type=step_type[:40],
             provider=provider[:40],
