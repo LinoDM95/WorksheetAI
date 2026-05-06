@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .cookies import clear_auth_cookies, set_auth_cookies
@@ -19,6 +20,11 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _blacklist_all_refresh_tokens_for_user(user):
+    for outstanding in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -127,6 +133,7 @@ class PasswordResetConfirmView(APIView):
         user = ser.validated_data['user']
         user.set_password(ser.validated_data['password'])
         user.save()
+        _blacklist_all_refresh_tokens_for_user(user)
         return Response(
             {'detail': 'Dein Passwort wurde geändert. Du kannst dich jetzt anmelden.'},
             status=status.HTTP_200_OK,

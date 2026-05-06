@@ -4,6 +4,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 User = get_user_model()
 
@@ -59,6 +60,32 @@ class PasswordResetTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('NewPass456!zz'))
+
+    def test_confirm_blacklists_outstanding_refresh_tokens(self):
+        login = self.client.post(
+            '/api/auth/login/',
+            {'username': 'reset@example.com', 'password': 'OldPass123!'},
+            content_type='application/json',
+        )
+        self.assertEqual(login.status_code, 200)
+        outstanding = OutstandingToken.objects.filter(user=self.user)
+        self.assertGreater(outstanding.count(), 0)
+
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        reset_tok = default_token_generator.make_token(self.user)
+        r = self.client.post(
+            '/api/auth/password-reset/confirm/',
+            {
+                'uid': uid,
+                'token': reset_tok,
+                'password': 'NewPass456!zz',
+                'password_confirm': 'NewPass456!zz',
+            },
+            content_type='application/json',
+        )
+        self.assertEqual(r.status_code, 200)
+        for ot in OutstandingToken.objects.filter(user=self.user):
+            self.assertTrue(BlacklistedToken.objects.filter(token=ot).exists())
 
     def test_confirm_rejects_bad_token(self):
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))

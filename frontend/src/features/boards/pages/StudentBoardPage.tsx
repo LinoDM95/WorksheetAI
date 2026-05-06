@@ -122,6 +122,7 @@ export function StudentBoardPage() {
       forceFullscreenLayout
       minimalToolbar
       showReloadInMinimalToolbar
+      toolbarCollapsible
       eyebrowTitle="Schüleransicht"
       eyebrowSubtitle={data.title ? data.title : 'Nur diese Übung — tippe und übe.'}
       toolbarExtras={

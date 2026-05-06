@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { AccountMenu } from './AccountMenu';
 import { CreditsBubble } from './CreditsBubble';
 import { Sidebar } from './Sidebar';
@@ -134,17 +134,30 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
           />
         )}
         <ShellChromeProvider breadcrumbs={topbar?.breadcrumbs}>
-          <main
-            className={cn(
-              'flex min-h-0 min-w-0 flex-1 flex-col bg-transparent print:m-0 print:min-h-0 print:w-full print:max-w-none print:flex-none print:overflow-visible print:bg-white print:p-0',
-              !fullBleed && 'px-3 py-4 sm:p-6 lg:p-8',
-              isFocusLayout && 'overflow-hidden print:overflow-visible',
-              !isFocusLayout &&
-                'overflow-y-auto overflow-x-hidden overscroll-contain print:overflow-visible',
-            )}
-          >
-            {children}
-          </main>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <main
+              className={cn(
+                'flex min-h-0 min-w-0 flex-1 flex-col bg-transparent print:m-0 print:min-h-0 print:w-full print:max-w-none print:flex-none print:overflow-visible print:bg-white print:p-0',
+                !fullBleed && 'px-3 py-4 sm:p-6 lg:p-8',
+                isFocusLayout && 'overflow-hidden print:overflow-visible',
+                !isFocusLayout &&
+                  'overflow-y-auto overflow-x-hidden overscroll-contain print:overflow-visible',
+              )}
+            >
+              {children}
+            </main>
+            <footer className="shrink-0 border-t border-slate-200/80 bg-[var(--color-bg-app)] px-3 py-2 text-center text-[11px] text-slate-500 sm:px-6 print:hidden">
+              <Link to="/impressum" className="font-medium text-slate-600 hover:text-slate-900">
+                Impressum
+              </Link>
+              <span aria-hidden className="px-2 text-slate-300">
+                ·
+              </span>
+              <Link to="/datenschutz" className="font-medium text-slate-600 hover:text-slate-900">
+                Datenschutz
+              </Link>
+            </footer>
+          </div>
         </ShellChromeProvider>
       </div>
     </div>

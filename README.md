@@ -78,6 +78,20 @@ npm run dev
 http://localhost:5173
 ```
 
+## Produktion (Anwendung, ohne Container-Pipeline)
+
+Diese Schritte setzen eine **eigene** TLS-Terminierung (z. B. Nginx/Caddy) und Prozess-Verwaltung voraus — es werden keine Docker- oder CI-Dateien mitgeliefert.
+
+1. **Umgebung:** `DJANGO_DEBUG=False`, starkes `DJANGO_SECRET_KEY`, `ALLOWED_HOSTS`, produktives `DATABASE_URL` (z. B. PostgreSQL), `CORS_ALLOWED_ORIGINS` und `CSRF_TRUSTED_ORIGINS` auf die öffentliche Frontend-URL, `FRONTEND_PUBLIC_URL` und E-Mail (SMTP) für Passwort-Reset.
+2. **HTTPS hinter Proxy:** `DJANGO_USE_X_FORWARDED_PROTO=True`, optional `SECURE_SSL_REDIRECT=True`, HSTS (`SECURE_HSTS_SECONDS` nur setzen, wenn dauerhaft HTTPS), `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` (bei reinem HTTPS).
+3. **Frontend bauen:** `cd frontend && npm ci && npm run build`.
+4. **Django-Static:** `cd backend && python manage.py collectstatic --noinput` (WhiteNoise liefert Admin-Assets aus `STATIC_ROOT`).
+5. **Optional eine Origin:** `SERVE_FRONTEND=True`, `FRONTEND_DIST_DIR` auf `../frontend/dist`; dann liefert Django das Vite-Build (`WHITENOISE_ROOT`). Catch-All für Client-Routing ist eingebaut. Alternativ Frontend separat ausliefern und nur die API unter `/api/` betreiben.
+6. **Medien:** Ohne separates Gateway `SERVE_MEDIA_WITH_DJANGO=True` nur für **einen** App-Prozess; bei mehreren Instanzen gemeinsames Storage (Volume/S3) nötig.
+7. **Cache:** Ohne `REDIS_URL` ist der Standard-Cache Lokmem (z. B. Passwort-Reset-Throttle nur pro Worker). Für mehrere Gunicorn-Worker `REDIS_URL` setzen (`django-redis`).
+8. **App-Server:** z. B. `gunicorn config.wsgi:application --bind 0.0.0.0:8000` — **Timeouts** des Reverse Proxy hoch genug für lange Smartboard-Pipelines (viele Minuten).
+9. **Fehlerdiagnose:** optional `SENTRY_DSN`; Log-Level `DJANGO_LOG_LEVEL`.
+
 ## Vorlagenformat
 
 Vorlagen sind YAML/JSON Blueprints, keine PDFs. PDFs sind für Menschen gut, aber als editierbare, validierbare KI-Vorlagen unzuverlässiger.

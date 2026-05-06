@@ -400,6 +400,17 @@ export const PublicLoginPage = () => {
           <span className="whitespace-nowrap">HttpOnly</span>, für diese Domain). Abmelden über das
           Kontomenü oder den Button in der Kopfzeile.
         </p>
+        <p className="mt-3 text-center text-[12px] leading-relaxed text-slate-500">
+          <Link to="/impressum" className="font-medium text-slate-600 hover:text-slate-800">
+            Impressum
+          </Link>
+          <span className="px-2 text-slate-300" aria-hidden>
+            ·
+          </span>
+          <Link to="/datenschutz" className="font-medium text-slate-600 hover:text-slate-800">
+            Datenschutz
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -8,14 +8,50 @@ environ.Env.read_env(BASE_DIR / '.env')
 
 SECRET_KEY = env('DJANGO_SECRET_KEY', default='dev-secret-key')
 DEBUG = env.bool('DJANGO_DEBUG', default=True)
-ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=['localhost','127.0.0.1'])
+ALLOWED_HOSTS = env.list('DJANGO_ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
+if env.bool('DJANGO_USE_X_FORWARDED_PROTO', default=False):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+else:
+    SECURE_PROXY_SSL_HEADER = None
+SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=not DEBUG)
+CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=not DEBUG)
+SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
+SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False)
+SECURE_HSTS_PRELOAD = env.bool('SECURE_HSTS_PRELOAD', default=False)
 
 INSTALLED_APPS = [
-    'django.contrib.admin','django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','django.contrib.messages','django.contrib.staticfiles',
-    'rest_framework','rest_framework_simplejwt','corsheaders',
-    'apps.accounts','apps.curriculum','apps.curricula','apps.patterns','apps.worksheets','apps.boards','apps.ai','apps.assets',
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+    'corsheaders',
+    'apps.accounts',
+    'apps.curriculum',
+    'apps.curricula',
+    'apps.patterns',
+    'apps.worksheets',
+    'apps.boards',
+    'apps.ai',
+    'apps.assets',
 ]
-MIDDLEWARE = ['corsheaders.middleware.CorsMiddleware','django.middleware.security.SecurityMiddleware','django.contrib.sessions.middleware.SessionMiddleware','django.middleware.common.CommonMiddleware','django.middleware.csrf.CsrfViewMiddleware','django.contrib.auth.middleware.AuthenticationMiddleware','django.contrib.messages.middleware.MessageMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware']
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
 ROOT_URLCONF='config.urls'
 TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[],'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.request','django.contrib.auth.context_processors.auth','django.contrib.messages.context_processors.messages']}}]
 WSGI_APPLICATION='config.wsgi.application'
@@ -25,10 +61,27 @@ LANGUAGE_CODE='de-de'
 TIME_ZONE='Europe/Berlin'
 USE_I18N=True
 USE_TZ=True
-STATIC_URL='static/'
-MEDIA_URL='/media/'
-MEDIA_ROOT=BASE_DIR / 'media'
-DEFAULT_AUTO_FIELD='django.db.models.BigAutoField'
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+SERVE_FRONTEND = env.bool('SERVE_FRONTEND', default=False)
+SERVE_MEDIA_WITH_DJANGO = env.bool('SERVE_MEDIA_WITH_DJANGO', default=False)
+FRONTEND_DIST_DIR = Path(
+    env.str('FRONTEND_DIST_DIR', default=str(BASE_DIR.parent / 'frontend' / 'dist'))
+)
+if SERVE_FRONTEND:
+    WHITENOISE_ROOT = FRONTEND_DIST_DIR
 CORS_ALLOWED_ORIGINS=env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:5173'])
 CORS_ALLOW_CREDENTIALS = env.bool('CORS_ALLOW_CREDENTIALS', default=True)
 # SPA (anderer Port als API): CSRF-Prüfung bei Cookie-Requests mit Origin/Referer absichern
@@ -37,7 +90,9 @@ CSRF_TRUSTED_ORIGINS = env.list(
     default=['http://localhost:5173', 'http://127.0.0.1:5173'],
 )
 API_REQUIRE_AUTH = env.bool('API_REQUIRE_AUTH', default=True)
-REST_FRAMEWORK={
+DISABLE_API_THROTTLE = env.bool('DISABLE_API_THROTTLE', default=DEBUG)
+
+REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ('apps.accounts.authentication.CookieJWTAuthentication',),
     'DEFAULT_PERMISSION_CLASSES': (
         ('rest_framework.permissions.IsAuthenticated',)
@@ -45,7 +100,22 @@ REST_FRAMEWORK={
         else ('rest_framework.permissions.AllowAny',)
     ),
 }
-SIMPLE_JWT={'ACCESS_TOKEN_LIFETIME': timedelta(minutes=120), 'REFRESH_TOKEN_LIFETIME': timedelta(days=7)}
+if not DISABLE_API_THROTTLE:
+    REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    )
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+        'anon': env.str('API_THROTTLE_ANON', default='200/hour'),
+        'user': env.str('API_THROTTLE_USER', default='5000/hour'),
+    }
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=120),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
 # JWT in HttpOnly-Cookies (Login setzt Cookies; Bearer-Header bleibt über CookieJWTAuthentication möglich)
 JWT_AUTH_COOKIE_ACCESS = env('JWT_AUTH_COOKIE_ACCESS', default='access')
 JWT_AUTH_COOKIE_REFRESH = env('JWT_AUTH_COOKIE_REFRESH', default='refresh')
@@ -57,12 +127,24 @@ JWT_AUTH_COOKIE_DOMAIN = env('JWT_AUTH_COOKIE_DOMAIN', default=None) or None
 # Nur für Tests/Debug: Klartext-Tokens in Login/Refresh-JSON zusätzlich ausgeben (Standard aus)
 JWT_AUTH_EXPOSE_BODY_TOKENS = env.bool('JWT_AUTH_EXPOSE_BODY_TOKENS', default=False)
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'worksheet-ai',
+REDIS_URL = env.str('REDIS_URL', default='') or ''
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'worksheet-ai',
+        }
+    }
 
 FRONTEND_PUBLIC_URL = env('FRONTEND_PUBLIC_URL', default='http://localhost:5173')
 PASSWORD_RESET_EMAIL_SITE_NAME = env('PASSWORD_RESET_EMAIL_SITE_NAME', default='WorksheetAI')
@@ -158,7 +240,7 @@ BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTE
 BOARDS_VISUAL_QA_DOCUMENT_BASE = env('BOARDS_VISUAL_QA_DOCUMENT_BASE', default='http://127.0.0.1:5173/')
 # Visuelle Layout-QA (Playwright): bei True läuft sie bei jeder Board-Erzeugung und -Revision
 # (kein UI-Toggle). Deaktivieren nur, wenn kein Chromium/keine Basis-URL verfügbar.
-BOARDS_VISUAL_QA_ALLOWED = env.bool('BOARDS_VISUAL_QA_ALLOWED', default=True)
+BOARDS_VISUAL_QA_ALLOWED = env.bool('BOARDS_VISUAL_QA_ALLOWED', default=DEBUG)
 
 # Bausteinmodus: optionaler KI-Feinschliff (Theme-Wahl + Mikrotexte) — niemals Code.
 # Bei False werden Theme/Notizen/Hinweise rein deterministisch aus der Spec befüllt.
@@ -253,3 +335,42 @@ CURRICULUM_AUTO_DISCOVERY_MAX_ROUNDS = env.int('CURRICULUM_AUTO_DISCOVERY_MAX_RO
 CURRICULUM_AUTO_TOC_PAGES = env.int('CURRICULUM_AUTO_TOC_PAGES', default=14)
 CURRICULUM_AUTO_RETRY_LIMIT = env.int('CURRICULUM_AUTO_RETRY_LIMIT', default=2)
 CURRICULUM_AUTO_DISCOVERY_TEMPERATURE = env.float('CURRICULUM_AUTO_DISCOVERY_TEMPERATURE', default=0.0)
+
+DJANGO_LOG_LEVEL = env.str('DJANGO_LOG_LEVEL', default='INFO')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': DJANGO_LOG_LEVEL,
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
+
+SENTRY_DSN = env.str('SENTRY_DSN', default='') or ''
+if SENTRY_DSN and not DEBUG:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        send_default_pii=False,
+    )
