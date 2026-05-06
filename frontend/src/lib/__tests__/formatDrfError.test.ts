@@ -1,5 +1,6 @@
+import axios from 'axios';
 import { describe, expect, it } from 'vitest';
-import { formatDrfErrorPayload } from '../formatDrfError';
+import { formatAxiosDrfError, formatDrfErrorPayload } from '../formatDrfError';
 
 describe('formatDrfErrorPayload', () => {
   it('liest detail als String', () => {
@@ -17,5 +18,26 @@ describe('formatDrfErrorPayload', () => {
     const r = formatDrfErrorPayload({ email: ['bereits registriert'] });
     expect(r.fields.email).toBe('bereits registriert');
     expect(r.general).toBe('');
+  });
+});
+
+describe('formatAxiosDrfError', () => {
+  it('liefert Hinweis bei Netzwerkfehler ohne Response', () => {
+    const err = new axios.AxiosError(
+      'Network Error',
+      'ERR_NETWORK',
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(formatAxiosDrfError(err).general).toContain('Keine Verbindung');
+  });
+
+  it('liest JSON-Fehlerkörper wie zuvor', () => {
+    const err = new axios.AxiosError('bad request', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 400,
+      data: { email: ['ungültig'] },
+    } as any);
+    expect(formatAxiosDrfError(err).fields.email).toBe('ungültig');
   });
 });

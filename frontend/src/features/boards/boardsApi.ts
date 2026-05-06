@@ -1,4 +1,5 @@
 import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
+import { getApiBaseUrl } from '../../lib/apiBaseUrl';
 import type { BoardLibraryScope } from '../../lib/listQueries';
 import type {
   AutoRepairPayload,
@@ -97,7 +98,7 @@ export const generateBoardWithProgress = async (
     signal?: AbortSignal;
   },
 ): Promise<BoardDetail> => {
-  const url = `${boardApiBase().replace(/\/$/, '')}/boards/generate/?stream=1`;
+  const url = `${getApiBaseUrl().replace(/\/$/, '')}/boards/generate/?stream=1`;
   const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',

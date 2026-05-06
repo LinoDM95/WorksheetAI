@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+import { getApiBaseUrl } from '../../lib/apiBaseUrl';
 
 export type PublicBoardPayload = {
   title: string;
@@ -13,7 +12,7 @@ export type PublicBoardPayload = {
 
 export const fetchPublicBoardByToken = (shareToken: string) =>
   axios
-    .get<PublicBoardPayload>(`${baseURL}/boards/public-play/${encodeURIComponent(shareToken)}/`, {
+    .get<PublicBoardPayload>(`${getApiBaseUrl()}/boards/public-play/${encodeURIComponent(shareToken)}/`, {
       timeout: 60_000,
     })
     .then((r) => r.data);

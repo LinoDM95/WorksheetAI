@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { getApiBaseUrl } from './apiBaseUrl';
 
 /** Viele sequentielle KI-Schritte (Smartboard-Pipeline + Asset Engine + QA), nicht nur ein Modellaufruf. */
 const PARSED_TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT_MS);
@@ -12,7 +13,7 @@ export const LONG_RUNNING_BOARD_TIMEOUT_MS =
   Number.isFinite(PARSED_BOARD) && PARSED_BOARD > 0 ? PARSED_BOARD : 60 * 60 * 1000;
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api',
+  baseURL: getApiBaseUrl(),
   timeout: DEFAULT_API_TIMEOUT_MS,
   withCredentials: true,
 });

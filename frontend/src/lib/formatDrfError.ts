@@ -1,4 +1,4 @@
-import type { AxiosError } from 'axios';
+import axios, { type AxiosError } from 'axios';
 
 const joinMsgs = (v: unknown): string => {
   if (typeof v === 'string') return v;
@@ -47,6 +47,26 @@ export const formatDrfErrorPayload = (data: unknown): DrfFormErrors => {
 };
 
 export const formatAxiosDrfError = (e: unknown): DrfFormErrors => {
-  const ax = e as AxiosError<Record<string, unknown>>;
-  return formatDrfErrorPayload(ax.response?.data);
+  const ax = e as AxiosError<unknown>;
+  const data: unknown = ax.response?.data;
+  if (data !== undefined && data !== null && typeof data === 'object') {
+    return formatDrfErrorPayload(data);
+  }
+  if (typeof data === 'string' && data.trim()) {
+    return { general: data.trim().slice(0, 500), fields: {} };
+  }
+  const status = ax.response?.status;
+  if (status != null) {
+    return {
+      general: `Serverfehler (${status}). Bitte später erneut versuchen.`,
+      fields: {},
+    };
+  }
+  if (axios.isAxiosError(e) && e.message) {
+    return {
+      general: `Keine Verbindung zum Server (${e.message}). Bitte später erneut versuchen.`,
+      fields: {},
+    };
+  }
+  return formatDrfErrorPayload(undefined);
 };
