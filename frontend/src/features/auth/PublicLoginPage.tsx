@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { LogIn, UserPlus } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/authContext';
 import { formatAxiosDrfError } from '../../lib/formatDrfError';
@@ -13,8 +12,6 @@ import { Logo } from '../../components/Logo';
 import { Alert, Button, Card, Field, TextInput } from '../../components/ui';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
-
-type Mode = 'login' | 'register';
 
 const fieldLabel = (key: string): string => {
   const map: Record<string, string> = {
@@ -32,17 +29,17 @@ export const PublicLoginPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, bootstrapped, refreshAuth } = useAuth();
-  const reduceMotion = useReducedMotion();
 
-  const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [generalError, setGeneralError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+
+  /** Registrierungs-UI ist deaktiviert; Platzhalter-Zustände für die erhaltene Submit-Logik. */
+  const [firstName] = useState('');
+  const [lastName] = useState('');
+  const [passwordConfirm] = useState('');
 
   const afterAuthTarget = useMemo(() => {
     const raw = searchParams.get('next');
@@ -50,23 +47,15 @@ export const PublicLoginPage = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    document.title = mode === 'login' ? 'Anmelden — WorksheetAI' : 'Registrieren — WorksheetAI';
+    document.title = 'Anmelden — WorksheetAI';
     return () => {
       document.title = 'WorksheetAI';
     };
-  }, [mode]);
+  }, []);
 
   const clearErrors = () => {
     setGeneralError('');
     setFieldErrors({});
-  };
-
-  const handleModeChange = (next: Mode) => {
-    if (next === mode) return;
-    clearErrors();
-    setMode(next);
-    setPassword('');
-    setPasswordConfirm('');
   };
 
   if (loginDisabled) return <Navigate to="/app/dashboard" replace />;
@@ -103,7 +92,8 @@ export const PublicLoginPage = () => {
     }
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
+  /** Erhalten für spätere Freigabe der Registrierung (derzeit keine UI). */
+  const preservedPublicRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
     const trimmedMail = email.trim().toLowerCase();
@@ -138,12 +128,7 @@ export const PublicLoginPage = () => {
     }
   };
 
-  const motionProps = {
-    initial: reduceMotion ? false : { opacity: 0, y: 8 },
-    animate: reduceMotion ? undefined : { opacity: 1, y: 0 },
-    exit: reduceMotion ? undefined : { opacity: 0, y: -6 },
-    transition: { duration: reduceMotion ? 0 : 0.18 },
-  };
+  void preservedPublicRegisterSubmit;
 
   return (
     <div className="min-h-[100dvh] bg-[var(--color-bg-app)]">
@@ -166,210 +151,60 @@ export const PublicLoginPage = () => {
             verwalten.
           </p>
 
-          <div
-            role="tablist"
-            aria-label="Anmelden oder registrieren"
-            className="mb-6 flex gap-1 rounded-xl border border-slate-200/80 bg-slate-100/90 p-1"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'login'}
-              id="tab-login"
-              aria-controls="panel-login"
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition ${
-                mode === 'login'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              onClick={() => handleModeChange('login')}
+          <form className="space-y-3" onSubmit={(ev) => void handleLoginSubmit(ev)} noValidate>
+            <Field
+              label="E-Mail"
+              htmlFor="login-email"
+              error={fieldErrors.email ?? fieldErrors.username}
             >
-              <LogIn size={16} aria-hidden />
+              <TextInput
+                id="login-email"
+                type="email"
+                name="email"
+                autoComplete="email"
+                inputMode="email"
+                required
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                invalid={Boolean(fieldErrors.email ?? fieldErrors.username)}
+                autoCapitalize="none"
+              />
+            </Field>
+            <Field label="Passwort" htmlFor="login-password" error={fieldErrors.password}>
+              <TextInput
+                id="login-password"
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                invalid={Boolean(fieldErrors.password)}
+              />
+            </Field>
+            <div className="flex justify-end pt-0.5">
+              <Link
+                to="/passwort-vergessen"
+                className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+              >
+                Passwort vergessen?
+              </Link>
+            </div>
+            {generalError ? (
+              <Alert tone="error" className="mt-2">
+                {generalError}
+              </Alert>
+            ) : null}
+            <Button
+              type="submit"
+              fullWidth
+              className="mt-4"
+              loading={busy}
+              leftIcon={<LogIn size={15} aria-hidden />}
+            >
               Anmelden
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'register'}
-              id="tab-register"
-              aria-controls="panel-register"
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold transition ${
-                mode === 'register'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              onClick={() => handleModeChange('register')}
-            >
-              <UserPlus size={16} aria-hidden />
-              Registrieren
-            </button>
-          </div>
-
-          <AnimatePresence mode="wait">
-            {mode === 'login' ? (
-              <motion.div
-                key="login"
-                role="tabpanel"
-                id="panel-login"
-                aria-labelledby="tab-login"
-                {...motionProps}
-              >
-                <form className="space-y-3" onSubmit={(ev) => void handleLoginSubmit(ev)} noValidate>
-                  <Field
-                    label="E-Mail"
-                    htmlFor="login-email"
-                    error={fieldErrors.email ?? fieldErrors.username}
-                  >
-                    <TextInput
-                      id="login-email"
-                      type="email"
-                      name="email"
-                      autoComplete="email"
-                      inputMode="email"
-                      required
-                      value={email}
-                      onChange={(ev) => setEmail(ev.target.value)}
-                      invalid={Boolean(fieldErrors.email ?? fieldErrors.username)}
-                      autoCapitalize="none"
-                    />
-                  </Field>
-                  <Field label="Passwort" htmlFor="login-password" error={fieldErrors.password}>
-                    <TextInput
-                      id="login-password"
-                      type="password"
-                      name="password"
-                      autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(ev) => setPassword(ev.target.value)}
-                      invalid={Boolean(fieldErrors.password)}
-                    />
-                  </Field>
-                  <div className="flex justify-end pt-0.5">
-                    <Link
-                      to="/passwort-vergessen"
-                      className="text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-                    >
-                      Passwort vergessen?
-                    </Link>
-                  </div>
-                  {generalError ? (
-                    <Alert tone="error" className="mt-2">
-                      {generalError}
-                    </Alert>
-                  ) : null}
-                  <Button
-                    type="submit"
-                    fullWidth
-                    className="mt-4"
-                    loading={busy}
-                    leftIcon={<LogIn size={15} aria-hidden />}
-                  >
-                    Anmelden
-                  </Button>
-                </form>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="register"
-                role="tabpanel"
-                id="panel-register"
-                aria-labelledby="tab-register"
-                {...motionProps}
-              >
-                <form
-                  className="space-y-3"
-                  onSubmit={(ev) => void handleRegisterSubmit(ev)}
-                  noValidate
-                >
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Vorname" htmlFor="reg-first" error={fieldErrors.first_name}>
-                      <TextInput
-                        id="reg-first"
-                        name="given-name"
-                        autoComplete="given-name"
-                        value={firstName}
-                        onChange={(ev) => setFirstName(ev.target.value)}
-                        invalid={Boolean(fieldErrors.first_name)}
-                      />
-                    </Field>
-                    <Field label="Nachname" htmlFor="reg-last" error={fieldErrors.last_name}>
-                      <TextInput
-                        id="reg-last"
-                        name="family-name"
-                        autoComplete="family-name"
-                        value={lastName}
-                        onChange={(ev) => setLastName(ev.target.value)}
-                        invalid={Boolean(fieldErrors.last_name)}
-                      />
-                    </Field>
-                  </div>
-                  <Field label="E-Mail" htmlFor="reg-email" error={fieldErrors.email}>
-                    <TextInput
-                      id="reg-email"
-                      type="email"
-                      name="email"
-                      autoComplete="email"
-                      inputMode="email"
-                      required
-                      value={email}
-                      onChange={(ev) => setEmail(ev.target.value)}
-                      invalid={Boolean(fieldErrors.email)}
-                      autoCapitalize="none"
-                    />
-                  </Field>
-                  <Field
-                    label="Passwort"
-                    htmlFor="reg-password"
-                    error={fieldErrors.password}
-                    help="Mindestens 8 Zeichen; zu einfache Passwörter werden abgelehnt."
-                  >
-                    <TextInput
-                      id="reg-password"
-                      type="password"
-                      name="password"
-                      autoComplete="new-password"
-                      required
-                      value={password}
-                      onChange={(ev) => setPassword(ev.target.value)}
-                      invalid={Boolean(fieldErrors.password)}
-                    />
-                  </Field>
-                  <Field
-                    label="Passwort wiederholen"
-                    htmlFor="reg-password2"
-                    error={fieldErrors.password_confirm}
-                  >
-                    <TextInput
-                      id="reg-password2"
-                      type="password"
-                      name="password-confirm"
-                      autoComplete="new-password"
-                      required
-                      value={passwordConfirm}
-                      onChange={(ev) => setPasswordConfirm(ev.target.value)}
-                      invalid={Boolean(fieldErrors.password_confirm)}
-                    />
-                  </Field>
-                  {generalError ? (
-                    <Alert tone="error" className="mt-2">
-                      {generalError}
-                    </Alert>
-                  ) : null}
-                  <Button
-                    type="submit"
-                    fullWidth
-                    className="mt-4"
-                    variant="secondary"
-                    loading={busy}
-                    leftIcon={<UserPlus size={15} aria-hidden />}
-                  >
-                    Konto erstellen und anmelden
-                  </Button>
-                </form>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </Button>
+          </form>
 
           {Object.keys(fieldErrors).some((k) => !['email', 'username', 'password', 'password_confirm', 'first_name', 'last_name'].includes(k)) ? (
             <Alert tone="warn" className="mt-4">

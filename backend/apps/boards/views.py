@@ -307,6 +307,7 @@ class BoardViewSet(viewsets.ModelViewSet):
             resp = StreamingHttpResponse(byte_stream(), content_type='application/x-ndjson; charset=utf-8')
             resp.status_code = status.HTTP_201_CREATED
             resp['Cache-Control'] = 'no-store'
+            resp['X-Accel-Buffering'] = 'no'
             return resp
         try:
             board = generate_with_fallback(request.user, body)
