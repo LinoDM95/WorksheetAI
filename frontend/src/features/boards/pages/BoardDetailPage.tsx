@@ -2,8 +2,8 @@ import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Globe2, Sparkles, Trash2, Undo2, X } from 'lucide-react';
-import { Alert, Button, IconButton } from '../../../components/ui';
+import { ChevronDown, Globe2, Sparkles, Trash2, Undo2, X } from 'lucide-react';
+import { Alert, Button, IconButton, TextInput } from '../../../components/ui';
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
@@ -29,6 +29,7 @@ import { RevisionModeSelect } from '../components/quality/RevisionModeSelect';
 import { RevisionQuickActions } from '../components/quality/RevisionQuickActions';
 import type { BoardCodeUpdate, BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
+import { LIBRARY_GRADE_STEPS } from '../lib/libraryCatalogFilters';
 
 /** Liste neueste zuerst (API): v1 = älteste Revision, höhere Nummer = neuer. */
 const revisionVLabel = (indexNewestFirst: number, total: number) => {
@@ -109,6 +110,13 @@ export function BoardDetailPage() {
   const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
   const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
   const [libraryShareMessage, setLibraryShareMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  const [metaTitle, setMetaTitle] = useState('');
+  const [metaSubject, setMetaSubject] = useState('');
+  const [metaTopic, setMetaTopic] = useState('');
+  const [metaGradeFrom, setMetaGradeFrom] = useState('');
+  const [metaGradeTo, setMetaGradeTo] = useState('');
+  const [metaDuration, setMetaDuration] = useState('');
+  const [metaFormError, setMetaFormError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -125,6 +133,25 @@ export function BoardDetailPage() {
     queryFn: () => fetchBoard(id),
     enabled: Boolean(id),
   });
+
+  useEffect(() => {
+    if (!board) return;
+    setMetaTitle(board.title || '');
+    setMetaSubject(board.subject || '');
+    setMetaTopic(board.topic || '');
+    setMetaGradeFrom(board.grade_from != null ? String(board.grade_from) : '');
+    setMetaGradeTo(board.grade_to != null ? String(board.grade_to) : '');
+    const dm = board.generation_input?.duration_minutes;
+    if (dm != null && typeof dm === 'number') {
+      setMetaDuration(String(dm));
+    } else if (dm != null) {
+      const n = parseInt(String(dm), 10);
+      setMetaDuration(Number.isNaN(n) ? '' : String(n));
+    } else {
+      setMetaDuration('');
+    }
+    setMetaFormError(null);
+  }, [board]);
 
   const { data: revisions = [] } = useQuery({
     queryKey: ['board-revisions', id],
@@ -269,7 +296,14 @@ export function BoardDetailPage() {
         variables.library_listing_title !== undefined ||
         variables.library_listing_topic !== undefined ||
         variables.library_listing_description !== undefined ||
-        variables.library_sync_public_snapshot
+        variables.library_sync_public_snapshot ||
+        variables.subject !== undefined ||
+        variables.topic !== undefined ||
+        variables.grade_from !== undefined ||
+        variables.grade_to !== undefined ||
+        variables.grade !== undefined ||
+        variables.duration_minutes !== undefined ||
+        variables.title !== undefined
       ) {
         queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
       }
@@ -296,6 +330,97 @@ export function BoardDetailPage() {
       },
     );
   }, [patchMutation]);
+
+  const handleSaveBoardMeta = useCallback(() => {
+    setMetaFormError(null);
+    const ttl = metaTitle.trim();
+    const subj = metaSubject.trim();
+    const top = metaTopic.trim();
+    if (!ttl) {
+      setMetaFormError('Titel ist ein Pflichtfeld.');
+      return;
+    }
+    if (!subj) {
+      setMetaFormError('Fach ist ein Pflichtfeld.');
+      return;
+    }
+    if (!top) {
+      setMetaFormError('Thema ist ein Pflichtfeld.');
+      return;
+    }
+    if (!metaGradeFrom || !metaGradeTo) {
+      setMetaFormError('Bitte Klassenstufe „von“ und „bis“ wählen.');
+      return;
+    }
+    const gf = parseInt(metaGradeFrom, 10);
+    const gt = parseInt(metaGradeTo, 10);
+    if (Number.isNaN(gf) || Number.isNaN(gt) || gf < 1 || gf > 13 || gt < 1 || gt > 13) {
+      setMetaFormError('Klassenstufen müssen zwischen 1 und 13 liegen.');
+      return;
+    }
+    const d = parseInt(metaDuration.trim(), 10);
+    if (!metaDuration.trim() || Number.isNaN(d) || d < 5 || d > 90) {
+      setMetaFormError('Geplante Dauer: bitte eine ganze Zahl zwischen 5 und 90.');
+      return;
+    }
+    patchMutation.mutate(
+      {
+        title: ttl.slice(0, 255),
+        subject: subj,
+        topic: top,
+        grade_from: gf,
+        grade_to: gt,
+        duration_minutes: d,
+      },
+      {
+        onError: (err: unknown) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            'Speichern fehlgeschlagen.';
+          setMetaFormError(detail);
+        },
+      },
+    );
+  }, [metaDuration, metaGradeFrom, metaGradeTo, metaSubject, metaTitle, metaTopic, patchMutation]);
+
+  const handleSubmitLibraryUpdate = useCallback(() => {
+    if (!board) return;
+    const lt = (board.library_listing_title || board.title || '').trim();
+    const lk = (board.library_listing_topic || board.topic || '').trim();
+    const ld = (board.library_listing_description || board.description || '').trim();
+    if (!lt || !lk || !ld) {
+      setLibraryShareMessage({
+        tone: 'error',
+        text: 'Bitte zuerst unter „Bibliotheks-Texte“ einen öffentlichen Titel, ein Thema und eine Beschreibung hinterlegen.',
+      });
+      return;
+    }
+    setLibraryShareMessage(null);
+    patchMutation.mutate(
+      {
+        library_public: true,
+        library_listing_title: lt,
+        library_listing_topic: lk,
+        library_listing_description: ld,
+      },
+      {
+        onError: (err: unknown) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            'Einreichen fehlgeschlagen.';
+          setLibraryShareMessage({ tone: 'error', text: detail });
+        },
+        onSuccess: () => {
+          setLibraryShareMessage({
+            tone: 'info',
+            text: 'Update wurde zur Prüfung eingereicht. Die öffentliche Karte zeigt vorerst noch die letzte freigegebene Fassung.',
+          });
+        },
+      },
+    );
+  }, [board, patchMutation]);
 
   const handleRevise = () => {
     setReviseError(null);
@@ -498,15 +623,37 @@ export function BoardDetailPage() {
               </div>
               <div className="flex shrink-0 flex-col gap-2 lg:items-end">
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:pt-0.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    loading={patchMutation.isPending}
-                    disabled={patchMutation.isPending}
-                    onClick={handleSyncPublicLibrarySnapshot}
-                  >
-                    Öffentliche Fassung aktualisieren
-                  </Button>
+                  {user?.is_staff ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={patchMutation.isPending}
+                      disabled={patchMutation.isPending}
+                      onClick={handleSyncPublicLibrarySnapshot}
+                    >
+                      Öffentliche Fassung aktualisieren
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      loading={patchMutation.isPending}
+                      disabled={
+                        patchMutation.isPending ||
+                        !board.library_public_live_differs ||
+                        board.library_moderation_status !== 'approved'
+                      }
+                      title={
+                        board.library_moderation_status !== 'approved'
+                          ? 'Nur bei freigegebenem Bibliothekseintrag sinnvoll.'
+                          : undefined
+                      }
+                      onClick={handleSubmitLibraryUpdate}
+                    >
+                      Update zur Freigabe einreichen
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="secondary"
@@ -578,6 +725,157 @@ export function BoardDetailPage() {
           </div>
         )}
       </header>
+
+      <details className="bd-meta-panel group/meta shrink-0 border-b border-slate-200/80 bg-white/90 open:bg-slate-50/50">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 sm:px-3 [&::-webkit-details-marker]:hidden">
+          <ChevronDown
+            size={14}
+            className="shrink-0 text-slate-400 transition-transform duration-200 ease-out group-open/meta:rotate-180"
+            aria-hidden
+          />
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Unterrichtsdaten &amp; Titel
+          </span>
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] text-slate-500"
+            title={
+              [
+                (metaTitle || board.title || '').trim(),
+                metaSubject.trim(),
+                metaGradeFrom && metaGradeTo ? `Kl. ${metaGradeFrom}–${metaGradeTo}` : '',
+                metaDuration ? `${metaDuration} Min` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
+          >
+            {[
+              (metaTitle || board.title || '').trim(),
+              metaSubject.trim(),
+              metaGradeFrom && metaGradeTo ? `Kl. ${metaGradeFrom}–${metaGradeTo}` : '',
+              metaDuration ? `${metaDuration} Min` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Zum Bearbeiten aufklappen'}
+          </span>
+        </summary>
+        <div className="border-t border-slate-100 px-2 pb-2 pt-1.5 sm:px-3">
+          <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
+            <div className="min-w-[min(100%,12rem)] flex-1 basis-[10rem]">
+              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-title">
+                Titel
+              </label>
+              <TextInput
+                id="bd-title"
+                value={metaTitle}
+                onChange={(e) => setMetaTitle(e.target.value)}
+                maxLength={255}
+                placeholder="Board-Titel"
+                autoComplete="off"
+                className="!h-8 !min-h-0 !py-1 text-xs"
+              />
+            </div>
+            <div className="w-full min-w-[6.5rem] max-w-[10rem] sm:w-[8.5rem]">
+              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-subject">
+                Fach
+              </label>
+              <TextInput
+                id="bd-subject"
+                value={metaSubject}
+                onChange={(e) => setMetaSubject(e.target.value)}
+                placeholder="Fach"
+                autoComplete="off"
+                className="!h-8 !min-h-0 !py-1 text-xs"
+              />
+            </div>
+            <div className="min-w-[7rem] flex-1 basis-[7rem]">
+              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-topic">
+                Thema
+              </label>
+              <TextInput
+                id="bd-topic"
+                value={metaTopic}
+                onChange={(e) => setMetaTopic(e.target.value)}
+                placeholder="Kurz"
+                autoComplete="off"
+                className="!h-8 !min-h-0 !py-1 text-xs"
+              />
+            </div>
+            <div className="flex items-end gap-1">
+              <div>
+                <span className="mb-0.5 block text-[10px] font-medium text-slate-500">Stufe</span>
+                <div className="flex gap-1">
+                  <select
+                    id="bd-grade-from"
+                    className="h-8 max-w-[3.25rem] rounded-lg border border-slate-200 bg-white px-1.5 py-0 text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30"
+                    value={metaGradeFrom}
+                    onChange={(e) => setMetaGradeFrom(e.target.value)}
+                    aria-label="Klassenstufe von"
+                  >
+                    <option value="">—</option>
+                    {LIBRARY_GRADE_STEPS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    id="bd-grade-to"
+                    className="h-8 max-w-[3.25rem] rounded-lg border border-slate-200 bg-white px-1.5 py-0 text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30"
+                    value={metaGradeTo}
+                    onChange={(e) => setMetaGradeTo(e.target.value)}
+                    aria-label="Klassenstufe bis"
+                  >
+                    <option value="">—</option>
+                    {LIBRARY_GRADE_STEPS.map((s) => (
+                      <option key={`t-${s}`} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="w-[4rem]">
+              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-duration">
+                Min.
+              </label>
+              <TextInput
+                id="bd-duration"
+                type="number"
+                min={5}
+                max={90}
+                value={metaDuration}
+                onChange={(e) => setMetaDuration(e.target.value)}
+                className="!h-8 !min-h-0 !py-1 text-xs"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="!h-8 shrink-0"
+              loading={patchMutation.isPending}
+              disabled={patchMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                handleSaveBoardMeta();
+              }}
+            >
+              Speichern
+            </Button>
+          </div>
+          {metaFormError ? (
+            <p className="mt-1.5 text-[11px] text-red-700" role="alert">
+              {metaFormError}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
+              Öffentliche Bibliothekskarte erst nach Freigabe; privater Titel hier.
+            </p>
+          )}
+        </div>
+      </details>
 
       <BoardFullscreenPreview
         className="min-h-0 flex-1"

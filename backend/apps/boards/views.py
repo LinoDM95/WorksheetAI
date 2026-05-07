@@ -47,7 +47,7 @@ from .services.library_public_snapshot import (
     listing_display_title,
     listing_display_topic,
 )
-from .grade_bounds import validate_creative_generate_payload
+from .grade_bounds import resolve_board_grade_fields, validate_creative_generate_payload
 
 
 class PublicBoardPlayView(APIView):
@@ -86,6 +86,11 @@ class PublicBoardPlayView(APIView):
 _PATCHABLE_TEXT_FIELDS = {'title', 'description'}
 _PATCHABLE_CODE_FIELDS = {'html', 'css', 'javascript'}
 _PATCHABLE_META_FIELDS = {'teacher_notes', 'usage_instructions', 'warnings'}
+_PATCHABLE_CLASSIFICATION_KEYS = frozenset(
+    {'subject', 'topic', 'grade', 'grade_from', 'grade_to', 'duration_minutes'}
+)
+_DURATION_MIN = 5
+_DURATION_MAX = 90
 
 # Schüler-Link: immer zeitlich begrenzt (Lastenschutz); max. und Standard = 3 Tage.
 _STUDENT_LINK_MAX_VALID_MINUTES = 60 * 24 * 3
@@ -183,10 +188,11 @@ class BoardViewSet(viewsets.ModelViewSet):
         text_changes = {k: body[k] for k in _PATCHABLE_TEXT_FIELDS if k in body}
         meta_changes = {k: body[k] for k in _PATCHABLE_META_FIELDS if k in body}
         code_changes = {k: body[k] for k in _PATCHABLE_CODE_FIELDS if k in body}
+        classification_touch = bool(_PATCHABLE_CLASSIFICATION_KEYS.intersection(body.keys()))
         folder_id_key = 'folder_id'
         folder_touched = folder_id_key in body
 
-        needs_history = bool(text_changes or meta_changes or code_changes)
+        needs_history = bool(text_changes or meta_changes or code_changes or classification_touch)
 
         for k, v in text_changes.items():
             setattr(instance, k, str(v or '')[:5000 if k == 'description' else 255])
@@ -198,6 +204,73 @@ class BoardViewSet(viewsets.ModelViewSet):
                 instance.usage_instructions = [str(x) for x in meta_changes['usage_instructions'] if x][:50]
             if 'warnings' in meta_changes and isinstance(meta_changes['warnings'], list):
                 instance.warnings = [str(x) for x in meta_changes['warnings'] if x][:50]
+
+        if classification_touch:
+            if 'subject' in body:
+                instance.subject = str(body.get('subject') or '')[:120]
+            if 'topic' in body:
+                instance.topic = str(body.get('topic') or '')[:220]
+            if 'duration_minutes' in body:
+                raw_dm = body.get('duration_minutes')
+                gi = dict(instance.generation_input) if isinstance(instance.generation_input, dict) else {}
+                if raw_dm in (None, '', False):
+                    gi.pop('duration_minutes', None)
+                else:
+                    try:
+                        d = int(raw_dm)
+                    except (TypeError, ValueError):
+                        return response.Response(
+                            {'detail': 'Geplante Dauer muss eine ganze Zahl sein.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    if d < _DURATION_MIN or d > _DURATION_MAX:
+                        return response.Response(
+                            {
+                                'detail': (
+                                    f'Geplante Dauer muss zwischen {_DURATION_MIN} und {_DURATION_MAX} '
+                                    'Minuten liegen.'
+                                ),
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    gi['duration_minutes'] = d
+                instance.generation_input = gi
+            grade_from_in = 'grade_from' in body
+            grade_to_in = 'grade_to' in body
+            if grade_from_in or grade_to_in:
+                if not grade_from_in or not grade_to_in:
+                    return response.Response(
+                        {
+                            'detail': (
+                                'Klassenstufe „von“ und „bis“ müssen gemeinsam übermittelt werden.'
+                            ),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                try:
+                    gf = int(body.get('grade_from'))
+                    gt = int(body.get('grade_to'))
+                except (TypeError, ValueError):
+                    return response.Response(
+                        {'detail': 'Klassenstufen müssen ganze Zahlen sein.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if not (1 <= gf <= 13 and 1 <= gt <= 13):
+                    return response.Response(
+                        {
+                            'detail': 'Klassenstufen müssen zwischen 1 und 13 liegen.',
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                lo, hi = min(gf, gt), max(gf, gt)
+                instance.grade_from = lo
+                instance.grade_to = hi
+                instance.grade = f'{lo}–{hi}' if lo != hi else str(lo)
+            elif 'grade' in body:
+                lo, hi, label = resolve_board_grade_fields({'grade': body.get('grade')})
+                instance.grade_from = lo
+                instance.grade_to = hi
+                instance.grade = label[:60]
 
         if code_changes:
             merged = {
@@ -350,6 +423,18 @@ class BoardViewSet(viewsets.ModelViewSet):
                         'detail': (
                             'Die öffentliche Fassung kann nur aktualisiert werden, wenn das Board '
                             'bereits in der Bibliothek steht.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            is_staff = bool(getattr(request.user, 'is_staff', False))
+            if not is_staff:
+                return response.Response(
+                    {
+                        'detail': (
+                            'Die öffentliche Bibliotheksfassung kann nur von Administrator:innen '
+                            'ohne erneute Prüfung überschrieben werden. Reiche deine Änderungen '
+                            'über „Zur Freigabe einreichen“ ein.'
                         ),
                     },
                     status=status.HTTP_400_BAD_REQUEST,

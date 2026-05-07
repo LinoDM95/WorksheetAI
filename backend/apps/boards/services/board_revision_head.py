@@ -8,8 +8,27 @@ from django.db import transaction
 
 from apps.boards.models import Board, BoardRevision
 
-_META_KEYS_SCALAR = ('title', 'description', 'teacher_notes')
+_META_KEYS_SCALAR = (
+    'title',
+    'description',
+    'teacher_notes',
+    'subject',
+    'topic',
+    'grade',
+)
 _META_KEYS_LIST = ('usage_instructions', 'warnings', 'used_libraries', 'used_assets', 'used_datasets')
+
+
+def _duration_from_board(board: Board) -> int | None:
+    gi = board.generation_input if isinstance(board.generation_input, dict) else {}
+    raw = gi.get('duration_minutes')
+    if raw is None:
+        return None
+    try:
+        v = int(raw)
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def board_metadata_snapshot(board: Board) -> dict[str, Any]:
@@ -17,6 +36,12 @@ def board_metadata_snapshot(board: Board) -> dict[str, Any]:
         'title': board.title or '',
         'description': board.description or '',
         'teacher_notes': board.teacher_notes or '',
+        'subject': board.subject or '',
+        'topic': board.topic or '',
+        'grade': board.grade or '',
+        'grade_from': board.grade_from,
+        'grade_to': board.grade_to,
+        'duration_minutes': _duration_from_board(board),
         'usage_instructions': list(board.usage_instructions or []),
         'warnings': list(board.warnings or []),
         'used_libraries': list(board.used_libraries or []),
@@ -52,6 +77,21 @@ def board_matches_revision_metadata(board: Board, nm: dict[str, Any]) -> bool:
         nm_list = list(nm.get(key) or [])
         if board_list != nm_list:
             return False
+    if 'grade_from' in nm and board.grade_from != nm.get('grade_from'):
+        return False
+    if 'grade_to' in nm and board.grade_to != nm.get('grade_to'):
+        return False
+    if 'duration_minutes' in nm:
+        bv = _duration_from_board(board)
+        nv = nm.get('duration_minutes')
+        try:
+            nvi = int(nv) if nv is not None else None
+            if nvi is not None and nvi <= 0:
+                nvi = None
+        except (TypeError, ValueError):
+            nvi = None
+        if bv != nvi:
+            return False
     return True
 
 
@@ -62,7 +102,13 @@ def board_matches_revision_head(board: Board, rev: BoardRevision | None = None) 
     if not board_code_bundle_matches_revision_new(board, r):
         return False
     nm = r.new_metadata if isinstance(r.new_metadata, dict) else {}
-    tracked = [* _META_KEYS_SCALAR, *_META_KEYS_LIST]
+    tracked = [
+        *_META_KEYS_SCALAR,
+        *_META_KEYS_LIST,
+        'grade_from',
+        'grade_to',
+        'duration_minutes',
+    ]
     if not any(k in nm for k in tracked):
         return True
     return board_matches_revision_metadata(board, nm)
@@ -194,6 +240,29 @@ def apply_revision_to_board(
         desc_s = nm.get('description')
         if desc_s is not None:
             board.description = str(desc_s or '')[:5000]
+        if 'subject' in nm:
+            board.subject = str(nm.get('subject') or '')[:120]
+        if 'topic' in nm:
+            board.topic = str(nm.get('topic') or '')[:220]
+        if 'grade' in nm:
+            board.grade = str(nm.get('grade') or '')[:60]
+        if 'grade_from' in nm:
+            board.grade_from = nm.get('grade_from')
+        if 'grade_to' in nm:
+            board.grade_to = nm.get('grade_to')
+        if 'duration_minutes' in nm:
+            gi = dict(board.generation_input) if isinstance(board.generation_input, dict) else {}
+            dm = nm.get('duration_minutes')
+            if dm is None:
+                gi.pop('duration_minutes', None)
+            else:
+                try:
+                    d = int(dm)
+                except (TypeError, ValueError):
+                    d = None
+                if d is not None and 5 <= d <= 90:
+                    gi['duration_minutes'] = d
+            board.generation_input = gi
         board.status = 'generated' if ok else board.status
 
         restore_rev = BoardRevision.objects.create(

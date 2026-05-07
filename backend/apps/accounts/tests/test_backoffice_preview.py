@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.boards.models import Board
+from apps.boards.models import Board, BoardLibraryComment
 from apps.worksheets.models import Worksheet
 
 
@@ -68,3 +68,18 @@ class BackofficePreviewTests(TestCase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data['title'], 'WS')
         self.assertEqual(r.data['content'], {'version': 1, 'pages': []})
+
+    def test_delete_library_comment_staff(self) -> None:
+        self.board.library_moderation_status = Board.LibraryModerationStatus.APPROVED
+        self.board.library_public = True
+        self.board.save(update_fields=['library_moderation_status', 'library_public'])
+        c1 = BoardLibraryComment.objects.create(board=self.board, user=self.owner, body='Hi')
+        self.client.force_authenticate(user=self.other)
+        r403 = self.client.delete(
+            f'/api/auth/backoffice/boards/{self.board.id}/comments/{c1.id}/',
+        )
+        self.assertEqual(r403.status_code, 403)
+        self.client.force_authenticate(user=self.staff)
+        r = self.client.delete(f'/api/auth/backoffice/boards/{self.board.id}/comments/{c1.id}/')
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(BoardLibraryComment.objects.filter(pk=c1.id).count(), 0)

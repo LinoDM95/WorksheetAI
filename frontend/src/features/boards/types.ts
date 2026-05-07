@@ -260,6 +260,12 @@ export type BoardRevisionMetadata = {
   title?: string;
   description?: string;
   teacher_notes?: string;
+  subject?: string;
+  topic?: string;
+  grade?: string;
+  grade_from?: number | null;
+  grade_to?: number | null;
+  duration_minutes?: number | null;
   usage_instructions?: string[];
   warnings?: string[];
   used_libraries?: LibraryId[];
@@ -368,6 +374,16 @@ export type BoardCodeUpdate = {
   library_listing_topic?: string;
   library_listing_description?: string;
   library_sync_public_snapshot?: boolean;
+  /** Private Arbeitskopie — öffentliche Karte folgt erst nach Freigabe / Snapshot (s. Backend). */
+  subject?: string;
+  topic?: string;
+  /** Nur zusammen mit ``grade_to`` setzen (Klassen 1–13). */
+  grade_from?: number;
+  grade_to?: number;
+  /** Legacy-Freitext; wird ignoriert, wenn ``grade_from``/``grade_to`` gesendet werden. */
+  grade?: string;
+  /** Minuten 5–90; landet in ``generation_input``. */
+  duration_minutes?: number | null;
 };
 
 export type BoardLibraryItem = {

@@ -6,7 +6,9 @@ const BREADCRUMB_HREF: Record<string, string> = {
   'Neues Blatt': '/app/create',
   'Meine Arbeitsblätter': '/app/worksheets',
   Vorlagen: '/app/patterns',
-  Lehrpläne: '/app/curriculum',
+  Administration: '/app/backoffice',
+  Backoffice: '/app/backoffice',
+  Lehrpläne: '/app/curricula',
   Bibliothek: '/app/boards/library',
   Einstellungen: '/app/settings',
 };

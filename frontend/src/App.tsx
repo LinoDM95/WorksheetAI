@@ -95,6 +95,21 @@ const AuthRootRedirect = () => {
   return <Navigate to="/login" replace />;
 };
 
+const AuthCurriculumRedirect = () => {
+  const { user, bootstrapped } = useAuth();
+  if (!bootstrapped) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center bg-[var(--color-bg-app)] text-slate-500">
+        Laden…
+      </div>
+    );
+  }
+  if (!user?.is_staff) {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+  return <Navigate to="/app/curricula/sources" replace />;
+};
+
 const StaffOnlyBackoffice = () => {
   const { user, bootstrapped } = useAuth();
   if (!bootstrapped) {
@@ -108,8 +123,39 @@ const StaffOnlyBackoffice = () => {
     return <Navigate to="/app/dashboard" replace />;
   }
   return (
-    <ShellRoute topbar={{ title: 'Backoffice', subtitle: 'Bibliotheks-Freigaben' }}>
+    <ShellRoute
+      topbar={{
+        title: 'Backoffice',
+        subtitle: 'Bibliotheks-Freigaben',
+        breadcrumbs: ['Administration', 'Backoffice'],
+      }}
+    >
       <BackofficePage />
+    </ShellRoute>
+  );
+};
+
+const StaffOnlyCurricula = () => {
+  const { user, bootstrapped } = useAuth();
+  if (!bootstrapped) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center bg-[var(--color-bg-app)] text-slate-500">
+        Laden…
+      </div>
+    );
+  }
+  if (!user?.is_staff) {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+  return (
+    <ShellRoute
+      topbar={{
+        title: 'Lehrplanverwaltung',
+        subtitle: 'Lehrplan-PDFs, Extraktion und Kontexte — nur für Administrator:innen',
+        breadcrumbs: ['Administration', 'Lehrpläne'],
+      }}
+    >
+      <CurriculaRoutes />
     </ShellRoute>
   );
 };
@@ -178,13 +224,14 @@ export default function App() {
         />
         <Route
           path="curricula/*"
+          element={<StaffOnlyCurricula />}
+        />
+        <Route
+          path="curriculum"
           element={
-            <ShellRoute topbar={{ title: 'Lehrplanverwaltung', breadcrumbs: ['Dashboard', 'Lehrpläne'] }}>
-              <CurriculaRoutes />
-            </ShellRoute>
+            <AuthCurriculumRedirect />
           }
         />
-        <Route path="curriculum" element={<Navigate to="/app/curricula/sources" replace />} />
         <Route path="boards/:id/play" element={<BoardPlayPage />} />
         <Route path="boards/library" element={<BoardLibraryWorkspace />}>
           <Route index element={<BoardLibraryListPage />} />

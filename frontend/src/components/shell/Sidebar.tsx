@@ -21,8 +21,7 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/app/boards', label: 'Smartboard', icon: Presentation, matchPrefix: '/app/boards' },
 ];
 
-const SCHOOL_NAV: NavItem[] = [
-  { to: '/app/curricula', label: 'Lehrpläne', icon: Book, matchPrefix: '/app/curricula', disabled: true },
+const COMMUNITY_NAV: NavItem[] = [
   { to: '/app/boards/library', label: 'Bibliothek', icon: Share2, matchPrefix: '/app/boards/library' },
 ];
 
@@ -112,9 +111,9 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
           ))}
         </nav>
 
-        <SectionLabel rail={railMode}>Schule</SectionLabel>
+        <SectionLabel rail={railMode}>Community</SectionLabel>
         <nav className="flex flex-col gap-0.5">
-          {SCHOOL_NAV.map((item) => (
+          {COMMUNITY_NAV.map((item) => (
             <NavItemLink
               key={item.to}
               item={item}
@@ -128,6 +127,16 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
           <>
             <SectionLabel rail={railMode}>Administration</SectionLabel>
             <nav className="flex flex-col gap-0.5">
+              <NavItemLink
+                item={{
+                  to: '/app/curricula',
+                  label: 'Lehrpläne',
+                  icon: Book,
+                  matchPrefix: '/app/curricula',
+                }}
+                railMode={railMode}
+                onNavigate={() => drawerMode && onClose()}
+              />
               <NavItemLink
                 item={{
                   to: '/app/backoffice',

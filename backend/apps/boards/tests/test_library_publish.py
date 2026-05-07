@@ -105,3 +105,59 @@ class BoardLibraryPublishTests(TestCase):
         lib3 = self.client.get('/api/boards/library/').data
         entry3 = next(x for x in lib3 if x['id'] == str(self.board.id))
         self.assertEqual(entry3['html'], '<div>v2-privat</div>')
+
+    def test_library_listing_keeps_snapshot_subject_when_live_changes(self) -> None:
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
+        r = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {
+                'library_public': True,
+                'library_listing_title': 'Öffentlich Titel',
+                'library_listing_topic': 'Öffentlich Thema',
+                'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.board.refresh_from_db()
+
+        lib = self.client.get('/api/boards/library/').data
+        entry = next(x for x in lib if x['id'] == str(self.board.id))
+        self.assertEqual(entry['subject'], 'Mathematik')
+
+        r2 = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {'subject': 'Physik'},
+            format='json',
+        )
+        self.assertEqual(r2.status_code, 200, r2.data)
+        lib2 = self.client.get('/api/boards/library/').data
+        entry2 = next(x for x in lib2 if x['id'] == str(self.board.id))
+        self.assertEqual(entry2['subject'], 'Mathematik')
+
+    def test_teacher_cannot_force_snapshot_sync_when_listed(self) -> None:
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
+        r = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {
+                'library_public': True,
+                'library_listing_title': 'Öffentlich Titel',
+                'library_listing_topic': 'Öffentlich Thema',
+                'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.board.refresh_from_db()
+
+        self.user.is_staff = False
+        self.user.save(update_fields=['is_staff'])
+
+        r2 = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {'library_sync_public_snapshot': True},
+            format='json',
+        )
+        self.assertEqual(r2.status_code, 400)

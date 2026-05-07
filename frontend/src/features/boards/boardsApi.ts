@@ -252,6 +252,26 @@ export const duplicateBoard = (id: string) =>
 export const deleteBoard = (id: string) =>
   api.delete(`/boards/${id}/`).then((r) => r.data);
 
+/** Staff: Board nur aus öffentlicher Bibliothek nehmen (Board bleibt beim Besitzer). */
+export const backofficeUnpublishBoard = (boardId: string) =>
+  api.post(`/auth/backoffice/boards/${boardId}/unpublish/`).then((r) => r.data);
+
+/** Staff: Board inkl. Daten endgültig löschen. */
+export const backofficeDeleteBoard = (boardId: string) =>
+  api.delete(`/auth/backoffice/boards/${boardId}/`).then((r) => r.data);
+
+/** Staff: Bibliotheks-Kommentar löschen. */
+export const backofficeDeleteBoardLibraryComment = (boardId: string, commentId: string) =>
+  api.delete(`/auth/backoffice/boards/${boardId}/comments/${commentId}/`).then((r) => r.data);
+
+/** Staff: Arbeitsblatt aus öffentlicher Bibliothek nehmen. */
+export const backofficeUnpublishWorksheet = (worksheetId: string) =>
+  api.post(`/auth/backoffice/worksheets/${worksheetId}/unpublish/`).then((r) => r.data);
+
+/** Staff: Arbeitsblatt endgültig löschen. */
+export const backofficeDeleteWorksheet = (worksheetId: string) =>
+  api.delete(`/auth/backoffice/worksheets/${worksheetId}/`).then((r) => r.data);
+
 // ----- Bausteinmodus -------------------------------------------------------
 
 export const fetchBlockRegistry = () =>

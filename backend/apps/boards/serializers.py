@@ -6,22 +6,16 @@ from .owner import resolve_board_owner
 from .services.board_revision_head import board_matches_revision_head, latest_revision
 from .services.library_public_snapshot import (
     bundle_for_library_preview,
+    catalog_display_duration_minutes,
+    catalog_display_grade_from,
+    catalog_display_grade_label,
+    catalog_display_grade_to,
+    catalog_display_subject,
     listing_display_description,
     listing_display_title,
     listing_display_topic,
+    public_listing_differs_from_live,
 )
-
-
-def _planned_duration_from_board_generation_input(obj: Board) -> int | None:
-    gi = obj.generation_input if isinstance(obj.generation_input, dict) else {}
-    raw = gi.get('duration_minutes')
-    if raw is None:
-        return None
-    try:
-        v = int(raw)
-        return v if v > 0 else None
-    except (TypeError, ValueError):
-        return None
 
 
 class BoardFolderBriefSerializer(serializers.ModelSerializer):
@@ -55,9 +49,7 @@ class BoardListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_library_public_live_differs(self, obj: Board) -> bool:
-        from .services.library_public_snapshot import public_bundle_differs_from_live
-
-        return public_bundle_differs_from_live(obj)
+        return public_listing_differs_from_live(obj)
 
 
 class BoardDetailSerializer(serializers.ModelSerializer):
@@ -142,9 +134,7 @@ class BoardDetailSerializer(serializers.ModelSerializer):
         return r.stars if r else None
 
     def get_library_public_live_differs(self, obj: Board) -> bool:
-        from .services.library_public_snapshot import public_bundle_differs_from_live
-
-        return public_bundle_differs_from_live(obj)
+        return public_listing_differs_from_live(obj)
 
 
 class BoardLibraryEntrySerializer(serializers.ModelSerializer):
@@ -159,6 +149,10 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()
     description = serializers.SerializerMethodField()
     topic = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
+    grade = serializers.SerializerMethodField()
+    grade_from = serializers.SerializerMethodField()
+    grade_to = serializers.SerializerMethodField()
     html = serializers.SerializerMethodField()
     css = serializers.SerializerMethodField()
     javascript = serializers.SerializerMethodField()
@@ -190,6 +184,18 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     def get_topic(self, obj: Board) -> str:
         return listing_display_topic(obj)
 
+    def get_subject(self, obj: Board) -> str:
+        return catalog_display_subject(obj)
+
+    def get_grade(self, obj: Board) -> str:
+        return catalog_display_grade_label(obj)
+
+    def get_grade_from(self, obj: Board) -> int | None:
+        return catalog_display_grade_from(obj)
+
+    def get_grade_to(self, obj: Board) -> int | None:
+        return catalog_display_grade_to(obj)
+
     def get_html(self, obj: Board) -> str:
         return bundle_for_library_preview(obj)[0]
 
@@ -206,7 +212,7 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
         return bundle_for_library_preview(obj)[4]
 
     def get_planned_duration_minutes(self, obj: Board) -> int | None:
-        return _planned_duration_from_board_generation_input(obj)
+        return catalog_display_duration_minutes(obj)
 
     def get_my_stars(self, obj: Board):
         request = self.context.get('request')

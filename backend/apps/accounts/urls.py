@@ -3,6 +3,7 @@ from django.urls import path
 from .backoffice_views import (
     BackofficeBoardApproveView,
     BackofficeBoardDestroyView,
+    BackofficeBoardLibraryCommentDestroyView,
     BackofficeBoardPreviewView,
     BackofficeBoardRejectView,
     BackofficeBoardUnpublishView,
@@ -37,6 +38,10 @@ urlpatterns = [
     path('backoffice/boards/<uuid:pk>/approve/', BackofficeBoardApproveView.as_view()),
     path('backoffice/boards/<uuid:pk>/reject/', BackofficeBoardRejectView.as_view()),
     path('backoffice/boards/<uuid:pk>/unpublish/', BackofficeBoardUnpublishView.as_view()),
+    path(
+        'backoffice/boards/<uuid:board_pk>/comments/<uuid:comment_pk>/',
+        BackofficeBoardLibraryCommentDestroyView.as_view(),
+    ),
     path('backoffice/boards/<uuid:pk>/', BackofficeBoardDestroyView.as_view()),
     path('backoffice/worksheets/<uuid:pk>/approve/', BackofficeWorksheetApproveView.as_view()),
     path('backoffice/worksheets/<uuid:pk>/reject/', BackofficeWorksheetRejectView.as_view()),

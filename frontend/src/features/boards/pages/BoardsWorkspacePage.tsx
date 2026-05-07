@@ -367,6 +367,16 @@ export function BoardsWorkspacePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY }),
   });
 
+  const handleRenameBoard = (item: BoardListItem) => {
+    const current = item.title ?? '';
+    const next = window.prompt('Neuer privater Titel', current);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) return;
+    if (trimmed === current.trim()) return;
+    flagsMutation.mutate({ id: item.id, title: trimmed });
+  };
+
   const handleDeleteBoard = (item: BoardListItem) => {
     if (!window.confirm(`Board „${item.title ?? 'Ohne Titel'}" wirklich löschen?`)) return;
     deleteMutation.mutate(item.id);
@@ -872,41 +882,13 @@ export function BoardsWorkspacePage() {
           board={boardMenuTarget}
           onClose={closeBoardMenu}
           duplicatePending={duplicateMutation.isPending}
-          flagsPending={flagsMutation.isPending}
+          patchPending={flagsMutation.isPending}
           deletePending={deleteMutation.isPending}
-          onEdit={() => {
+          onRename={() => {
             closeBoardMenu();
-            navigate(`/app/boards/${boardMenuTarget.id}`);
-          }}
-          onPreview={() => {
-            closeBoardMenu();
-            navigate(`/app/boards/${boardMenuTarget.id}/play`);
+            handleRenameBoard(boardMenuTarget);
           }}
           onDuplicate={() => duplicateMutation.mutate(boardMenuTarget.id)}
-          onToggleLibrary={() => {
-            if (!boardMenuTarget) return;
-            closeBoardMenu();
-            if (boardMenuTarget.library_public) {
-              const ok = window.confirm(
-                'Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
-              );
-              if (!ok) return;
-              flagsMutation.mutate({
-                id: boardMenuTarget.id,
-                library_public: false,
-              });
-              return;
-            }
-            setLibraryPublishError(null);
-            setLibraryPublishTarget(boardMenuTarget);
-          }}
-          onToggleStudentLink={() => {
-            flagsMutation.mutate({
-              id: boardMenuTarget.id,
-              student_link_enabled: !boardMenuTarget.student_link_enabled,
-            });
-            closeBoardMenu();
-          }}
           onDelete={() => {
             closeBoardMenu();
             handleDeleteBoard(boardMenuTarget);
@@ -1078,27 +1060,21 @@ const BoardContextMenuPortal = ({
   state,
   board,
   onClose,
-  onEdit,
-  onPreview,
+  onRename,
   onDuplicate,
-  onToggleLibrary,
-  onToggleStudentLink,
   onDelete,
   duplicatePending,
-  flagsPending,
+  patchPending,
   deletePending,
 }: {
   state: BoardMenuState;
   board: BoardListItem;
   onClose: () => void;
-  onEdit: () => void;
-  onPreview: () => void;
+  onRename: () => void;
   onDuplicate: () => void;
-  onToggleLibrary: () => void;
-  onToggleStudentLink: () => void;
   onDelete: () => void;
   duplicatePending: boolean;
-  flagsPending: boolean;
+  patchPending: boolean;
   deletePending: boolean;
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -1118,7 +1094,7 @@ const BoardContextMenuPortal = ({
   }, [onClose]);
 
   const title = board.title || 'Ohne Titel';
-  const flagsDisabled = flagsPending || duplicatePending || deletePending;
+  const busy = patchPending || duplicatePending || deletePending;
 
   return createPortal(
     <div
@@ -1126,22 +1102,16 @@ const BoardContextMenuPortal = ({
       role="menu"
       aria-label={`Kontextmenü: ${title}`}
       style={{ position: 'fixed', left: state.x, top: state.y, zIndex: 60 }}
-      className="min-w-[240px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+      className="min-w-[220px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
     >
-      <MenuButton onClick={onEdit}>Bearbeiten und Einstellungen …</MenuButton>
-      <MenuButton onClick={onPreview}>Vorschau (Vollbild)</MenuButton>
-      <MenuButton onClick={onDuplicate} disabled={duplicatePending || flagsPending || deletePending}>
+      <MenuButton onClick={onRename} disabled={busy}>
+        Titel umbenennen …
+      </MenuButton>
+      <MenuButton onClick={onDuplicate} disabled={busy}>
         Duplizieren
       </MenuButton>
       <MenuDivider />
-      <MenuButton onClick={onToggleLibrary} disabled={flagsDisabled}>
-        {board.library_public ? 'Aus Bibliothek nehmen' : 'In Bibliothek veröffentlichen'}
-      </MenuButton>
-      <MenuButton onClick={onToggleStudentLink} disabled={flagsDisabled}>
-        {board.student_link_enabled ? 'Schüler-Link deaktivieren' : 'Schüler-Link aktivieren'}
-      </MenuButton>
-      <MenuDivider />
-      <MenuButton onClick={onDelete} disabled={deletePending || duplicatePending} className="text-red-600 hover:bg-red-50">
+      <MenuButton onClick={onDelete} disabled={busy} className="text-red-600 hover:bg-red-50">
         Board löschen …
       </MenuButton>
     </div>,

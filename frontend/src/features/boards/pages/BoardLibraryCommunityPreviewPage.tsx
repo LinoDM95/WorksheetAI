@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MessageCircle, Star } from 'lucide-react';
+import { ArrowLeft, MessageCircle, ShieldAlert, Star } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -15,6 +15,8 @@ import {
 } from '../../../lib/listQueries';
 import {
   adoptBoardFromLibrary,
+  backofficeDeleteBoard,
+  backofficeUnpublishBoard,
   fetchBoardLibraryEntry,
   rateBoardInLibrary,
 } from '../boardsApi';
@@ -24,12 +26,15 @@ import { BoardLibraryCommentsSection } from '../components/library/BoardLibraryC
 import { BoardLibraryInteractiveRating } from '../components/library/BoardLibraryInteractiveRating';
 import { BoardLibraryLivePreview } from '../components/library/BoardLibraryLivePreview';
 import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
+import { useAuth } from '../../../lib/authContext';
 import type { BoardLibraryItem } from '../types';
 
 export function BoardLibraryCommunityPreviewPage() {
   const { libraryBoardId = '' } = useParams<{ libraryBoardId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isStaff = Boolean(user?.is_staff);
   const cached =
     queryClient
       .getQueryData<BoardLibraryItem[]>(boardsLibraryQueryKey('all'))
@@ -71,6 +76,28 @@ export function BoardLibraryCommunityPreviewPage() {
             : old,
       );
       void queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
+    },
+  });
+
+  const staffUnpublish = useMutation({
+    mutationFn: () => backofficeUnpublishBoard(libraryBoardId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('mine') });
+      void queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
+      void queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+      navigate('/app/boards/library', { replace: true });
+    },
+  });
+
+  const staffDeleteBoard = useMutation({
+    mutationFn: () => backofficeDeleteBoard(libraryBoardId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('mine') });
+      void queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
+      void queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+      navigate('/app/boards/library', { replace: true });
     },
   });
 
@@ -175,6 +202,16 @@ export function BoardLibraryCommunityPreviewPage() {
           <Alert tone="error">Bewertung konnte nicht gespeichert werden.</Alert>
         </div>
       ) : null}
+      {staffUnpublish.isError ? (
+        <div className="shrink-0 px-4 pt-3 sm:px-6">
+          <Alert tone="error">Aus der Bibliothek nehmen — bitte erneut versuchen.</Alert>
+        </div>
+      ) : null}
+      {staffDeleteBoard.isError ? (
+        <div className="shrink-0 px-4 pt-3 sm:px-6">
+          <Alert tone="error">Löschen fehlgeschlagen — bitte erneut versuchen.</Alert>
+        </div>
+      ) : null}
 
       <div className="mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden p-3 pb-[max(2.5rem,env(safe-area-inset-bottom,12px))] sm:flex-row sm:gap-6 sm:p-5 sm:pb-12 lg:gap-8">
         <section
@@ -198,6 +235,65 @@ export function BoardLibraryCommunityPreviewPage() {
           className="flex w-full shrink-0 flex-col gap-4 sm:max-w-full lg:w-[min(380px,34%)] xl:w-[360px]"
           aria-label="Details und Community"
         >
+          {isStaff ? (
+            <Card className="border-amber-200 bg-amber-50/90 !p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+                <ShieldAlert size={18} className="shrink-0" aria-hidden />
+                Moderation (Admin)
+              </div>
+              <p className="mt-1 text-[12px] leading-snug text-amber-950/90">
+                Öffentlichen Eintrag entfernen (bleibt beim Autor privat) oder das Board inkl. Daten endgültig löschen.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  loading={staffUnpublish.isPending}
+                  disabled={
+                    staffUnpublish.isPending ||
+                    staffDeleteBoard.isPending ||
+                    adoptMutation.isPending
+                  }
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Diesen Eintrag aus der öffentlichen Bibliothek nehmen? (Das Board bleibt beim Ersteller erhalten.)',
+                      )
+                    ) {
+                      void staffUnpublish.mutate();
+                    }
+                  }}
+                >
+                  Aus Bibliothek entfernen
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-800 hover:bg-red-50"
+                  loading={staffDeleteBoard.isPending}
+                  disabled={
+                    staffDeleteBoard.isPending ||
+                    staffUnpublish.isPending ||
+                    adoptMutation.isPending
+                  }
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Das Smartboard wirklich endgültig löschen? Dies kann nicht rückgängig gemacht werden.',
+                      )
+                    ) {
+                      void staffDeleteBoard.mutate();
+                    }
+                  }}
+                >
+                  Endgültig löschen
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
           <Card className="space-y-3 !p-4">
             <div className="flex flex-wrap items-start gap-2">
               {isOwner ? (
@@ -300,7 +396,12 @@ export function BoardLibraryCommunityPreviewPage() {
           )}
 
           <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
-            <BoardLibraryCommentsSection boardId={board.id} commentCount={cc} loadImmediately />
+            <BoardLibraryCommentsSection
+              boardId={board.id}
+              commentCount={cc}
+              loadImmediately
+              staffModeration={isStaff}
+            />
           </div>
         </aside>
       </div>

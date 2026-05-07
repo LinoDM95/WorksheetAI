@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle } from 'lucide-react';
-import { Button, Field } from '../../../../components/ui';
+import { MessageCircle, Trash2 } from 'lucide-react';
+import { Button, Field, IconButton } from '../../../../components/ui';
 import { formatRelative } from '../../../../lib/formatDate';
 import { boardsLibraryCommentsQueryKey, boardLibraryEntryQueryKey } from '../../../../lib/listQueries';
 import { cn } from '../../../../lib/cn';
-import { fetchBoardLibraryComments, postBoardLibraryComment } from '../../boardsApi';
+import { backofficeDeleteBoardLibraryComment, fetchBoardLibraryComments, postBoardLibraryComment } from '../../boardsApi';
 
 const COMMENT_MAX = 2000;
 
@@ -13,10 +13,13 @@ export function BoardLibraryCommentsSection({
   boardId,
   commentCount,
   loadImmediately = false,
+  staffModeration = false,
 }: {
   boardId: string;
   commentCount: number;
   loadImmediately?: boolean;
+  /** Admin/Staff: Kommentare einzeln löschen. */
+  staffModeration?: boolean;
 }) {
   const queryClient = useQueryClient();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -61,6 +64,15 @@ export function BoardLibraryCommentsSection({
     },
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (commentId: string) => backofficeDeleteBoardLibraryComment(boardId, commentId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryCommentsQueryKey(boardId) });
+      void queryClient.invalidateQueries({ queryKey: boardLibraryEntryQueryKey(boardId) });
+      void queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
+    },
+  });
+
   const count = commentCount;
   const rows = q.data ?? [];
 
@@ -79,6 +91,11 @@ export function BoardLibraryCommentsSection({
       <p className="mb-3 text-[11px] leading-relaxed text-[var(--color-ink-500)]">
         Alle Beiträge erscheinen als <span className="font-medium text-[var(--color-ink-700)]">Anonym</span> — keine
         Namen oder Kontaktdaten sichtbar.
+        {staffModeration ? (
+          <span className="mt-1 block font-medium text-red-800">
+            Als Administratorin kannst du einzelne Kommentare entfernen.
+          </span>
+        ) : null}
       </p>
 
       {loadComments ? (
@@ -98,11 +115,30 @@ export function BoardLibraryCommentsSection({
                 key={c.id}
                 className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 shadow-[var(--shadow-sm)]"
               >
-                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[11px] text-[var(--color-ink-500)]">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[11px] text-[var(--color-ink-500)]">
                   <span className="font-semibold text-[var(--color-ink-700)]">Anonym</span>
-                  <time dateTime={c.created_at} className="tabular-nums text-[var(--color-ink-400)]">
-                    {formatRelative(c.created_at)}
-                  </time>
+                  <span className="flex items-center gap-1.5">
+                    <time dateTime={c.created_at} className="tabular-nums text-[var(--color-ink-400)]">
+                      {formatRelative(c.created_at)}
+                    </time>
+                    {staffModeration ? (
+                      <IconButton
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 !text-red-700 hover:bg-red-50"
+                        aria-label="Kommentar löschen"
+                        disabled={deleteMut.isPending}
+                        onClick={() => {
+                          if (window.confirm('Diesen Kommentar endgültig entfernen?')) {
+                            void deleteMut.mutateAsync(c.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={16} aria-hidden />
+                      </IconButton>
+                    ) : null}
+                  </span>
                 </div>
                 <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[var(--color-ink-800)]">
                   {c.text}

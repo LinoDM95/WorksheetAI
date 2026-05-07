@@ -8,7 +8,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.boards.models import Board
+from apps.boards.models import Board, BoardLibraryComment
 from apps.boards.serializers import BoardDetailSerializer, BoardLibraryEntrySerializer
 from apps.boards.services.library_public_snapshot import copy_live_bundle_to_library_snapshot
 from apps.worksheets.models import Worksheet
@@ -174,6 +174,19 @@ class BackofficeBoardDestroyView(APIView):
         if not board:
             return Response({'detail': 'Nicht gefunden.'}, status=404)
         board.delete()
+        return Response(status=204)
+
+
+class BackofficeBoardLibraryCommentDestroyView(APIView):
+    """Einzelnen Bibliotheks-Kommentar entfernen (Moderation)."""
+
+    permission_classes = [IsStaffUser]
+
+    def delete(self, request, board_pk, comment_pk):
+        c = BoardLibraryComment.objects.filter(pk=comment_pk, board_id=board_pk).first()
+        if not c:
+            return Response({'detail': 'Nicht gefunden.'}, status=404)
+        c.delete()
         return Response(status=204)
 
 

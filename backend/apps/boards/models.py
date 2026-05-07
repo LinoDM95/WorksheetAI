@@ -176,6 +176,11 @@ class Board(models.Model):
     library_snapshot_used_libraries = models.JSONField(default=list, blank=True)
     library_snapshot_used_datasets = models.JSONField(default=list, blank=True)
     library_snapshot_at = models.DateTimeField(null=True, blank=True)
+    library_snapshot_subject = models.CharField(max_length=120, blank=True, default='')
+    library_snapshot_grade = models.CharField(max_length=60, blank=True, default='')
+    library_snapshot_grade_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    library_snapshot_grade_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    library_snapshot_duration_minutes = models.PositiveSmallIntegerField(null=True, blank=True)
     source_board = models.ForeignKey(
         'self',
         null=True,

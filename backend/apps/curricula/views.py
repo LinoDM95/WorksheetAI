@@ -5,10 +5,12 @@ import uuid
 
 from django.shortcuts import get_object_or_404
 from rest_framework import decorators, response, status, viewsets
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.curricula.models import CurriculumContext, CurriculumExtractionJob, CurriculumSource
+from apps.curricula.permissions import IsStaffUser
 from apps.curricula.serializers import (
     CurriculumApproveSerializer,
     CurriculumAutoApproveSerializer,
@@ -30,8 +32,12 @@ from apps.curricula.services.pdf_extraction import CurriculumPDFExtractionServic
 from apps.curricula.states import all_state_options
 
 
+_STAFF_CURRICULA_PERMS = [IsAuthenticated, IsStaffUser]
+
+
 class CurriculumSourceViewSet(viewsets.ModelViewSet):
     queryset = CurriculumSource.objects.all()
+    permission_classes = _STAFF_CURRICULA_PERMS
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -218,6 +224,7 @@ class CurriculumExtractionJobViewSet(viewsets.ModelViewSet):
     queryset = CurriculumExtractionJob.objects.select_related('source').all()
     serializer_class = CurriculumExtractionJobSerializer
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    permission_classes = _STAFF_CURRICULA_PERMS
 
     def create(self, request, *args, **kwargs):
         ser = CurriculumJobCreateSerializer(data=request.data)
@@ -300,6 +307,7 @@ class CurriculumContextViewSet(viewsets.ModelViewSet):
     queryset = CurriculumContext.objects.select_related('source').all()
     serializer_class = CurriculumContextSerializer
     http_method_names = ['get', 'patch', 'head', 'options']
+    permission_classes = _STAFF_CURRICULA_PERMS
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -333,12 +341,14 @@ class CurriculumContextViewSet(viewsets.ModelViewSet):
 
 
 class CurriculumStateOptionsView(APIView):
+    permission_classes = _STAFF_CURRICULA_PERMS
 
     def get(self, request):
         return response.Response({'options': all_state_options()})
 
 
 class CurriculumMatchView(APIView):
+    permission_classes = _STAFF_CURRICULA_PERMS
 
     def post(self, request):
         ser = CurriculumMatchRequestSerializer(data=request.data)

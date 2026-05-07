@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { PanelRight } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../lib/api';
@@ -15,6 +15,7 @@ import { ResizableEditorDock } from '../../components/ResizableEditorDock';
 import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
 import { WORKSHEET_LIST_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
 import { useAuth } from '../../lib/authContext';
+import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boards/boardsApi';
 
 const MAX_DRAFT_UNDO = 10;
 
@@ -112,6 +113,7 @@ function useDominantA4PageInScroll(
 
 export function WorksheetPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const fetchGen = useRef(0);
@@ -130,6 +132,7 @@ export function WorksheetPage() {
   >({});
   const [showCurriculumWizardHint, setShowCurriculumWizardHint] = useState(false);
   const [libraryBusy, setLibraryBusy] = useState(false);
+  const [staffLibBusy, setStaffLibBusy] = useState(false);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -525,6 +528,48 @@ export function WorksheetPage() {
     void runPatch({ library_public: true });
   };
 
+  const handleStaffUnpublishWorksheet = async () => {
+    if (!id) return;
+    if (!window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?')) return;
+    setStaffLibBusy(true);
+    setErr('');
+    try {
+      await backofficeUnpublishWorksheet(id);
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      navigate('/app/boards/library', { replace: true });
+    } catch (e: unknown) {
+      const m = e as { response?: { data?: { detail?: string } } };
+      setErr(m.response?.data?.detail ?? 'Aktion fehlgeschlagen.');
+    } finally {
+      setStaffLibBusy(false);
+    }
+  };
+
+  const handleStaffDeleteWorksheet = async () => {
+    if (!id) return;
+    if (
+      !window.confirm('Dieses Arbeitsblatt endgültig löschen? Alle Daten gehen unwiderruflich verloren.')
+    ) {
+      return;
+    }
+    setStaffLibBusy(true);
+    setErr('');
+    try {
+      await backofficeDeleteWorksheet(id);
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      navigate('/app/boards/library', { replace: true });
+    } catch (e: unknown) {
+      const m = e as { response?: { data?: { detail?: string } } };
+      setErr(m.response?.data?.detail ?? 'Löschen fehlgeschlagen.');
+    } finally {
+      setStaffLibBusy(false);
+    }
+  };
+
   const displayRm = previewRm ?? ((ws.render_model || {}) as Record<string, unknown>);
 
   const viewWorksheet: Worksheet = {
@@ -662,6 +707,32 @@ export function WorksheetPage() {
                 : undefined
             }
           />
+          {user?.is_staff && isReadOnly ? (
+            <div className="no-print flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-amber-50/90 px-4 py-2 sm:px-6">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={staffLibBusy}
+                disabled={staffLibBusy || !libListed}
+                onClick={() => void handleStaffUnpublishWorksheet()}
+              >
+                Aus öffentlicher Bibliothek entfernen
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-red-800 hover:bg-red-50"
+                loading={staffLibBusy}
+                disabled={staffLibBusy}
+                onClick={() => void handleStaffDeleteWorksheet()}
+              >
+                Arbeitsblatt endgültig löschen
+              </Button>
+              <span className="text-[11px] text-amber-950/80">Moderation (fremdes Arbeitsblatt)</span>
+            </div>
+          ) : null}
           {!isReadOnly ? (
             <div className="no-print flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-muted)]/40 px-4 py-2 sm:px-6">
               <Button
