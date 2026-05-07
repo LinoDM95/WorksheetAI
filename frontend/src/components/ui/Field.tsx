@@ -6,6 +6,8 @@ export type FieldProps = {
   label?: string;
   help?: string;
   error?: string;
+  /** Zeigt ein rotes Sternchen neben dem Label (Pflichtfeld-Hinweis). */
+  required?: boolean;
   /** Optionaler Spalten-Span im Wizard-Grid. */
   span?: 1 | 2 | 3;
   htmlFor?: string;
@@ -13,7 +15,16 @@ export type FieldProps = {
   className?: string;
 };
 
-export const Field = ({ label, help, error, span = 1, htmlFor, className, children }: FieldProps) => (
+export const Field = ({
+  label,
+  help,
+  error,
+  required,
+  span = 1,
+  htmlFor,
+  className,
+  children,
+}: FieldProps) => (
   <div
     className={cn(
       'min-w-0',
@@ -24,7 +35,12 @@ export const Field = ({ label, help, error, span = 1, htmlFor, className, childr
   >
     {label && (
       <label className="field-label" htmlFor={htmlFor}>
-        {label}
+        <span>{label}</span>
+        {required ? (
+          <abbr title="Pflichtfeld" className="ml-0.5 cursor-help font-semibold text-red-600 no-underline">
+            *
+          </abbr>
+        ) : null}
       </label>
     )}
     {children}

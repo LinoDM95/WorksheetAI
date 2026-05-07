@@ -9,6 +9,8 @@ export type EditorToolbarProps = {
   saving: boolean;
   hasUnsavedChanges: boolean;
   onSave: () => void;
+  /** Nur PDF/Zurück — keine Speicher-/Bearbeitungsaktionen (fremde Bibliotheks-Exemplare). */
+  readOnly?: boolean;
   /** Ungespeicherte Änderungen verwerfen (optional). */
   onDiscard?: () => void;
   /** Speicher-Status-Text rechts neben dem Titel. */
@@ -34,6 +36,7 @@ export const EditorToolbar = ({
   onToggleEditSidebar,
   onUndo,
   canUndo = false,
+  readOnly = false,
 }: EditorToolbarProps) => {
   const navigate = useNavigate();
   const subtitleParts = [subject, grade != null ? `Klasse ${grade}` : null].filter(Boolean);
@@ -62,18 +65,24 @@ export const EditorToolbar = ({
             </div>
           )}
         </div>
-        <Badge tone={hasUnsavedChanges ? 'warn' : 'success'} className="ml-1" aria-live="polite">
-          {hasUnsavedChanges ? (
-            <>· Ungespeichert</>
-          ) : (
-            <>
-              <Check size={11} aria-hidden /> Gespeichert
-            </>
-          )}
-        </Badge>
+        {readOnly ? (
+          <Badge tone="neutral" className="ml-1" aria-live="polite">
+            Bibliothek · Nur Lesen
+          </Badge>
+        ) : (
+          <Badge tone={hasUnsavedChanges ? 'warn' : 'success'} className="ml-1" aria-live="polite">
+            {hasUnsavedChanges ? (
+              <>· Ungespeichert</>
+            ) : (
+              <>
+                <Check size={11} aria-hidden /> Gespeichert
+              </>
+            )}
+          </Badge>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        {onToggleEditSidebar ? (
+        {!readOnly && onToggleEditSidebar ? (
           <Button
             variant="secondary"
             size="sm"
@@ -95,7 +104,7 @@ export const EditorToolbar = ({
             </span>
           </Button>
         ) : null}
-        {onUndo ? (
+        {!readOnly && onUndo ? (
           <Button
             variant="secondary"
             size="sm"
@@ -118,16 +127,18 @@ export const EditorToolbar = ({
         >
           PDF
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onSave}
-          disabled={saving || !hasUnsavedChanges}
-          loading={saving}
-        >
-          {saving ? 'Speichert' : 'Speichern'}
-        </Button>
-        {onDiscard && hasUnsavedChanges ? (
+        {!readOnly ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSave}
+            disabled={saving || !hasUnsavedChanges}
+            loading={saving}
+          >
+            {saving ? 'Speichert' : 'Speichern'}
+          </Button>
+        ) : null}
+        {!readOnly && onDiscard && hasUnsavedChanges ? (
           <Button
             variant="ghost"
             size="sm"

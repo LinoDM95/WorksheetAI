@@ -4,6 +4,24 @@ from rest_framework import serializers
 from .models import Board, BoardFolder, BoardLibraryComment, BoardRating, BoardRevision
 from .owner import resolve_board_owner
 from .services.board_revision_head import board_matches_revision_head, latest_revision
+from .services.library_public_snapshot import (
+    bundle_for_library_preview,
+    listing_display_description,
+    listing_display_title,
+    listing_display_topic,
+)
+
+
+def _planned_duration_from_board_generation_input(obj: Board) -> int | None:
+    gi = obj.generation_input if isinstance(obj.generation_input, dict) else {}
+    raw = gi.get('duration_minutes')
+    if raw is None:
+        return None
+    try:
+        v = int(raw)
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 class BoardFolderBriefSerializer(serializers.ModelSerializer):
@@ -18,20 +36,28 @@ class BoardFolderBriefSerializer(serializers.ModelSerializer):
 class BoardListSerializer(serializers.ModelSerializer):
     folder = BoardFolderBriefSerializer(read_only=True)
     source_board = serializers.UUIDField(source='source_board_id', read_only=True, allow_null=True)
+    library_public_live_differs = serializers.SerializerMethodField()
 
     class Meta:
         model = Board
         fields = (
-            'id', 'title', 'subject', 'grade', 'topic',
+            'id', 'title', 'subject', 'grade', 'grade_from', 'grade_to', 'topic',
             'board_type', 'status',
             'used_libraries',
             'folder',
             'source_board',
             'library_public',
+            'library_moderation_status',
+            'library_public_live_differs',
             'student_link_enabled',
             'created_at', 'updated_at',
         )
         read_only_fields = fields
+
+    def get_library_public_live_differs(self, obj: Board) -> bool:
+        from .services.library_public_snapshot import public_bundle_differs_from_live
+
+        return public_bundle_differs_from_live(obj)
 
 
 class BoardDetailSerializer(serializers.ModelSerializer):
@@ -42,11 +68,12 @@ class BoardDetailSerializer(serializers.ModelSerializer):
     my_stars = serializers.SerializerMethodField()
     revision_head_id = serializers.SerializerMethodField()
     can_revise_with_ai = serializers.SerializerMethodField()
+    library_public_live_differs = serializers.SerializerMethodField()
 
     class Meta:
         model = Board
         fields = (
-            'id', 'title', 'description', 'subject', 'grade', 'topic',
+            'id', 'title', 'description', 'subject', 'grade', 'grade_from', 'grade_to', 'topic',
             'board_type', 'status',
             'revision_head_id', 'can_revise_with_ai',
             'html', 'css', 'javascript',
@@ -63,7 +90,11 @@ class BoardDetailSerializer(serializers.ModelSerializer):
             'assets_summary',
             'folder',
             'share_token', 'student_link_enabled', 'student_link_expires_at', 'library_public',
-            'library_published_at', 'source_board',
+            'library_moderation_status',
+            'library_published_at',
+            'library_listing_title', 'library_listing_topic', 'library_listing_description',
+            'library_snapshot_at', 'library_public_live_differs',
+            'source_board',
             'avg_rating', 'rating_count', 'my_stars',
             'created_at', 'updated_at',
         )
@@ -80,8 +111,12 @@ class BoardDetailSerializer(serializers.ModelSerializer):
             'assets_summary',
             'folder',
             'share_token', 'library_published_at', 'student_link_expires_at', 'source_board',
+            'library_moderation_status',
+            'library_listing_title', 'library_listing_topic', 'library_listing_description',
+            'library_snapshot_at', 'library_public_live_differs',
             'avg_rating', 'rating_count', 'my_stars',
             'revision_head_id', 'can_revise_with_ai',
+            'grade_from', 'grade_to',
         )
 
     def get_revision_head_id(self, obj: Board):
@@ -106,6 +141,11 @@ class BoardDetailSerializer(serializers.ModelSerializer):
         r = BoardRating.objects.filter(board=obj, user=request.user).first()
         return r.stars if r else None
 
+    def get_library_public_live_differs(self, obj: Board) -> bool:
+        from .services.library_public_snapshot import public_bundle_differs_from_live
+
+        return public_bundle_differs_from_live(obj)
+
 
 class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     avg_rating = serializers.FloatField(read_only=True, allow_null=True)
@@ -116,19 +156,57 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     viewer_is_owner = serializers.SerializerMethodField()
     share_token = serializers.SerializerMethodField()
     student_link_enabled = serializers.SerializerMethodField()
+    title = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    topic = serializers.SerializerMethodField()
+    html = serializers.SerializerMethodField()
+    css = serializers.SerializerMethodField()
+    javascript = serializers.SerializerMethodField()
+    used_libraries = serializers.SerializerMethodField()
+    used_datasets = serializers.SerializerMethodField()
+    planned_duration_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Board
         fields = (
-            'id', 'title', 'description', 'subject', 'grade', 'topic',
+            'id', 'title', 'description', 'subject', 'grade', 'grade_from', 'grade_to', 'topic',
+            'board_type',
             'html', 'css', 'javascript',
             'used_libraries', 'used_datasets',
+            'planned_duration_minutes',
             'library_published_at',
             'avg_rating', 'rating_count', 'comment_count', 'my_stars',
             'owner_label', 'viewer_is_owner',
             'share_token', 'student_link_enabled',
         )
         read_only_fields = fields
+
+    def get_title(self, obj: Board) -> str:
+        return listing_display_title(obj)
+
+    def get_description(self, obj: Board) -> str:
+        return listing_display_description(obj)
+
+    def get_topic(self, obj: Board) -> str:
+        return listing_display_topic(obj)
+
+    def get_html(self, obj: Board) -> str:
+        return bundle_for_library_preview(obj)[0]
+
+    def get_css(self, obj: Board) -> str:
+        return bundle_for_library_preview(obj)[1]
+
+    def get_javascript(self, obj: Board) -> str:
+        return bundle_for_library_preview(obj)[2]
+
+    def get_used_libraries(self, obj: Board) -> list:
+        return bundle_for_library_preview(obj)[3]
+
+    def get_used_datasets(self, obj: Board) -> list:
+        return bundle_for_library_preview(obj)[4]
+
+    def get_planned_duration_minutes(self, obj: Board) -> int | None:
+        return _planned_duration_from_board_generation_input(obj)
 
     def get_my_stars(self, obj: Board):
         request = self.context.get('request')

@@ -35,6 +35,22 @@ class CreditsGateAndChargeTests(TestCase):
         with self.assertRaises(PermissionDenied):
             enforce_positive_ai_credits_balance(self.user)
 
+    def test_staff_skips_enforce_and_charge(self) -> None:
+        staff = User.objects.create_user(
+            username='staff@example.com',
+            email='staff@example.com',
+            password='TestPass123!',
+            is_staff=True,
+        )
+        ub = UserCreditBalance.objects.get(user=staff)
+        ub.balance = 0
+        ub.save(update_fields=['balance'])
+        enforce_positive_ai_credits_balance(staff)
+        charged = charge_ai_usage_usd_cents(staff, 10000)
+        self.assertEqual(charged, 0)
+        ub.refresh_from_db()
+        self.assertEqual(ub.balance, 0)
+
     @override_settings(AI_COST_USD_TO_EUR=1.0, USER_CREDITS_PER_EUR=1000)
     def test_charge_allows_negative_balance(self) -> None:
         ub = UserCreditBalance.objects.get(user=self.user)

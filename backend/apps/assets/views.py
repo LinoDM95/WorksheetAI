@@ -32,7 +32,7 @@ from .serializers import (
 
 
 def _user_can_view_asset(viewer, asset: GeneratedAsset) -> bool:
-    if asset.board and asset.board.library_public:
+    if asset.board and asset.board.is_catalog_listed():
         return True
     if not viewer:
         return False
@@ -48,7 +48,7 @@ def _user_can_view_asset(viewer, asset: GeneratedAsset) -> bool:
 
 
 def _user_can_view_pack(viewer, pack: AssetPack) -> bool:
-    if pack.board and pack.board.library_public:
+    if pack.board and pack.board.is_catalog_listed():
         return True
     if not viewer:
         return False

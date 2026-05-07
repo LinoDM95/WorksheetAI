@@ -1,12 +1,14 @@
 from rest_framework import viewsets, decorators, response
 import copy
 
+from django.db.models import Q
+
 from apps.ai.error_mapper import AIErrorMapper
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
 from .models import Worksheet
-from .serializers import WorksheetSerializer, build_curriculum_usage_payload
+from .serializers import WorksheetSerializer, build_curriculum_usage_payload, WorksheetLibraryEntrySerializer
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.generation import generate_worksheet
 from .services.page_regenerate import regenerate_worksheet_page
@@ -19,12 +21,40 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     serializer_class = WorksheetSerializer
 
     def get_queryset(self):
-        return Worksheet.objects.filter(
-            owner=resolve_worksheet_owner(self.request.user),
-        ).select_related('pattern').prefetch_related('curriculum_usages').order_by('-created_at')
+        user = resolve_worksheet_owner(self.request.user)
+        qs = Worksheet.objects.select_related('pattern').prefetch_related('curriculum_usages')
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return qs.filter(owner=user)
+        if self.action == 'retrieve':
+            return qs.filter(
+            Q(owner=user)
+            | Q(
+                library_public=True,
+                library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+            ),
+        )
+        return qs.filter(owner=user).order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(owner=resolve_worksheet_owner(self.request.user))
+
+    @decorators.action(detail=False, methods=['get'], url_path='library')
+    def library_list(self, request):
+        try:
+            user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            return response.Response([])
+        qs = Worksheet.objects.filter(
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+        ).select_related('owner', 'pattern')
+        scope = (request.query_params.get('scope') or 'all').strip().lower()
+        if scope == 'mine':
+            qs = qs.filter(owner=user)
+        qs = qs.order_by('-library_published_at', '-created_at')
+        return response.Response(
+            WorksheetLibraryEntrySerializer(qs, many=True, context={'request': request}).data,
+        )
 
     @decorators.action(detail=True, methods=['post'], url_path='preview-render')
     def preview_render(self, request, pk=None):

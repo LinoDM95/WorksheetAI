@@ -1,4 +1,6 @@
 import { api } from './api';
+import type { WorksheetLibraryItem } from '../types';
+
 
 /** Geteilter Cache für alle Listen-Ansichten (Dashboard, „Meine Arbeitsblätter“). */
 export const WORKSHEET_LIST_QUERY_KEY = ['worksheets', 'list'] as const;
@@ -30,6 +32,16 @@ export type BoardLibraryScope = 'all' | 'mine';
 
 export const boardsLibraryQueryKey = (scope: BoardLibraryScope = 'all') =>
   ['boards', 'library', scope] as const;
+
+export type WorksheetLibraryScope = 'all' | 'mine';
+
+export const worksheetsLibraryQueryKey = (scope: WorksheetLibraryScope = 'all') =>
+  ['worksheets', 'library', scope] as const;
+
+export const fetchWorksheetLibrary = async (scope: WorksheetLibraryScope = 'all'): Promise<WorksheetLibraryItem[]> => {
+  const r = await api.get<WorksheetLibraryItem[]>('/worksheets/library/', { params: { scope } });
+  return Array.isArray(r.data) ? r.data : [];
+};
 
 export const boardsLibraryCommentsQueryKey = (boardId: string) =>
   ['boards', 'library-comments', boardId] as const;

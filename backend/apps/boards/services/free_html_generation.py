@@ -12,6 +12,7 @@ from apps.ai.providers.claude import ClaudeWorksheetProvider
 from apps.ai.providers.mock import MockWorksheetProvider
 
 from ..models import Board, BoardRevision
+from ..grade_bounds import resolve_board_grade_fields
 from ..owner import resolve_board_owner
 from .board_revision_head import create_initial_revision_if_absent, require_board_at_revision_head
 from .free_html_prompt_context import build_resource_context
@@ -140,6 +141,8 @@ class FreeHtmlBoardGenerationService:
             title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
+            gf, gt, g_label = resolve_board_grade_fields(self.payload)
+
             gen_input = self._sanitized_input()
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
@@ -149,7 +152,9 @@ class FreeHtmlBoardGenerationService:
                 title=title,
                 description=desc,
                 subject=str(self.payload.get('subject') or '')[:120],
-                grade=str(self.payload.get('grade') or '')[:60],
+                grade=g_label,
+                grade_from=gf,
+                grade_to=gt,
                 topic=str(self.payload.get('topic') or '')[:220],
                 board_type=str(self.payload.get('board_type') or 'interactive_board')[:40],
                 status='generated' if ok else 'draft',
@@ -222,6 +227,8 @@ class FreeHtmlBoardGenerationService:
             title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
+            gf, gt, g_label = resolve_board_grade_fields(self.payload)
+
             gen_input = self._sanitized_input()
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
@@ -238,7 +245,9 @@ class FreeHtmlBoardGenerationService:
                 title=title,
                 description=desc,
                 subject=str(self.payload.get('subject') or '')[:120],
-                grade=str(self.payload.get('grade') or '')[:60],
+                grade=g_label,
+                grade_from=gf,
+                grade_to=gt,
                 topic=str(self.payload.get('topic') or '')[:220],
                 board_type=str(self.payload.get('board_type') or 'interactive_board')[:40],
                 status='generated' if ok else 'draft',
@@ -262,10 +271,11 @@ class FreeHtmlBoardGenerationService:
             yield enc({'event': 'done', 'board': serialize_board(board)})
 
     def _ai_payload(self) -> dict[str, Any]:
+        _, _, g_label = resolve_board_grade_fields(self.payload)
         return {
             'prompt': self.payload.get('prompt') or '',
             'subject': self.payload.get('subject') or '',
-            'grade': self.payload.get('grade') or '',
+            'grade': g_label or str(self.payload.get('grade') or ''),
             'topic': self.payload.get('topic') or '',
             'board_type': self.payload.get('board_type') or 'interactive_board',
             'duration_minutes': int(self.payload.get('duration_minutes') or 10),
@@ -276,7 +286,7 @@ class FreeHtmlBoardGenerationService:
 
     def _sanitized_input(self) -> dict[str, Any]:
         keep = (
-            'prompt', 'subject', 'grade', 'topic', 'board_type', 'duration_minutes',
+            'prompt', 'subject', 'grade', 'grade_from', 'grade_to', 'topic', 'board_type', 'duration_minutes',
             'creativity', 'visual_style', 'target_device', 'ai_quality_tier',
         )
         return {k: self.payload.get(k) for k in keep if k in self.payload}

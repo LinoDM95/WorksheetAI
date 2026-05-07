@@ -41,6 +41,13 @@ from .services.board_revision_head import (
     create_initial_revision_if_absent,
     require_board_at_revision_head,
 )
+from .services.library_public_snapshot import (
+    bundle_for_library_preview,
+    copy_live_bundle_to_library_snapshot,
+    listing_display_title,
+    listing_display_topic,
+)
+from .grade_bounds import validate_creative_generate_payload
 
 
 class PublicBoardPlayView(APIView):
@@ -110,7 +117,11 @@ class BoardViewSet(viewsets.ModelViewSet):
     def get_object(self):
         if self.action in ('rate', 'adopt_from_library'):
             pk = self.kwargs['pk']
-            board = Board.objects.filter(pk=pk, library_public=True).first()
+            board = Board.objects.filter(
+                pk=pk,
+                library_public=True,
+                library_moderation_status=Board.LibraryModerationStatus.APPROVED,
+            ).first()
             if not board:
                 raise exceptions.NotFound()
             return board
@@ -140,6 +151,27 @@ class BoardViewSet(viewsets.ModelViewSet):
     def _patch_with_validation(self, request, partial, *args, **kwargs):
         instance = self.get_object()
         body = request.data if isinstance(request.data, dict) else dict(request.data)
+
+        if body.get('library_public') is True and not instance.is_catalog_listed():
+            lt_chk = str(
+                body.get('library_listing_title', instance.library_listing_title or '') or '',
+            ).strip()
+            lk_chk = str(
+                body.get('library_listing_topic', instance.library_listing_topic or '') or '',
+            ).strip()
+            ld_chk = str(
+                body.get('library_listing_description', instance.library_listing_description or '') or '',
+            ).strip()
+            if not lt_chk or not lk_chk or not ld_chk:
+                return response.Response(
+                    {
+                        'detail': (
+                            'Zum Einreichen in die Bibliothek sind ein öffentlicher Titel, '
+                            'ein öffentliches Thema und eine öffentliche Beschreibung erforderlich.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         snapshot_before = {
             'html': instance.html or '',
@@ -243,11 +275,86 @@ class BoardViewSet(viewsets.ModelViewSet):
             )
 
         if 'library_public' in body:
-            instance.library_public = bool(body['library_public'])
-            if instance.library_public:
-                instance.library_published_at = timezone.now()
+            wants_pub = bool(body['library_public'])
+            MOD = Board.LibraryModerationStatus
+            is_staff = bool(getattr(request.user, 'is_staff', False))
+            catalog_listed = instance.is_catalog_listed()
+            is_pending = instance.library_moderation_status == MOD.PENDING
+
+            if wants_pub:
+                lt = str(
+                    body.get('library_listing_title', instance.library_listing_title or '') or '',
+                ).strip()
+                lk = str(
+                    body.get('library_listing_topic', instance.library_listing_topic or '') or '',
+                ).strip()
+                ld = str(
+                    body.get('library_listing_description', instance.library_listing_description or '') or '',
+                ).strip()
+                instance.library_listing_title = lt[:255]
+                instance.library_listing_topic = lk[:220]
+                instance.library_listing_description = ld[:8000]
+                if is_staff:
+                    instance.library_moderation_status = MOD.APPROVED
+                    instance.library_public = True
+                    if not catalog_listed:
+                        instance.library_published_at = timezone.now()
+                    copy_live_bundle_to_library_snapshot(instance)
+                else:
+                    instance.library_moderation_status = MOD.PENDING
+                    instance.library_public = False
+                    instance.library_published_at = None
             else:
+                instance.library_public = False
                 instance.library_published_at = None
+                if catalog_listed or is_pending or instance.library_moderation_status in (
+                    MOD.REJECTED,
+                    MOD.APPROVED,
+                ):
+                    instance.library_moderation_status = MOD.NONE
+
+        listing_editable = instance.is_catalog_listed() or (
+            instance.library_moderation_status == Board.LibraryModerationStatus.PENDING
+        )
+        if listing_editable:
+            if 'library_listing_title' in body:
+                tv = str(body['library_listing_title'] or '').strip()
+                if not tv:
+                    return response.Response(
+                        {'detail': 'Der öffentliche Titel darf nicht geleert werden.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                instance.library_listing_title = tv[:255]
+            if 'library_listing_topic' in body:
+                kv = str(body['library_listing_topic'] or '').strip()
+                if not kv:
+                    return response.Response(
+                        {'detail': 'Das öffentliche Thema darf nicht geleert werden.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                instance.library_listing_topic = kv[:220]
+            if 'library_listing_description' in body:
+                dv = str(body['library_listing_description'] or '').strip()
+                if not dv:
+                    return response.Response(
+                        {'detail': 'Die öffentliche Beschreibung darf nicht geleert werden.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                instance.library_listing_description = dv[:8000]
+
+        snapshot_sync_requested = body.get('library_sync_public_snapshot') is True
+        if snapshot_sync_requested:
+            if not instance.is_catalog_listed():
+                return response.Response(
+                    {
+                        'detail': (
+                            'Die öffentliche Fassung kann nur aktualisiert werden, wenn das Board '
+                            'bereits in der Bibliothek steht.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            copy_live_bundle_to_library_snapshot(instance)
 
         instance.save()
 
@@ -280,6 +387,10 @@ class BoardViewSet(viewsets.ModelViewSet):
     def generate(self, request):
         enforce_positive_ai_credits_balance(request.user)
         body = request.data if isinstance(request.data, dict) else {}
+        try:
+            validate_creative_generate_payload(body)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         wants_stream = request.query_params.get('stream') in ('1', 'true', 'yes')
         if wants_stream:
             def serialize_board(b: Board) -> dict:
@@ -654,6 +765,8 @@ class BoardViewSet(viewsets.ModelViewSet):
             description=original.description,
             subject=original.subject,
             grade=original.grade,
+            grade_from=original.grade_from,
+            grade_to=original.grade_to,
             topic=original.topic,
             board_type=original.board_type,
             status=original.status,
@@ -809,7 +922,10 @@ class BoardViewSet(viewsets.ModelViewSet):
         except ValueError:
             return response.Response([])
         qs = (
-            Board.objects.filter(library_public=True)
+            Board.objects.filter(
+                library_public=True,
+                library_moderation_status=Board.LibraryModerationStatus.APPROVED,
+            )
             .select_related('owner')
             .annotate(
                 avg_rating=Avg('ratings__stars'),
@@ -836,7 +952,11 @@ class BoardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
         qs = (
-            Board.objects.filter(pk=pk, library_public=True)
+            Board.objects.filter(
+                pk=pk,
+                library_public=True,
+                library_moderation_status=Board.LibraryModerationStatus.APPROVED,
+            )
             .select_related('owner')
             .annotate(
                 avg_rating=Avg('ratings__stars'),
@@ -853,7 +973,11 @@ class BoardViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=['get', 'post'], url_path='library-comments')
     def library_comments(self, request, pk=None):
-        board = Board.objects.filter(pk=pk, library_public=True).first()
+        board = Board.objects.filter(
+            pk=pk,
+            library_public=True,
+            library_moderation_status=Board.LibraryModerationStatus.APPROVED,
+        ).first()
         if not board:
             raise exceptions.NotFound()
 
@@ -923,24 +1047,27 @@ class BoardViewSet(viewsets.ModelViewSet):
     def adopt_from_library(self, request, pk=None):
         original = self.get_object()
         user = resolve_board_owner(request.user)
+        lib_html, lib_css, lib_js, lib_ul, lib_ud = bundle_for_library_preview(original)
         clone = Board.objects.create(
             owner=user,
-            title=f'{original.title} (übernommen)'[:255],
-            description=original.description,
+            title=f'{listing_display_title(original)} (übernommen)'[:255],
+            description='',
             subject=original.subject,
             grade=original.grade,
-            topic=original.topic,
+            grade_from=original.grade_from,
+            grade_to=original.grade_to,
+            topic=listing_display_topic(original),
             board_type=original.board_type,
             status=original.status,
-            html=original.html,
-            css=original.css,
-            javascript=original.javascript,
+            html=lib_html,
+            css=lib_css,
+            javascript=lib_js,
             teacher_notes='',
             usage_instructions=[],
             warnings=list(original.warnings or []),
-            used_libraries=list(original.used_libraries or []),
+            used_libraries=list(lib_ul),
             used_assets=list(original.used_assets or []),
-            used_datasets=list(original.used_datasets or []),
+            used_datasets=list(lib_ud),
             folder=None,
             generation_prompt='',
             generation_input={},

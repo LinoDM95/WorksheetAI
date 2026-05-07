@@ -76,6 +76,12 @@ class BoardFolder(models.Model):
 class Board(models.Model):
     """Free HTML5 Board — KI erzeugt vollständigen sandboxed HTML/CSS/JS-Code."""
 
+    class LibraryModerationStatus(models.TextChoices):
+        NONE = 'none', 'Nicht eingereicht'
+        PENDING = 'pending', 'Freigabe ausstehend'
+        APPROVED = 'approved', 'Freigegeben'
+        REJECTED = 'rejected', 'Abgelehnt'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(
         User,
@@ -95,6 +101,8 @@ class Board(models.Model):
     description = models.TextField(blank=True)
     subject = models.CharField(max_length=120, blank=True)
     grade = models.CharField(max_length=60, blank=True)
+    grade_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    grade_to = models.PositiveSmallIntegerField(null=True, blank=True)
     topic = models.CharField(max_length=220, blank=True)
     board_type = models.CharField(
         max_length=40,
@@ -152,6 +160,22 @@ class Board(models.Model):
     student_link_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     library_public = models.BooleanField(default=False)
     library_published_at = models.DateTimeField(null=True, blank=True)
+    library_moderation_status = models.CharField(
+        max_length=20,
+        choices=LibraryModerationStatus.choices,
+        default=LibraryModerationStatus.NONE,
+        db_index=True,
+    )
+
+    library_listing_title = models.CharField(max_length=255, blank=True)
+    library_listing_topic = models.CharField(max_length=220, blank=True)
+    library_listing_description = models.TextField(blank=True)
+    library_snapshot_html = models.TextField(blank=True)
+    library_snapshot_css = models.TextField(blank=True)
+    library_snapshot_javascript = models.TextField(blank=True)
+    library_snapshot_used_libraries = models.JSONField(default=list, blank=True)
+    library_snapshot_used_datasets = models.JSONField(default=list, blank=True)
+    library_snapshot_at = models.DateTimeField(null=True, blank=True)
     source_board = models.ForeignKey(
         'self',
         null=True,
@@ -168,6 +192,10 @@ class Board(models.Model):
 
     def __str__(self) -> str:
         return self.title or f'Board {self.pk}'
+
+    def is_catalog_listed(self) -> bool:
+        """Sichtbar in der öffentlichen Bibliothek (nach Admin-Freigabe)."""
+        return self.library_public and self.library_moderation_status == self.LibraryModerationStatus.APPROVED
 
 
 class BoardRating(models.Model):

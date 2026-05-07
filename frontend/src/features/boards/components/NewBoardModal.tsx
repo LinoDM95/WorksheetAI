@@ -16,6 +16,7 @@ import { BoardAiGenerationOverlay } from './BoardAiGenerationOverlay';
 import type { BoardGeneratePayload, VisualStyleId } from '../types';
 import { cn } from '../../../lib/cn';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
+import { LIBRARY_GRADE_STEPS, LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 
 const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
   { id: 'auto', label: 'Automatisch', hint: 'KI wählt Stil zum Thema.' },
@@ -47,9 +48,10 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const queryClient = useQueryClient();
 
   const [subject, setSubject] = useState('');
-  const [grade, setGrade] = useState('');
+  const [gradeFrom, setGradeFrom] = useState('');
+  const [gradeTo, setGradeTo] = useState('');
   const [topic, setTopic] = useState('');
-  const [duration, setDuration] = useState(15);
+  const [durationStr, setDurationStr] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyleId>('auto');
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,17 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
 
   useEffect(() => {
     if (!open) return;
+    setSubject('');
+    setGradeFrom('');
+    setGradeTo('');
+    setTopic('');
+    setDurationStr('');
+    setPrompt('');
+    setError(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !createMutation.isPending) onClose();
     };
@@ -88,16 +101,40 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
 
   const handleSubmit = () => {
     setError(null);
+    if (!subject.trim()) {
+      setError('Bitte wähle ein Fach.');
+      return;
+    }
+    if (!topic.trim()) {
+      setError('Bitte gib ein kurzes Thema an.');
+      return;
+    }
+    if (!gradeFrom || !gradeTo) {
+      setError('Bitte wähle Klassenstufe von und bis.');
+      return;
+    }
+    const gf = parseInt(gradeFrom, 10);
+    const gt = parseInt(gradeTo, 10);
+    if (Number.isNaN(gf) || Number.isNaN(gt) || gf < 1 || gf > 13 || gt < 1 || gt > 13) {
+      setError('Klassenstufen müssen zwischen 1 und 13 liegen.');
+      return;
+    }
+    const d = parseInt(durationStr.trim(), 10);
+    if (!durationStr.trim() || Number.isNaN(d) || d < 5 || d > 90) {
+      setError('Bitte gib eine geplante Dauer zwischen 5 und 90 Minuten an.');
+      return;
+    }
     if (!prompt.trim()) {
       setError('Bitte beschreibe in eigenen Worten, was das Board zeigen soll.');
       return;
     }
     const payload: BoardGeneratePayload = {
       prompt: prompt.trim(),
-      subject: subject.trim() || undefined,
-      grade: grade.trim() || undefined,
-      topic: topic.trim() || undefined,
-      duration_minutes: duration,
+      subject: subject.trim(),
+      topic: topic.trim(),
+      grade_from: gf,
+      grade_to: gt,
+      duration_minutes: d,
       creativity: 'experimentell',
       visual_style: visualStyle,
     };
@@ -158,41 +195,87 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
           <div className="space-y-5">
             <Card className="!p-5 sm:!p-6 space-y-5 shadow-none sm:!shadow-sm">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Fach" htmlFor="b-subject-modal">
-                  <TextInput
+                <Field label="Fach" htmlFor="b-subject-modal" required>
+                  <select
                     id="b-subject-modal"
+                    className={cn(
+                      'select h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-0 text-sm text-slate-900',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30',
+                    )}
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    placeholder="z. B. Sachunterricht"
-                  />
+                    aria-required
+                  >
+                    <option value="">Bitte wählen …</option>
+                    {LIBRARY_SUBJECT_FILTER_LABELS.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
-                <Field label="Klasse" htmlFor="b-grade-modal">
-                  <TextInput
-                    id="b-grade-modal"
-                    value={grade}
-                    onChange={(e) => setGrade(e.target.value)}
-                    placeholder="z. B. 5"
-                  />
+                <Field label="Klassenstufe" required htmlFor="b-grade-from-modal">
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      id="b-grade-from-modal"
+                      className={cn(
+                        'select h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-0 text-sm text-slate-900',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30',
+                      )}
+                      value={gradeFrom}
+                      onChange={(e) => setGradeFrom(e.target.value)}
+                      aria-label="Klassenstufe von"
+                      aria-required
+                    >
+                      <option value="">Von …</option>
+                      {LIBRARY_GRADE_STEPS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      id="b-grade-to-modal"
+                      className={cn(
+                        'select h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-0 text-sm text-slate-900',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30',
+                      )}
+                      value={gradeTo}
+                      onChange={(e) => setGradeTo(e.target.value)}
+                      aria-label="Klassenstufe bis"
+                      aria-required
+                    >
+                      <option value="">Bis …</option>
+                      {LIBRARY_GRADE_STEPS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </Field>
               </div>
 
-              <Field label="Thema (kurz)" htmlFor="b-topic-modal">
+              <Field label="Thema (kurz)" htmlFor="b-topic-modal" required>
                 <TextInput
                   id="b-topic-modal"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="z. B. Wasserkreislauf"
+                  aria-required
                 />
               </Field>
 
-              <Field label="Geplante Dauer (Minuten)" htmlFor="b-duration-modal" className="max-w-[12rem]">
+              <Field label="Geplante Dauer (Minuten)" htmlFor="b-duration-modal" className="max-w-[12rem]" required>
                 <TextInput
                   id="b-duration-modal"
                   type="number"
                   min={5}
                   max={90}
-                  value={String(duration)}
-                  onChange={(e) => setDuration(Math.max(5, Math.min(90, Number(e.target.value) || 15)))}
+                  value={durationStr}
+                  onChange={(e) => setDurationStr(e.target.value)}
+                  placeholder="5–90"
+                  aria-required
                 />
               </Field>
 
@@ -220,6 +303,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
               <Field
                 label="Beschreibung / Prompt"
                 htmlFor="b-prompt-modal"
+                required
                 help="Beschreibe Inhalt, Schwerpunkte, gewünschte Aktivitäten (z. B. Schieberegler, Schritte, Quiz) und Lernziele — die KI leitet passende Interaktionen daraus ab."
               >
                 <textarea
@@ -229,6 +313,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
                   rows={5}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                   placeholder="z. B. Erkläre den Wasserkreislauf mit Buttons …"
+                  aria-required
                 />
               </Field>
 

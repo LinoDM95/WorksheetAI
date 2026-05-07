@@ -69,7 +69,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'credits_balance', 'credits_reference_cap']
+        fields = ['id', 'email', 'first_name', 'last_name', 'credits_balance', 'credits_reference_cap', 'is_staff']
 
     def get_credits_reference_cap(self, obj: User) -> int:
         return int(getattr(settings, 'USER_CREDITS_REFERENCE_CAP', 10000))

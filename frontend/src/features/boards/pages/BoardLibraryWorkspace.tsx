@@ -35,7 +35,7 @@ export function BoardLibraryWorkspace() {
       topbar={{
         title: isPreview ? 'Board-Vorschau' : 'Bibliothek',
         subtitle: isPreview
-          ? 'Live testen wie im Unterricht; bei eigenem Board: Präsentieren und QR möglich'
+          ? 'Live testen wie im Unterricht — ohne sichtbare Namen von Autor:innen oder Kommentar:innen'
           : 'Marktplatz für interaktive Boards — ausprobieren, bewerten und Ideen übernehmen',
         breadcrumbs: isPreview ? ['Smartboard', 'Bibliothek', 'Vorschau'] : ['Smartboard', 'Bibliothek'],
       }}

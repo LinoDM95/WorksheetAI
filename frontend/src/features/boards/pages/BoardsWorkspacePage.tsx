@@ -29,6 +29,7 @@ import {
   BOARDS_FOLDERS_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
+import { useAuth } from '../../../lib/authContext';
 import {
   createBoardFolder,
   deleteBoard,
@@ -42,8 +43,9 @@ import {
 import { cn } from '../../../lib/cn';
 import { LG_MEDIA_QUERY, useMediaQuery } from '../../../lib/useMediaQuery';
 import { MobileWorkspaceTabs, type WorkspaceMobileTab } from '../../../components/shell/MobileWorkspaceTabs';
-import type { BoardFolderDto, BoardListItem } from '../types';
+import type { BoardFolderDto, BoardListItem, BoardCodeUpdate } from '../types';
 import { BoardDetailPage } from './BoardDetailPage';
+import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
 import { NewBoardModal } from '../components/NewBoardModal';
 import { getPendingFirstOpenBoardIds, addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 
@@ -140,6 +142,7 @@ export function BoardDetailPageOutlet() {
 
 export function BoardsWorkspacePage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const selectedBoardId = useMemo(() => {
@@ -157,6 +160,8 @@ export function BoardsWorkspacePage() {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [pendingFirstOpenIds, setPendingFirstOpenIds] = useState<string[]>(() => [...getPendingFirstOpenBoardIds()]);
+  const [libraryPublishTarget, setLibraryPublishTarget] = useState<BoardListItem | null>(null);
+  const [libraryPublishError, setLibraryPublishError] = useState<string | null>(null);
 
   useEffect(() => {
     const onGallery = matchPath({ path: '/app/boards', end: true }, location.pathname);
@@ -312,15 +317,17 @@ export function BoardsWorkspacePage() {
   });
 
   const flagsMutation = useMutation({
-    mutationFn: (args: {
-      id: string;
-      library_public?: boolean;
-      student_link_enabled?: boolean;
-    }) => updateBoardCode(args.id, args),
+    mutationFn: ({ id, ...body }: { id: string } & BoardCodeUpdate) => updateBoardCode(id, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(variables.id) });
-      if (variables.library_public !== undefined) {
+      const affectsLibrary =
+        variables.library_public !== undefined ||
+        variables.library_listing_title !== undefined ||
+        variables.library_listing_topic !== undefined ||
+        variables.library_listing_description !== undefined ||
+        variables.library_sync_public_snapshot;
+      if (affectsLibrary) {
         queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
       }
     },
@@ -532,6 +539,13 @@ export function BoardsWorkspacePage() {
           >
             <Presentation size={14} className={cn('shrink-0', active ? 'text-indigo-600' : 'text-slate-400')} aria-hidden />
             <span className="min-w-0 flex-1 truncate">{titleLabel}</span>
+            {b.library_public && b.library_public_live_differs ? (
+              <span
+                className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                title="Öffentliche Bibliotheksfassung entspricht nicht dem gespeicherten Stand"
+                aria-label="Öffentliche Bibliotheksfassung veraltet"
+              />
+            ) : null}
           </NavLink>
         </div>
         <IconButton
@@ -793,6 +807,43 @@ export function BoardsWorkspacePage() {
         onPendingHighlightChange={() => setPendingFirstOpenIds([...getPendingFirstOpenBoardIds()])}
       />
 
+      <BoardLibraryPublishModal
+        open={libraryPublishTarget !== null}
+        mode="publish"
+        onClose={() => {
+          if (flagsMutation.isPending) return;
+          setLibraryPublishTarget(null);
+          setLibraryPublishError(null);
+        }}
+        busy={flagsMutation.isPending}
+        error={libraryPublishError}
+        privateHints={{
+          title: libraryPublishTarget?.title ?? '',
+          topic: libraryPublishTarget?.topic ?? '',
+        }}
+        onSubmit={(p) => {
+          const t = libraryPublishTarget;
+          if (!t) return;
+          setLibraryPublishError(null);
+          flagsMutation.mutate(
+            { id: t.id, library_public: true, ...p },
+            {
+              onSuccess: () => {
+                setLibraryPublishTarget(null);
+              },
+              onError: (err: unknown) => {
+                const detail =
+                  (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                  (err as Error)?.message ||
+                  'Veröffentlichen fehlgeschlagen.';
+                setLibraryPublishError(detail);
+              },
+            },
+          );
+        }}
+        moderationRequired={!user?.is_staff}
+      />
+
       {folderMenu ? (
         <FolderContextMenuPortal
           state={folderMenu}
@@ -833,11 +884,21 @@ export function BoardsWorkspacePage() {
           }}
           onDuplicate={() => duplicateMutation.mutate(boardMenuTarget.id)}
           onToggleLibrary={() => {
-            flagsMutation.mutate({
-              id: boardMenuTarget.id,
-              library_public: !boardMenuTarget.library_public,
-            });
+            if (!boardMenuTarget) return;
             closeBoardMenu();
+            if (boardMenuTarget.library_public) {
+              const ok = window.confirm(
+                'Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
+              );
+              if (!ok) return;
+              flagsMutation.mutate({
+                id: boardMenuTarget.id,
+                library_public: false,
+              });
+              return;
+            }
+            setLibraryPublishError(null);
+            setLibraryPublishTarget(boardMenuTarget);
           }}
           onToggleStudentLink={() => {
             flagsMutation.mutate({

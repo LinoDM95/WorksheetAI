@@ -12,6 +12,8 @@ import { canAddSlot, useBoardBuilderState } from './useBoardBuilderState';
 import { BlockLibraryPanel } from './BlockLibraryPanel';
 import { PageEditor, type PageEditorHandle } from './PageEditor';
 import { PagesRail } from './PagesRail';
+import { LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
+import { cn } from '../../../lib/cn';
 
 type Props = {
   open: boolean;
@@ -100,6 +102,10 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
   const handleSubmit = () => {
     if (submitDisabled) return;
     setPlanError(null);
+    if (!plan.subject.trim()) {
+      setPlanError('Bitte wähle ein Fach.');
+      return;
+    }
     const snap = pageEditorRef.current?.getBulletsSnapshot() ?? currentPage.bullets;
     const pagesMerged = plan.pages.map((p, idx) => (idx === pageIndex ? { ...p, bullets: snap } : p));
     const emptyBulletPages = pagesMerged.filter((p) => p.bullets.length === 0).length;
@@ -165,12 +171,24 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
 
         {/* Globale Meta + Theme */}
         <div className="flex shrink-0 flex-wrap items-end gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2">
-          <Field label="Fach" className="min-w-[140px]">
-            <TextInput
+          <Field label="Fach" htmlFor="bb-subject" className="min-w-[180px]">
+            <select
+              id="bb-subject"
+              className={cn(
+                'select h-9 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-0 text-sm text-slate-900',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30',
+              )}
               value={plan.subject}
               onChange={(e) => dispatch({ type: 'set_meta', field: 'subject', value: e.target.value })}
-              placeholder="z. B. Mathematik"
-            />
+              aria-required
+            >
+              <option value="">Bitte wählen …</option>
+              {LIBRARY_SUBJECT_FILTER_LABELS.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Klasse" className="min-w-[80px]">
             <TextInput

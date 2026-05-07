@@ -114,6 +114,17 @@ describe('buildFreeHtmlSrcDoc', () => {
     expect(on).toContain('animation: none !important');
     expect(on).toContain('wa-frozen-thumb');
     expect(on).toContain('2200');
+
+    const customDelay = buildFreeHtmlSrcDoc({
+      html: '<div>x</div>',
+      css: '',
+      javascript: '',
+      scriptsEnabled: false,
+      frozenPreview: true,
+      frozenPreviewFreezeDelayMs: 0,
+    });
+    expect(customDelay).toContain('Frozen library thumbnail');
+    expect(customDelay).toContain('}, 0);');
   });
 
   it('injects touch-friendly base css (min 56px, touch-action manipulation)', () => {

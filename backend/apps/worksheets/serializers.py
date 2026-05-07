@@ -2,6 +2,7 @@ from rest_framework import serializers
 import copy
 
 from django.conf import settings
+from django.utils import timezone
 
 from .models import Worksheet
 from .services.render_model import build_render_model
@@ -10,6 +11,19 @@ from .services.content_blocks import apply_page_coalesce_to_content, apply_page_
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _planned_duration_from_worksheet(obj: Worksheet) -> int | None:
+    meta = obj.generation_meta if isinstance(obj.generation_meta, dict) else {}
+    raw = meta.get('time_budget_minutes')
+    if raw is not None:
+        try:
+            v = int(raw)
+            if v > 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+    return None
 
 
 def build_curriculum_usage_payload(worksheet: Worksheet) -> dict:
@@ -54,13 +68,21 @@ class WorksheetSerializer(serializers.ModelSerializer):
     curriculum_warning = serializers.SerializerMethodField()
     curriculum_show_usage = serializers.SerializerMethodField()
     curriculum_usage_panel = serializers.SerializerMethodField()
+    viewer_is_owner = serializers.SerializerMethodField()
 
     class Meta:
         model=Worksheet
         fields=['id','title','subject','grade','topic','page_setup','content','render_model','status',
                 'generation_meta','pattern','pattern_name','created_at','updated_at',
-                'curriculum_warning','curriculum_show_usage','curriculum_usage_panel']
-        read_only_fields=['owner','created_at','updated_at','generation_meta']
+                'curriculum_warning','curriculum_show_usage','curriculum_usage_panel',
+                'library_public','library_moderation_status','library_published_at','viewer_is_owner']
+        read_only_fields=['owner','created_at','updated_at','generation_meta','library_published_at','viewer_is_owner','library_moderation_status']
+
+    def get_viewer_is_owner(self, obj: Worksheet) -> bool:
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return False
+        return obj.owner_id == request.user.id
 
     @staticmethod
     def get_curriculum_warning(obj: Worksheet) -> str | None:
@@ -112,12 +134,37 @@ class WorksheetSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         content = validated_data.get('content')
+        request = self.context.get('request')
+        is_staff = bool(request and getattr(request.user, 'is_staff', False))
+        MOD = Worksheet.LibraryModerationStatus
+
+        if 'library_public' in validated_data:
+            wants = bool(validated_data['library_public'])
+            if wants:
+                if is_staff:
+                    validated_data['library_moderation_status'] = MOD.APPROVED
+                    validated_data['library_public'] = True
+                else:
+                    validated_data['library_moderation_status'] = MOD.PENDING
+                    validated_data['library_public'] = False
+            else:
+                validated_data['library_public'] = False
+                validated_data['library_moderation_status'] = MOD.NONE
+
+        was_catalog = instance.is_catalog_listed()
         if isinstance(content, dict):
             c = copy.deepcopy(content)
             c, _ = apply_page_coalesce_to_content(c)
             c, _ = apply_page_overflow_reflow(c)
             validated_data['content'] = c
         instance = super().update(instance, validated_data)
+        if 'library_public' in validated_data:
+            now_catalog = instance.is_catalog_listed()
+            if now_catalog and not was_catalog:
+                instance.library_published_at = timezone.now()
+            elif not now_catalog:
+                instance.library_published_at = None
+            instance.save(update_fields=['library_published_at', 'updated_at'])
         if 'content' in validated_data:
             req={
                 'theme':(instance.render_model or {}).get('theme','neutral'),
@@ -134,3 +181,54 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 instance.title=str(ct)[:255]
             instance.save(update_fields=['render_model','title','updated_at'])
         return instance
+
+
+class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
+    """Leichtgewichtiger Katalog-Eintrag (ohne content/render_model)."""
+
+    kind = serializers.SerializerMethodField()
+    grade = serializers.SerializerMethodField()
+    owner_label = serializers.SerializerMethodField()
+    viewer_is_owner = serializers.SerializerMethodField()
+    planned_duration_minutes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Worksheet
+        fields = (
+            'kind',
+            'id',
+            'title',
+            'subject',
+            'grade',
+            'topic',
+            'planned_duration_minutes',
+            'library_published_at',
+            'owner_label',
+            'viewer_is_owner',
+        )
+
+    def get_kind(self, obj: Worksheet) -> str:
+        return 'worksheet'
+
+    def get_grade(self, obj: Worksheet) -> str:
+        return str(obj.grade) if obj.grade is not None else ''
+
+    def get_owner_label(self, obj: Worksheet) -> str:
+        o = obj.owner
+        if not o:
+            return ''
+        full = (o.get_full_name() or '').strip()
+        if full:
+            return full
+        if o.username:
+            return o.username
+        return (o.email or '').split('@')[0] or 'Unbekannt'
+
+    def get_viewer_is_owner(self, obj: Worksheet) -> bool:
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return False
+        return obj.owner_id == request.user.id
+
+    def get_planned_duration_minutes(self, obj: Worksheet) -> int | None:
+        return _planned_duration_from_worksheet(obj)

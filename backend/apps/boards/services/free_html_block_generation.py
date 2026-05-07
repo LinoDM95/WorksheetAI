@@ -12,6 +12,7 @@ from typing import Any
 from django.conf import settings
 
 from ..models import Board
+from ..grade_bounds import infer_bounds_from_grade_text
 from ..owner import resolve_board_owner
 from .board_revision_head import create_initial_revision_if_absent
 from .blocks import (
@@ -112,6 +113,8 @@ class FreeHtmlBlockBoardGenerationService:
             title = (spec.title or composed.get('title') or 'Board')[:255]
             desc = (spec.description or composed.get('description') or '')[:5000]
 
+            gf, gt = infer_bounds_from_grade_text(str(spec.grade or ''))
+
             gen_input: dict[str, Any] = {
                 'composition_mode': 'blocks',
                 'composition_plan': self.raw_plan,
@@ -130,6 +133,8 @@ class FreeHtmlBlockBoardGenerationService:
                 description=desc,
                 subject=str(spec.subject or '')[:120],
                 grade=str(spec.grade or '')[:60],
+                grade_from=gf,
+                grade_to=gt,
                 topic=str(spec.topic or '')[:220],
                 board_type='interactive_board',
                 status='generated' if ok else 'draft',

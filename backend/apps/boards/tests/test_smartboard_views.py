@@ -74,12 +74,27 @@ class SmartboardPipelineApiTests(TestCase):
         self.assertIn('revision', resp.data)
         self.assertEqual(BoardRevision.objects.filter(board=self.board).count(), 1)
 
+    def test_generate_rejects_empty_prompt(self) -> None:
+        body = {
+            'prompt': '   ',
+            'subject': 'Test',
+            'topic': 'Thema',
+            'grade_from': 5,
+            'grade_to': 5,
+        }
+        resp = self.client.post('/api/boards/generate/', body, format='json')
+        self.assertEqual(resp.status_code, 400, getattr(resp, 'data', resp.content))
+        self.assertIn('Prompt', str(resp.data.get('detail', '')))
+
     def test_generate_stream_returns_ndjson_done(self) -> None:
         import json
 
         body = {
             'prompt': 'Mini-Test: eine Seite mit einem großen Start-Button (min. 64px).',
             'subject': 'Test',
+            'topic': 'Smoke',
+            'grade_from': 5,
+            'grade_to': 5,
         }
         resp = self.client.post(
             '/api/boards/generate/?stream=1',

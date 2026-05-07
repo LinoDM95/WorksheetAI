@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Play, X } from 'lucide-react';
 import { Logo } from '../../../components/Logo';
-import { Button, IconButton } from '../../../components/ui';
+import { IconButton } from '../../../components/ui';
 import {
   exitElementFullscreen,
   isDocumentFullscreenActive,
@@ -175,32 +176,90 @@ export function StudentBoardPage() {
   if (!sessionStarted) {
     return (
       <div
-        className="flex min-h-[100dvh] flex-col items-center justify-center gap-8 bg-gradient-to-b from-slate-100 via-white to-indigo-50 px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]"
+        className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-white px-6 pb-[max(1.75rem,env(safe-area-inset-bottom))] pt-[max(1.75rem,env(safe-area-inset-top))]"
         role="region"
         aria-label="Startbereich Schüler-Übung"
       >
-        <div className="flex flex-col items-center gap-5 text-center">
-          <Logo tagline={false} className="scale-125 sm:scale-150" />
-          {data.title ? (
-            <h1 className="max-w-lg text-balance text-xl font-semibold text-slate-900 sm:text-2xl">{data.title}</h1>
-          ) : null}
-          <p className="max-w-sm text-sm text-slate-600">
-            Nur diese Übung — kein Login. Tippe auf den Button, dann wechselt das Gerät in den Vollbildmodus.
-          </p>
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -top-40 -left-32 h-[36rem] w-[36rem] rounded-full bg-indigo-300/40 blur-[120px]" />
+          <div className="absolute -bottom-44 -right-32 h-[40rem] w-[40rem] rounded-full bg-violet-300/35 blur-[120px]" />
+          <div className="absolute left-1/2 top-1/3 h-[24rem] w-[24rem] -translate-x-1/2 rounded-full bg-sky-200/35 blur-[110px]" />
+          <div
+            className="absolute inset-0 opacity-[0.04]"
+            style={{
+              backgroundImage: 'radial-gradient(circle at 1px 1px, #0f172a 1px, transparent 0)',
+              backgroundSize: '22px 22px',
+            }}
+          />
         </div>
-        <Button
-          type="button"
-          size="lg"
-          className="min-h-[3.5rem] min-w-[min(100%,16rem)] px-8 text-lg font-semibold shadow-lg sm:min-h-[4rem] sm:text-xl"
-          loading={starting}
-          onClick={() => void handleStart()}
-          aria-label="Übung im Vollbild starten"
+
+        <motion.header
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.33, 1, 0.68, 1] }}
+          className="relative z-10 flex justify-center"
         >
-          🚀 Übung starten
-        </Button>
-        <p className="max-w-xs text-center text-xs text-slate-500">
-          Auf manchen iPhones blendet Safari im Querformat die Adresszeile oft nicht aus — dann Hochformat nutzen oder die Seite zum Home-Bildschirm hinzufügen. Sonst startet die Übung wie gewohnt.
-        </p>
+          <Logo tagline={false} />
+        </motion.header>
+
+        <motion.main
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.33, 1, 0.68, 1], delay: 0.08 }}
+          className="relative z-10 flex flex-1 flex-col items-center justify-center gap-10 text-center"
+        >
+          <div className="flex flex-col items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200/70 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600 backdrop-blur">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />
+              Übung
+            </span>
+            <h1 className="max-w-md text-balance text-2xl font-semibold leading-tight text-slate-900 sm:text-[28px]">
+              {data.title ? data.title : 'Bereit, loszulegen?'}
+            </h1>
+          </div>
+
+          <motion.button
+            type="button"
+            onClick={() => void handleStart()}
+            disabled={starting}
+            aria-label="Übung im Vollbild starten"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.45, ease: [0.33, 1, 0.68, 1], delay: 0.18 }}
+            whileHover={{ y: -2 }}
+            whileTap={{ y: 0, scale: 0.98 }}
+            className="group relative inline-flex items-center justify-center gap-3.5 rounded-full bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 py-3 pl-3 pr-7 text-base font-semibold text-white shadow-[0_24px_48px_-16px_rgba(79,70,229,0.55),inset_0_1px_0_rgba(255,255,255,0.18)] transition-shadow duration-200 hover:shadow-[0_28px_56px_-16px_rgba(79,70,229,0.65),inset_0_1px_0_rgba(255,255,255,0.22)] active:shadow-[0_18px_36px_-16px_rgba(79,70,229,0.5),inset_0_1px_0_rgba(255,255,255,0.18)] disabled:opacity-70 sm:py-3.5 sm:pl-4 sm:pr-9 sm:text-lg"
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-indigo-500/30 opacity-70 blur-xl transition-opacity duration-300 group-hover:opacity-100"
+            />
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-white/15 ring-1 ring-white/25 sm:h-11 sm:w-11">
+              {starting ? (
+                <span className="loading-dots" aria-hidden>
+                  <span className="loading-dots__dot" />
+                  <span className="loading-dots__dot" />
+                  <span className="loading-dots__dot" />
+                </span>
+              ) : (
+                <Play size={18} aria-hidden className="ml-0.5 fill-current" />
+              )}
+            </span>
+            <span>Starten</span>
+          </motion.button>
+        </motion.main>
+
+        <motion.footer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="relative z-10 flex flex-col items-center gap-1.5 text-center"
+        >
+          <p className="text-xs font-medium text-slate-500">Kein Login · öffnet im Vollbild</p>
+          <p className="max-w-[34ch] text-[11px] leading-snug text-slate-400">
+            iPhone-Querformat: bleibt die Adresszeile, kurz hochkant halten.
+          </p>
+        </motion.footer>
       </div>
     );
   }

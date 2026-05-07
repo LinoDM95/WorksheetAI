@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, MessageCircle, SlidersHorizontal, Star } from 'lucide-react';
+import { ChevronRight, FileText, MessageCircle, SlidersHorizontal, Star } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -14,6 +14,8 @@ import {
 import { cn } from '../../../lib/cn';
 import {
   boardsLibraryQueryKey,
+  fetchWorksheetLibrary,
+  worksheetsLibraryQueryKey,
   type BoardLibraryScope,
 } from '../../../lib/listQueries';
 import { fetchBoardLibrary } from '../boardsApi';
@@ -21,8 +23,25 @@ import {
   BOARD_LIBRARY_TECH_FILTER_IDS,
   LIBRARY_TECH_LABELS,
 } from '../lib/boardLibraryLabels';
+import {
+  canonicalSubjectLabel,
+  LIBRARY_GRADE_STEPS,
+  matchesLibraryGradeFilter,
+  matchesLibraryPurpose,
+  matchesLibrarySubjectFilter,
+  uniqueCanonicalSubjectLabelsFromRows,
+  type LibraryPurposeFilter,
+} from '../lib/libraryCatalogFilters';
 import { BoardLibraryThumbnail } from '../components/library/BoardLibraryThumbnail';
+import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
+import { LibrarySubjectChipsScrollBar } from '../components/library/LibrarySubjectChipsScrollBar';
 import type { BoardLibraryItem, LibraryId } from '../types';
+import type { WorksheetLibraryItem } from '../../../types';
+
+type ResourceKindFilter = 'all' | 'boards' | 'worksheets';
+
+type BoardCatalogRow = BoardLibraryItem & { kind: 'board' };
+type LibraryCatalogRow = BoardCatalogRow | WorksheetLibraryItem;
 
 type LibrarySort = 'new' | 'top_rated' | 'most_rated' | 'title' | 'subject';
 
@@ -34,6 +53,20 @@ const SORT_OPTIONS: { value: LibrarySort; label: string }[] = [
   { value: 'subject', label: 'Nach Fach gruppiert' },
 ];
 
+const SORT_VALUES = new Set<LibrarySort>(SORT_OPTIONS.map((o) => o.value));
+
+function readSortFromParams(sp: URLSearchParams): LibrarySort {
+  const v = sp.get('sort');
+  if (v && SORT_VALUES.has(v as LibrarySort)) return v as LibrarySort;
+  return 'new';
+}
+
+function readKindFromParams(sp: URLSearchParams): ResourceKindFilter {
+  const k = sp.get('kind');
+  if (k === 'all' || k === 'boards' || k === 'worksheets') return k;
+  return 'all';
+}
+
 const MIN_RATING_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Jede Bewertung' },
   { value: '3', label: 'Ab Ø 3,0' },
@@ -42,70 +75,287 @@ const MIN_RATING_OPTIONS: { value: string; label: string }[] = [
   { value: '4.5', label: 'Ab Ø 4,5' },
 ];
 
+function BoardLibraryCatalogCard({
+  board,
+  index,
+  libraryScope,
+}: {
+  board: BoardLibraryItem;
+  index: number;
+  libraryScope: BoardLibraryScope;
+}) {
+  const com = board.comment_count ?? 0;
+  const isViewerOwner = Boolean(board.viewer_is_owner);
+  const ratingCompact = board.avg_rating != null ? board.avg_rating.toFixed(1) : null;
+  const techPreview = (board.used_libraries ?? []).slice(0, 2);
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.24) }}
+      className="min-w-0"
+    >
+      <Link
+        to={board.id}
+        aria-label={
+          libraryScope === 'mine'
+            ? `${board.title || 'Board'} — Vorschau öffnen`
+            : `${board.title || 'Board'} — Community-Vorschau öffnen`
+        }
+        className={cn(
+          'group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)]',
+          'shadow-sm outline-none ring-indigo-400/80 transition-[transform,box-shadow,border-color] duration-150',
+          'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
+          'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
+        )}
+      >
+        <div className="relative shrink-0 overflow-hidden">
+          {techPreview.length > 0 ? (
+            <div className="pointer-events-none absolute left-2 top-2 z-20 flex max-w-[calc(100%-1rem)] flex-wrap gap-1">
+              {techPreview.map((lib) => (
+                <span
+                  key={lib}
+                  className="truncate rounded-lg bg-slate-950/55 px-2 py-0.5 text-[10px] font-semibold leading-tight text-white shadow-sm backdrop-blur-md"
+                >
+                  {LIBRARY_TECH_LABELS[lib] ?? lib}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-14 bg-gradient-to-t from-slate-950/35 to-transparent',
+              'opacity-80 transition-opacity duration-200 group-hover:opacity-95',
+            )}
+          />
+          <BoardLibraryThumbnail
+            boardId={board.id}
+            html={board.html}
+            css={board.css}
+            javascript={board.javascript}
+            usedLibraries={board.used_libraries ?? []}
+            usedDatasets={board.used_datasets}
+            density="storefront"
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 pb-2.5 pt-2.5 sm:gap-2 sm:px-3 sm:pb-3 sm:pt-3">
+          <div className="flex items-start gap-2">
+            <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">
+              <span className="line-clamp-2">{board.title || 'Ohne Titel'}</span>
+            </h2>
+            {isViewerOwner ? (
+              <Badge tone="primary" className="shrink-0 !rounded-lg !px-2 !py-0.5 !text-[10px] font-semibold">
+                Deins
+              </Badge>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+            <span className="line-clamp-1 min-w-0">
+              {[board.subject, board.grade].filter(Boolean).join(' · ') || 'Ohne Angabe zu Fach oder Klasse'}
+            </span>
+            <LibraryPlannedDuration minutes={board.planned_duration_minutes} />
+          </div>
+          <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
+              <span className="inline-flex items-center gap-1 tabular-nums text-slate-700">
+                <Star size={13} strokeWidth={2} className="shrink-0 text-amber-500" aria-hidden />
+                <span className="font-medium">{ratingCompact ?? '—'}</span>
+                <span className="font-normal text-slate-400">({board.rating_count})</span>
+              </span>
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <MessageCircle size={13} strokeWidth={2} className="shrink-0 text-indigo-500" aria-hidden />
+                {com}
+              </span>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100/80 transition-[background-color,color] group-hover:bg-indigo-600 group-hover:text-white group-hover:ring-indigo-500">
+              Ansehen
+              <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
+            </span>
+          </div>
+        </div>
+      </Link>
+    </motion.article>
+  );
+}
+
+function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; index: number }) {
+  const isViewerOwner = Boolean(ws.viewer_is_owner);
+  const gradeLine = [ws.subject, ws.grade ? `Klasse ${ws.grade}` : ''].filter(Boolean).join(' · ');
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.24) }}
+      className="min-w-0"
+    >
+      <Link
+        to={`/app/worksheets/${ws.id}`}
+        aria-label={`${ws.title || 'Arbeitsblatt'} — öffnen`}
+        className={cn(
+          'group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)]',
+          'shadow-sm outline-none ring-indigo-400/80 transition-[transform,box-shadow,border-color] duration-150',
+          'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
+          'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
+        )}
+      >
+        <div className="relative flex aspect-[16/10] shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 to-slate-50">
+          <FileText className="h-12 w-12 text-slate-300" strokeWidth={1.25} aria-hidden />
+          <span className="pointer-events-none absolute left-2 top-2 rounded-lg bg-violet-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+            Arbeitsblatt
+          </span>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 pb-2.5 pt-2.5 sm:gap-2 sm:px-3 sm:pb-3 sm:pt-3">
+          <div className="flex items-start gap-2">
+            <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">
+              <span className="line-clamp-2">{ws.title || 'Ohne Titel'}</span>
+            </h2>
+            {isViewerOwner ? (
+              <Badge tone="primary" className="shrink-0 !rounded-lg !px-2 !py-0.5 !text-[10px] font-semibold">
+                Deins
+              </Badge>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-slate-500">
+            <span className="line-clamp-1 min-w-0">{gradeLine || 'Ohne Angabe zu Fach oder Klasse'}</span>
+            <LibraryPlannedDuration minutes={ws.planned_duration_minutes} />
+          </div>
+          <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <p className="text-[12px] text-slate-400">Druck & Vorschau im Editor</p>
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-100/90 transition-[background-color,color] group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-500">
+              Öffnen
+              <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
+            </span>
+          </div>
+        </div>
+      </Link>
+    </motion.article>
+  );
+}
+
 export function BoardLibraryListPage() {
+  const location = useLocation();
+
   const [libraryScope, setLibraryScope] = useState<BoardLibraryScope>('all');
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [query, setQuery] = useState('');
-  const [subjectFilter, setSubjectFilter] = useState('');
+  const [query, setQuery] = useState(() => new URLSearchParams(location.search).get('q') ?? '');
+  const [purposeFilter, setPurposeFilter] = useState<LibraryPurposeFilter>('');
+  const [subjectFilter, setSubjectFilter] = useState(() => new URLSearchParams(location.search).get('subject') ?? '');
   const [gradeFilter, setGradeFilter] = useState('');
-  const [techFilter, setTechFilter] = useState('');
+  const [techFilter, setTechFilter] = useState(() => new URLSearchParams(location.search).get('tech') ?? '');
   const [minRating, setMinRating] = useState('');
-  const [sort, setSort] = useState<LibrarySort>('new');
+  const [sort, setSort] = useState<LibrarySort>(() => readSortFromParams(new URLSearchParams(location.search)));
+  const [resourceKind, setResourceKind] = useState<ResourceKindFilter>(() =>
+    readKindFromParams(new URLSearchParams(location.search)),
+  );
+
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    setSort(readSortFromParams(sp));
+    setSubjectFilter(sp.get('subject') ?? '');
+    setTechFilter(sp.get('tech') ?? '');
+    setResourceKind(readKindFromParams(sp));
+    setQuery(sp.get('q') ?? '');
+  }, [location.search]);
 
   const libraryKey = boardsLibraryQueryKey(libraryScope);
+  const worksheetLibKey = worksheetsLibraryQueryKey(libraryScope);
 
-  const { data: items = [], isPending, isError } = useQuery({
+  const loadBoards = resourceKind !== 'worksheets';
+  const loadWorksheets = resourceKind !== 'boards';
+
+  const {
+    data: boardItems = [],
+    isPending: boardsPending,
+    isError: boardsError,
+  } = useQuery({
     queryKey: libraryKey,
     queryFn: () => fetchBoardLibrary(libraryScope),
+    enabled: loadBoards,
     staleTime: 30_000,
   });
 
-  const subjectOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const b of items) {
-      const s = b.subject?.trim();
-      if (s) set.add(s);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, 'de'));
-  }, [items]);
+  const {
+    data: worksheetItems = [],
+    isPending: worksheetsPending,
+    isError: worksheetsError,
+  } = useQuery({
+    queryKey: worksheetLibKey,
+    queryFn: () => fetchWorksheetLibrary(libraryScope),
+    enabled: loadWorksheets,
+    staleTime: 30_000,
+  });
 
-  const gradeOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const b of items) {
-      const g = b.grade?.trim();
-      if (g) set.add(g);
-    }
-    return [...set].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
-  }, [items]);
+  const isPending = (loadBoards && boardsPending) || (loadWorksheets && worksheetsPending);
+  const isError = Boolean(boardsError || worksheetsError);
+
+  const catalogRows = useMemo((): LibraryCatalogRow[] => {
+    const boards: BoardCatalogRow[] = loadBoards
+      ? boardItems.map((b) => ({ ...b, kind: 'board' as const }))
+      : [];
+    const sheets = loadWorksheets ? worksheetItems : [];
+    if (resourceKind === 'boards') return boards;
+    if (resourceKind === 'worksheets') return sheets;
+    return [...boards, ...sheets];
+  }, [boardItems, worksheetItems, loadBoards, loadWorksheets, resourceKind]);
+
+  const subjectFilterOptions = useMemo(
+    () => uniqueCanonicalSubjectLabelsFromRows(catalogRows),
+    [catalogRows],
+  );
+
+  useEffect(() => {
+    if (isPending) return;
+    if (!subjectFilter) return;
+    if (subjectFilterOptions.includes(subjectFilter)) return;
+    setSubjectFilter('');
+  }, [isPending, subjectFilter, subjectFilterOptions]);
+
+  const sourceCount = (loadBoards ? boardItems.length : 0) + (loadWorksheets ? worksheetItems.length : 0);
 
   const techOptions = useMemo(() => {
     const set = new Set<LibraryId>(BOARD_LIBRARY_TECH_FILTER_IDS);
-    for (const b of items) {
+    for (const b of boardItems) {
       for (const lib of b.used_libraries ?? []) set.add(lib);
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'de'));
-  }, [items]);
+  }, [boardItems]);
 
   const filteredSorted = useMemo(() => {
     const q = query.trim().toLowerCase();
     const min = minRating ? parseFloat(minRating) : null;
 
-    let list = items.filter((b) => {
+    let list = catalogRows.filter((row) => {
+      if (row.kind === 'board') {
+        const b = row;
+        if (q) {
+          const hay = `${b.title} ${b.subject} ${b.topic}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (purposeFilter && !matchesLibraryPurpose(b.board_type, purposeFilter)) return false;
+        if (subjectFilter && !matchesLibrarySubjectFilter(b.subject, subjectFilter)) return false;
+        if (gradeFilter && !matchesLibraryGradeFilter(b.grade, gradeFilter, b.grade_from, b.grade_to)) return false;
+        if (techFilter && !(b.used_libraries ?? []).includes(techFilter as LibraryId)) return false;
+        if (min != null && !Number.isNaN(min)) {
+          if (b.avg_rating == null || b.avg_rating < min) return false;
+        }
+        return true;
+      }
+      const w = row;
       if (q) {
-        const hay = `${b.title} ${b.subject} ${b.topic} ${b.owner_label}`.toLowerCase();
+        const hay = `${w.title} ${w.subject} ${w.topic}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (subjectFilter && b.subject !== subjectFilter) return false;
-      if (gradeFilter && b.grade !== gradeFilter) return false;
-      if (techFilter && !(b.used_libraries ?? []).includes(techFilter as LibraryId)) return false;
-      if (min != null && !Number.isNaN(min)) {
-        if (b.avg_rating == null || b.avg_rating < min) return false;
-      }
+      if (purposeFilter) return false;
+      if (subjectFilter && !matchesLibrarySubjectFilter(w.subject, subjectFilter)) return false;
+      if (gradeFilter && !matchesLibraryGradeFilter(w.grade, gradeFilter)) return false;
+      if (techFilter) return false;
+      if (min != null && !Number.isNaN(min)) return false;
       return true;
     });
 
-    const pub = (b: BoardLibraryItem) =>
-      b.library_published_at ? new Date(b.library_published_at).getTime() : 0;
+    const pub = (row: LibraryCatalogRow) =>
+      row.library_published_at ? new Date(row.library_published_at).getTime() : 0;
 
     switch (sort) {
       case 'new':
@@ -113,15 +363,17 @@ export function BoardLibraryListPage() {
         break;
       case 'top_rated':
         list.sort((a, b) => {
-          const av = a.avg_rating ?? -1;
-          const bv = b.avg_rating ?? -1;
+          const av = a.kind === 'board' ? (a.avg_rating ?? -1) : -1;
+          const bv = b.kind === 'board' ? (b.avg_rating ?? -1) : -1;
           if (bv !== av) return bv - av;
           return pub(b) - pub(a);
         });
         break;
       case 'most_rated':
         list.sort((a, b) => {
-          if (b.rating_count !== a.rating_count) return b.rating_count - a.rating_count;
+          const ac = a.kind === 'board' ? a.rating_count : 0;
+          const bc = b.kind === 'board' ? b.rating_count : 0;
+          if (bc !== ac) return bc - ac;
           return pub(b) - pub(a);
         });
         break;
@@ -130,7 +382,7 @@ export function BoardLibraryListPage() {
         break;
       case 'subject':
         list.sort((a, b) => {
-          const sa = (a.subject || '\uffff').localeCompare(b.subject || '\uffff', 'de');
+          const sa = canonicalSubjectLabel(a.subject).localeCompare(canonicalSubjectLabel(b.subject), 'de');
           if (sa !== 0) return sa;
           return (a.title || '').localeCompare(b.title || '', 'de');
         });
@@ -140,179 +392,82 @@ export function BoardLibraryListPage() {
     }
 
     return list;
-  }, [items, query, subjectFilter, gradeFilter, techFilter, minRating, sort]);
+  }, [catalogRows, query, purposeFilter, subjectFilter, gradeFilter, techFilter, minRating, sort]);
 
   const groupedBySubject = useMemo(() => {
     if (sort !== 'subject') return null;
-    const map = new Map<string, BoardLibraryItem[]>();
-    for (const b of filteredSorted) {
-      const k = b.subject?.trim() || 'Ohne Fach';
+    const map = new Map<string, LibraryCatalogRow[]>();
+    for (const row of filteredSorted) {
+      const k = canonicalSubjectLabel(row.subject);
       if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(b);
+      map.get(k)!.push(row);
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'de'));
   }, [filteredSorted, sort]);
 
-  const ownerCount = useMemo(() => new Set(items.map((b) => b.owner_label)).size, [items]);
-
-  const subjectQuickChips = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const b of items) {
-      const s = b.subject?.trim();
-      if (!s) continue;
-      counts.set(s, (counts.get(s) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'))
-      .map(([s]) => s)
-      .slice(0, 14);
-  }, [items]);
+  const ownerCount = useMemo(() => {
+    const labels = new Set<string>();
+    for (const b of boardItems) labels.add(b.owner_label);
+    for (const w of worksheetItems) labels.add(w.owner_label);
+    return labels.size;
+  }, [boardItems, worksheetItems]);
 
   const clearFilters = () => {
     setQuery('');
+    setPurposeFilter('');
     setSubjectFilter('');
     setGradeFilter('');
     setTechFilter('');
     setMinRating('');
     setSort('new');
+    setResourceKind('all');
   };
 
   const activeFilterCount =
+    (resourceKind !== 'all' ? 1 : 0) +
+    (purposeFilter ? 1 : 0) +
     (subjectFilter ? 1 : 0) +
     (gradeFilter ? 1 : 0) +
     (techFilter ? 1 : 0) +
     (minRating ? 1 : 0) +
     (sort !== 'new' ? 1 : 0);
 
-  const cc = (b: BoardLibraryItem) => b.comment_count ?? 0;
-  const vo = (b: BoardLibraryItem) => Boolean(b.viewer_is_owner);
-
-  const renderCompactCard = (b: BoardLibraryItem, index: number) => {
-    const com = cc(b);
-    const ratingCompact = b.avg_rating != null ? b.avg_rating.toFixed(1) : null;
-    const techPreview = (b.used_libraries ?? []).slice(0, 2);
-    return (
-      <motion.article
-        key={b.id}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.24) }}
-        className="min-w-0"
-      >
-        <Link
-          to={b.id}
-          aria-label={
-            libraryScope === 'mine'
-              ? `${b.title || 'Board'} — Vorschau und Präsentation`
-              : `${b.title || 'Board'} — Community-Vorschau öffnen`
-          }
-          className={cn(
-            'group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)]',
-            'shadow-sm outline-none ring-indigo-400/80 transition-[transform,box-shadow,border-color] duration-150',
-            'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
-            'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
-          )}
-        >
-          <div className="relative shrink-0 overflow-hidden">
-            {techPreview.length > 0 ? (
-              <div className="pointer-events-none absolute left-2 top-2 z-20 flex max-w-[calc(100%-1rem)] flex-wrap gap-1">
-                {techPreview.map((lib) => (
-                  <span
-                    key={lib}
-                    className="truncate rounded-lg bg-slate-950/55 px-2 py-0.5 text-[10px] font-semibold leading-tight text-white shadow-sm backdrop-blur-md"
-                  >
-                    {LIBRARY_TECH_LABELS[lib] ?? lib}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            <div
-              aria-hidden
-              className={cn(
-                'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-14 bg-gradient-to-t from-slate-950/35 to-transparent',
-                'opacity-80 transition-opacity duration-200 group-hover:opacity-95',
-              )}
-            />
-            <BoardLibraryThumbnail
-              boardId={b.id}
-              html={b.html}
-              css={b.css}
-              javascript={b.javascript}
-              usedLibraries={b.used_libraries ?? []}
-              usedDatasets={b.used_datasets}
-              density="storefront"
-            />
-          </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 pb-2.5 pt-2.5 sm:gap-2 sm:px-3 sm:pb-3 sm:pt-3">
-            <div className="flex items-start gap-2">
-              <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">
-                <span className="line-clamp-2">{b.title || 'Ohne Titel'}</span>
-              </h2>
-              {vo(b) ? (
-                <Badge tone="primary" className="shrink-0 !rounded-lg !px-2 !py-0.5 !text-[10px] font-semibold">
-                  Deins
-                </Badge>
-              ) : null}
-            </div>
-            <p className="line-clamp-1 text-[13px] text-slate-500">
-              {[b.subject, b.grade].filter(Boolean).join(' · ') || 'Ohne Angabe zu Fach oder Klasse'}
-            </p>
-            <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
-                <span className="inline-flex items-center gap-1 tabular-nums text-slate-700">
-                  <Star size={13} strokeWidth={2} className="shrink-0 text-amber-500" aria-hidden />
-                  <span className="font-medium">{ratingCompact ?? '—'}</span>
-                  <span className="font-normal text-slate-400">
-                    ({b.rating_count})
-                  </span>
-                </span>
-                <span className="inline-flex items-center gap-1 tabular-nums">
-                  <MessageCircle size={13} strokeWidth={2} className="shrink-0 text-indigo-500" aria-hidden />
-                  {com}
-                </span>
-              </div>
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100/80 transition-[background-color,color] group-hover:bg-indigo-600 group-hover:text-white group-hover:ring-indigo-500">
-                Ansehen
-                <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
-              </span>
-            </div>
-          </div>
-        </Link>
-      </motion.article>
-    );
-  };
-
   const emptyTitle =
     libraryScope === 'mine'
-      ? items.length === 0
+      ? sourceCount === 0
         ? 'Noch nichts veröffentlicht'
         : 'Keine Treffer'
-      : items.length === 0
-        ? 'Noch keine öffentlichen Boards'
+      : sourceCount === 0
+        ? 'Noch keine öffentlichen Inhalte'
         : 'Keine Treffer';
 
   const emptyDescription =
     libraryScope === 'mine'
-      ? items.length === 0
-        ? 'Wenn du ein Board in der Bearbeitung für die Bibliothek freigibst, erscheint es hier — inklusive anonymen Kommentaren und Bewertungen.'
+      ? sourceCount === 0
+        ? 'Wenn du ein Board oder Arbeitsblatt für die Bibliothek freigibst, erscheint es hier.'
         : 'Passe Suche oder Filter an oder setze sie zurück.'
-      : items.length === 0
-        ? 'Sobald Kolleg:innen ein Board für die Bibliothek freigeben, erscheint es hier.'
+      : sourceCount === 0
+        ? 'Sobald Kolleg:innen Inhalte für die Bibliothek freigeben, erscheinen sie hier.'
         : 'Passe Suche oder Filter an oder setze sie zurück.';
 
   const catalogMetaLine = useMemo(() => {
     if (isPending) return '';
     const n = filteredSorted.length;
-    const noun = n === 1 ? 'Board' : 'Boards';
-    const tail = 'Antippen für Vorschau';
-    if (libraryScope === 'all' && items.length > 0) {
-      return `${n} ${noun} · ${ownerCount} Kolleg:innen · ${tail}`;
+    const boardsN = filteredSorted.filter((r) => r.kind === 'board').length;
+    const wsN = filteredSorted.filter((r) => r.kind === 'worksheet').length;
+    const parts: string[] = [];
+    if (boardsN > 0) parts.push(`${boardsN} ${boardsN === 1 ? 'Board' : 'Boards'}`);
+    if (wsN > 0) parts.push(`${wsN} ${wsN === 1 ? 'Arbeitsblatt' : 'Arbeitsblätter'}`);
+    const head = parts.length > 0 ? parts.join(' · ') : `${n} Einträge`;
+    const tail = 'Antippen zum Öffnen';
+    if (libraryScope === 'all' && sourceCount > 0) {
+      return `${head} · ${ownerCount} Kolleg:innen · ${tail}`;
     }
-    if (libraryScope === 'mine' && items.length > 0) {
-      return `${n} ${noun} · Deine Veröffentlichungen · ${tail}`;
+    if (libraryScope === 'mine' && sourceCount > 0) {
+      return `${head} · Deine Veröffentlichungen · ${tail}`;
     }
-    return `${n} ${noun} · ${tail}`;
-  }, [isPending, filteredSorted.length, libraryScope, items.length, ownerCount]);
+    return `${head} · ${tail}`;
+  }, [isPending, filteredSorted, libraryScope, sourceCount, ownerCount]);
 
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col bg-[var(--color-bg-app)]">
@@ -323,45 +478,112 @@ export function BoardLibraryListPage() {
             eigene Sammlung.
           </p>
 
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-            <div className="shrink-0" role="group" aria-label="Bibliotheksbereich">
-              <div className="flex h-9 w-full gap-px rounded-lg border border-slate-200 bg-slate-200 p-px sm:inline-flex sm:w-auto">
-                <button
-                  type="button"
-                  className={cn(
-                    'flex flex-1 items-center justify-center rounded-[7px] bg-[var(--color-bg-card)] px-2 text-xs font-semibold transition sm:flex-none sm:rounded-none sm:px-3 sm:first:rounded-l-[7px]',
-                    libraryScope === 'all'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-[var(--color-ink-600)] hover:bg-[var(--color-bg-muted)]',
-                  )}
-                  onClick={() => setLibraryScope('all')}
+          <div className="flex flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center xl:justify-between xl:gap-x-3 xl:gap-y-2">
+            <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:flex-wrap xl:items-center xl:gap-x-2 xl:gap-y-2">
+              <div className="shrink-0" role="group" aria-label="Bibliotheksbereich">
+                <div className="flex h-9 w-full gap-px rounded-lg border border-slate-200 bg-slate-200 p-px sm:inline-flex sm:w-auto">
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex flex-1 items-center justify-center rounded-[7px] bg-[var(--color-bg-card)] px-2 text-xs font-semibold transition sm:flex-none sm:rounded-none sm:px-3 sm:first:rounded-l-[7px]',
+                      libraryScope === 'all'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-[var(--color-ink-600)] hover:bg-[var(--color-bg-muted)]',
+                    )}
+                    onClick={() => setLibraryScope('all')}
+                  >
+                    <span className="sm:hidden">Öffentlich</span>
+                    <span className="hidden sm:inline">Alle öffentlichen</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex flex-1 items-center justify-center rounded-[7px] bg-[var(--color-bg-card)] px-2 text-xs font-semibold transition sm:flex-none sm:rounded-none sm:px-3 sm:last:rounded-r-[7px]',
+                      libraryScope === 'mine'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-[var(--color-ink-600)] hover:bg-[var(--color-bg-muted)]',
+                    )}
+                    onClick={() => setLibraryScope('mine')}
+                  >
+                    <span className="sm:hidden">Meine</span>
+                    <span className="hidden sm:inline">Meine Veröffentlichungen</span>
+                  </button>
+                </div>
+              </div>
+
+              <p className="sr-only">
+                Filter nach Inhaltstyp (Boards oder Arbeitsblätter) und nach Board-Art (Aufgaben oder Präsentationen).
+              </p>
+
+              <div className="flex min-w-0 shrink-0 flex-col gap-1.5 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:gap-2 sm:border-t-0 sm:pt-0 xl:border-l xl:border-slate-100 xl:pl-3">
+                <span className="hidden shrink-0 text-[11px] font-medium text-slate-500 sm:inline">Typ</span>
+                <div
+                  className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-100/90 p-0.5"
+                  role="group"
+                  aria-label="Nach Boards oder Arbeitsblättern filtern"
                 >
-                  <span className="sm:hidden">Öffentlich</span>
-                  <span className="hidden sm:inline">Alle öffentlichen</span>
-                </button>
-                <button
-                  type="button"
-                  className={cn(
-                    'flex flex-1 items-center justify-center rounded-[7px] bg-[var(--color-bg-card)] px-2 text-xs font-semibold transition sm:flex-none sm:rounded-none sm:px-3 sm:last:rounded-r-[7px]',
-                    libraryScope === 'mine'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-[var(--color-ink-600)] hover:bg-[var(--color-bg-muted)]',
-                  )}
-                  onClick={() => setLibraryScope('mine')}
+                  {(
+                    [
+                      { v: 'all' as const, label: 'Alle' },
+                      { v: 'boards' as const, label: 'Boards' },
+                      { v: 'worksheets' as const, label: 'Arbeitsblätter' },
+                    ] as const
+                  ).map(({ v, label }) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setResourceKind(v)}
+                      className={cn(
+                        'flex min-h-9 shrink-0 items-center justify-center rounded-md px-2.5 py-1 text-[11px] font-semibold transition sm:px-3 sm:text-xs',
+                        resourceKind === v
+                          ? 'bg-white text-indigo-900 shadow-sm ring-1 ring-slate-200/90'
+                          : 'text-slate-600 hover:bg-white/70',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex min-w-0 shrink-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <span className="hidden shrink-0 text-[11px] font-medium text-slate-500 sm:inline">Art</span>
+                <div
+                  className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-100/90 p-0.5"
+                  role="presentation"
                 >
-                  <span className="sm:hidden">Meine</span>
-                  <span className="hidden sm:inline">Meine Veröffentlichungen</span>
-                </button>
+                  {(
+                    [
+                      { v: '' as const, label: 'Alle' },
+                      { v: 'tasks' as const, label: 'Aufgaben' },
+                      { v: 'presentations' as const, label: 'Präsentationen' },
+                    ] as const
+                  ).map(({ v, label }) => (
+                    <button
+                      key={v || 'all'}
+                      type="button"
+                      onClick={() => setPurposeFilter(v)}
+                      className={cn(
+                        'flex min-h-9 shrink-0 items-center justify-center rounded-md px-2.5 py-1 text-[11px] font-semibold transition sm:px-3 sm:text-xs',
+                        purposeFilter === v
+                          ? 'bg-white text-indigo-900 shadow-sm ring-1 ring-slate-200/90'
+                          : 'text-slate-600 hover:bg-white/70',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="flex min-h-9 min-w-0 flex-1 items-center gap-1.5">
+            <div className="flex min-h-9 min-w-0 shrink-0 items-center justify-end gap-1.5 max-xl:w-full">
               <SearchInput
                 placeholder="Suchen …"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 aria-label="Bibliothek durchsuchen"
-                containerClassName="min-w-0 flex-1 sm:max-w-xl lg:max-w-2xl"
+                containerClassName="min-w-0 w-full max-w-[min(100%,280px)] shrink-0 xl:max-w-[220px] 2xl:max-w-[260px]"
                 iconSize={15}
                 className="!h-9 !min-h-0 !py-0 !text-[13px] leading-none placeholder:text-slate-400"
               />
@@ -403,48 +625,22 @@ export function BoardLibraryListPage() {
             </div>
           </div>
 
-          {!isPending && subjectQuickChips.length > 0 ? (
+          {!isPending && subjectFilterOptions.length > 0 ? (
             <div className="flex items-center gap-2 border-t border-slate-100 pt-1.5">
               <p id="library-subject-chips-label" className="sr-only">
-                Nach Fach filtern — horizontale Schnellwahl
+                Nach Fach filtern: Pfeiltasten links und rechts oder Tastatur nach Fokus auf die Leiste
+                (Pfeil links/rechts, Pos1, Ende). Zum Schieben Maus oder Finger gedrückt halten und horizontal
+                ziehen; auf Touch Geräten zusätzlich horizontal wischen.
               </p>
               <span className="hidden shrink-0 text-[11px] font-medium text-slate-500 sm:inline" aria-hidden>
                 Fächer
               </span>
-              <div
-                role="group"
-                aria-labelledby="library-subject-chips-label"
-                className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-px [scrollbar-width:none] sm:gap-1.5 [&::-webkit-scrollbar]:hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSubjectFilter('')}
-                  className={cn(
-                    'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-                    !subjectFilter
-                      ? 'border-indigo-600 bg-indigo-600 text-white'
-                      : 'border-transparent bg-slate-100 text-slate-700 hover:bg-slate-200/80',
-                  )}
-                >
-                  Alle
-                </button>
-                {subjectQuickChips.map((subj) => (
-                  <button
-                    key={subj}
-                    type="button"
-                    onClick={() => setSubjectFilter(subjectFilter === subj ? '' : subj)}
-                    className={cn(
-                      'max-w-[11rem] shrink-0 truncate rounded-full border px-2.5 py-1 text-[11px] font-semibold transition',
-                      subjectFilter === subj
-                        ? 'border-indigo-600 bg-indigo-600 text-white'
-                        : 'border-transparent bg-slate-100 text-slate-700 hover:bg-slate-200/80',
-                    )}
-                    title={subj}
-                  >
-                    {subj}
-                  </button>
-                ))}
-              </div>
+              <LibrarySubjectChipsScrollBar
+                ariaLabelledBy="library-subject-chips-label"
+                filterLabels={subjectFilterOptions}
+                subjectFilter={subjectFilter}
+                onSubjectFilterChange={setSubjectFilter}
+              />
             </div>
           ) : null}
 
@@ -481,7 +677,7 @@ export function BoardLibraryListPage() {
                         aria-label="Nach Fach filtern"
                       >
                         <option value="">Alle Fächer</option>
-                        {subjectOptions.map((s) => (
+                        {subjectFilterOptions.map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>
@@ -498,10 +694,10 @@ export function BoardLibraryListPage() {
                         onChange={(e) => setGradeFilter(e.target.value)}
                         aria-label="Nach Klasse filtern"
                       >
-                        <option value="">Alle</option>
-                        {gradeOptions.map((g) => (
+                        <option value="">Alle Klassenstufen</option>
+                        {LIBRARY_GRADE_STEPS.map((g) => (
                           <option key={g} value={g}>
-                            {g}
+                            Klasse {g}
                           </option>
                         ))}
                       </select>
@@ -577,7 +773,7 @@ export function BoardLibraryListPage() {
               title={emptyTitle}
               description={emptyDescription}
               action={
-                items.length > 0 ? (
+                sourceCount > 0 ? (
                   <Button type="button" variant="secondary" onClick={clearFilters}>
                     Filter zurücksetzen
                   </Button>
@@ -586,7 +782,7 @@ export function BoardLibraryListPage() {
             />
           ) : groupedBySubject ? (
             <div className="space-y-8">
-              {groupedBySubject.map(([sectionTitle, boards], si) => (
+              {groupedBySubject.map(([sectionTitle, rows], si) => (
                 <section key={sectionTitle} className="space-y-3">
                   <div className="flex flex-wrap items-end justify-between gap-2 border-b border-slate-200 pb-2">
                     <div className="min-w-0">
@@ -594,12 +790,27 @@ export function BoardLibraryListPage() {
                         {sectionTitle}
                       </h3>
                       <p className="mt-0.5 text-[13px] text-[var(--color-ink-500)]">
-                        {boards.length} Board{boards.length === 1 ? '' : 's'}
+                        {rows.length} {rows.length === 1 ? 'Eintrag' : 'Einträge'}
                       </p>
                     </div>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
-                    {boards.map((b, i) => renderCompactCard(b, si * 30 + i))}
+                    {rows.map((row, i) =>
+                      row.kind === 'board' ? (
+                        <BoardLibraryCatalogCard
+                          key={`board-${row.id}`}
+                          board={row}
+                          index={si * 30 + i}
+                          libraryScope={libraryScope}
+                        />
+                      ) : (
+                        <WorksheetLibraryCatalogCard
+                          key={`ws-${row.id}`}
+                          ws={row}
+                          index={si * 30 + i}
+                        />
+                      ),
+                    )}
                   </div>
                 </section>
               ))}
@@ -617,7 +828,18 @@ export function BoardLibraryListPage() {
                 </div>
               </header>
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
-                {filteredSorted.map((b, i) => renderCompactCard(b, i))}
+                {filteredSorted.map((row, i) =>
+                  row.kind === 'board' ? (
+                    <BoardLibraryCatalogCard
+                      key={`board-${row.id}`}
+                      board={row}
+                      index={i}
+                      libraryScope={libraryScope}
+                    />
+                  ) : (
+                    <WorksheetLibraryCatalogCard key={`ws-${row.id}`} ws={row} index={i} />
+                  ),
+                )}
               </div>
             </>
           )}

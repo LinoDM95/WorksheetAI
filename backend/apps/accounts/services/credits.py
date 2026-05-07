@@ -44,6 +44,8 @@ def enforce_positive_ai_credits_balance(user: Any | None) -> None:
         return
     if user is None or not getattr(user, 'is_authenticated', False):
         return
+    if getattr(user, 'is_staff', False):
+        return
     bal = get_or_create_balance(user)
     if bal.balance <= 0:
         from rest_framework.exceptions import PermissionDenied
@@ -59,6 +61,8 @@ def charge_ai_usage_usd_cents(user: Any | None, usd_cents: int) -> int:
     if not getattr(settings, 'AI_CREDITS_ENABLED', True):
         return 0
     if user is None or not getattr(user, 'is_authenticated', False):
+        return 0
+    if getattr(user, 'is_staff', False):
         return 0
     credits = usd_cents_to_credit_charge(usd_cents)
     if credits <= 0:

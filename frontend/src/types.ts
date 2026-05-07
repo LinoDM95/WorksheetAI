@@ -45,6 +45,25 @@ export type Worksheet={
   curriculum_warning?: string | null;
   curriculum_show_usage?: boolean;
   curriculum_usage_panel?: CurriculumUsagePanelPayload;
+  library_public?: boolean;
+  library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
+  library_published_at?: string | null;
+  viewer_is_owner?: boolean;
+};
+
+/** Öffentlicher Arbeitsblatt-Katalog (/worksheets/library/). */
+export type WorksheetLibraryItem={
+  kind:'worksheet';
+  id:string;
+  title:string;
+  subject:string;
+  grade:string;
+  topic:string;
+  /** Aus `generation_meta.time_budget_minutes` bei Erstellung; ältere Blätter ohne Eintrag: `null`. */
+  planned_duration_minutes?: number | null;
+  library_published_at:string|null;
+  owner_label:string;
+  viewer_is_owner:boolean;
 };
 export type Pattern={
   id:string;key:string;name:string;description:string;status:string;blueprint:any;preview_svg:string;

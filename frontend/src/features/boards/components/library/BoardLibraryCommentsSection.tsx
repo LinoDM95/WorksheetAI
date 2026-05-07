@@ -99,7 +99,7 @@ export function BoardLibraryCommentsSection({
                 className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 shadow-[var(--shadow-sm)]"
               >
                 <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[11px] text-[var(--color-ink-500)]">
-                  <span className="font-semibold text-[var(--color-ink-700)]">{c.author_label}</span>
+                  <span className="font-semibold text-[var(--color-ink-700)]">Anonym</span>
                   <time dateTime={c.created_at} className="tabular-nums text-[var(--color-ink-400)]">
                     {formatRelative(c.created_at)}
                   </time>

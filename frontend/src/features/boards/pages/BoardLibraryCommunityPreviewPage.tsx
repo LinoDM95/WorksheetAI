@@ -23,6 +23,7 @@ import { LIBRARY_TECH_LABELS } from '../lib/boardLibraryLabels';
 import { BoardLibraryCommentsSection } from '../components/library/BoardLibraryCommentsSection';
 import { BoardLibraryInteractiveRating } from '../components/library/BoardLibraryInteractiveRating';
 import { BoardLibraryLivePreview } from '../components/library/BoardLibraryLivePreview';
+import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
 import type { BoardLibraryItem } from '../types';
 
 export function BoardLibraryCommunityPreviewPage() {
@@ -153,8 +154,11 @@ export function BoardLibraryCommunityPreviewPage() {
               <p className="truncate text-sm font-semibold text-[var(--color-ink-900)]">
                 {board.title || 'Ohne Titel'}
               </p>
-              <p className="truncate text-xs text-[var(--color-ink-500)]">
-                {[board.subject, board.grade].filter(Boolean).join(' · ') || 'Kein Fach angegeben'}
+              <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--color-ink-500)]">
+                <span className="min-w-0 truncate">
+                  {[board.subject, board.grade].filter(Boolean).join(' · ') || 'Kein Fach angegeben'}
+                </span>
+                <LibraryPlannedDuration minutes={board.planned_duration_minutes} />
               </p>
             </div>
           </div>
@@ -180,16 +184,12 @@ export function BoardLibraryCommunityPreviewPage() {
           <Card flush className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
             <BoardLibraryLivePreview
               boardId={board.id}
-              boardTitle={board.title || ''}
               layoutKey={`${libraryBoardId}-${board.viewer_is_owner ? 'mine' : 'pub'}`}
               html={board.html}
               css={board.css}
               javascript={board.javascript}
               usedLibraries={board.used_libraries ?? []}
               usedDatasets={board.used_datasets}
-              variant={board.viewer_is_owner ? 'owner' : 'community'}
-              shareToken={board.share_token ?? null}
-              studentLinkEnabled={Boolean(board.student_link_enabled)}
             />
           </Card>
         </section>
@@ -237,19 +237,20 @@ export function BoardLibraryCommunityPreviewPage() {
 
             <div className="border-t border-[var(--color-border)] pt-3">
               <p className="mb-1 text-[11px] text-[var(--color-ink-500)]">
-                Von{' '}
-                <span className="font-medium text-[var(--color-ink-700)]">{board.owner_label}</span>
                 {board.library_published_at ? (
                   <>
-                    {' '}
-                    ·{' '}
-                    {new Date(board.library_published_at).toLocaleDateString('de-DE', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
+                    In der Bibliothek seit{' '}
+                    <span className="font-medium text-[var(--color-ink-700)] tabular-nums">
+                      {new Date(board.library_published_at).toLocaleDateString('de-DE', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </span>
                   </>
-                ) : null}
+                ) : (
+                  <span className="font-medium text-[var(--color-ink-600)]">Öffentlicher Eintrag</span>
+                )}
               </p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {(board.used_libraries ?? []).length === 0 ? (

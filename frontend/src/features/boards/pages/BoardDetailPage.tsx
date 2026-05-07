@@ -2,57 +2,33 @@ import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  BookOpen,
-  Code2,
-  FolderOpen,
-  Gauge,
-  Sparkles,
-  Trash2,
-  Undo2,
-  X,
-} from 'lucide-react';
+import { Globe2, Sparkles, Trash2, Undo2, X } from 'lucide-react';
 import { Alert, Button, IconButton } from '../../../components/ui';
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
-import { formatDate } from '../../../lib/formatDate';
+import { formatDate, formatDateTime } from '../../../lib/formatDate';
+import { useAuth } from '../../../lib/authContext';
 import { cn } from '../../../lib/cn';
-import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
 import {
   applyBoardRevision,
-  autoRepairBoard,
   deleteBoardRevision,
   fetchBoard,
   fetchBoardFolders,
   fetchBoardRevisions,
   reviseBoard,
   revertLastBoardRevision,
-  runBoardQualityCheck,
   updateBoardCode,
-  validateBoardCode,
 } from '../boardsApi';
+import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
 import { BoardAiGenerationOverlay } from '../components/BoardAiGenerationOverlay';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
-import { BoardShareQrModal } from '../components/BoardShareQrModal';
-import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
-import { BoardQualityReportPanel } from '../components/quality/BoardQualityReportPanel';
-import { BoardPipelineDetailsPanel } from '../components/quality/BoardPipelineDetailsPanel';
 import { RevisionModeSelect } from '../components/quality/RevisionModeSelect';
 import { RevisionQuickActions } from '../components/quality/RevisionQuickActions';
-import { FreeHtmlValidationPanel } from '../components/free-html/FreeHtmlValidationPanel';
-import { FreeHtmlResourcesPanel } from '../components/free-html/FreeHtmlResourcesPanel';
-import { FreeHtmlCodeEditor } from '../components/free-html/FreeHtmlCodeEditor';
-import { collectFreeHtmlLocalWarnings } from '../lib/freeHtmlLocalHints';
-import { buildStudentBoardUrl } from '../publicBoardApi';
-import type { BoardDetail, BoardRevision, RevisionMode } from '../types';
+import type { BoardCodeUpdate, BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
-import { needsStudentSharePrep } from '../lib/studentShareFlow';
-
-type CodeLang = 'html' | 'css' | 'javascript';
-type MetaSection = 'validation' | 'quality' | 'pipeline' | 'hints' | 'resources' | 'share';
 
 /** Liste neueste zuerst (API): v1 = älteste Revision, höhere Nummer = neuer. */
 const revisionVLabel = (indexNewestFirst: number, total: number) => {
@@ -118,12 +94,9 @@ export function BoardDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
-  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
-  const [codeEditorTab, setCodeEditorTab] = useState<CodeLang>('html');
   const [reviseOpen, setReviseOpen] = useState(false);
-  const [metaOpen, setMetaOpen] = useState(false);
-  const [metaSection, setMetaSection] = useState<MetaSection>('validation');
   const [fatalOpen, setFatalOpen] = useState(false);
 
   const [reviseError, setReviseError] = useState<string | null>(null);
@@ -132,19 +105,10 @@ export function BoardDetailPage() {
   const [revisionMode, setRevisionMode] = useState<RevisionMode>('general');
   const [reloadKey, setReloadKey] = useState(0);
   const scriptsEnabled = true;
-  const [validateResult, setValidateResult] = useState<{
-    ok: boolean | null;
-    errors: string[];
-    warnings: string[];
-  }>({ ok: null, errors: [], warnings: [] });
-  const [shareQrOpen, setShareQrOpen] = useState(false);
-  const [sharePrepOpen, setSharePrepOpen] = useState(false);
-  const [shareQrPayload, setShareQrPayload] = useState<{
-    url: string;
-    expiresAt: string | null;
-    title: string;
-  } | null>(null);
   const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
+  const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
+  const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
+  const [libraryShareMessage, setLibraryShareMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -256,23 +220,6 @@ export function BoardDetailPage() {
     },
   });
 
-  const qualityCheckMutation = useMutation({
-    mutationFn: () => runBoardQualityCheck(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
-    },
-  });
-
-  const autoRepairMutation = useMutation({
-    mutationFn: (mode?: RevisionMode) =>
-      autoRepairBoard(id, mode && mode !== 'general' ? { revision_mode: mode } : undefined),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
-      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
-      setReloadKey((k) => k + 1);
-    },
-  });
-
   const revertMutation = useMutation({
     mutationFn: (revisionId: string) => revertLastBoardRevision(id, revisionId),
     onSuccess: () => {
@@ -311,52 +258,44 @@ export function BoardDetailPage() {
   });
 
   const patchMutation = useMutation({
-    mutationFn: (body: {
-      html?: string;
-      css?: string;
-      javascript?: string;
-      folder_id?: string | null;
-      student_link_enabled?: boolean;
-      student_link_valid_minutes?: number | null;
-      library_public?: boolean;
-    }) => updateBoardCode(id, body),
+    mutationFn: (body: BoardCodeUpdate) => updateBoardCode(id, body),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
       setReloadKey((k) => k + 1);
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
-      if (variables.library_public !== undefined) {
+      if (
+        variables.library_public !== undefined ||
+        variables.library_listing_title !== undefined ||
+        variables.library_listing_topic !== undefined ||
+        variables.library_listing_description !== undefined ||
+        variables.library_sync_public_snapshot
+      ) {
         queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
       }
     },
   });
 
-  const validateMutation = useMutation({
-    mutationFn: (body?: { html?: string; css?: string; javascript?: string }) => validateBoardCode(id, body),
-    onSuccess: (res) => {
-      setValidateResult({ ok: res.ok, errors: res.errors || [], warnings: res.warnings || [] });
-    },
-    onError: () => {
-      setValidateResult({ ok: false, errors: ['Validierung fehlgeschlagen.'], warnings: [] });
-    },
-  });
-
-  const openMetaSection = useCallback(
-    (section: MetaSection, runValidate?: boolean) => {
-      setMetaSection(section);
-      setMetaOpen(true);
-      if (runValidate) validateMutation.mutate(undefined);
-    },
-    [validateMutation],
-  );
-
-  const localWarnings = useMemo(() => {
-    return collectFreeHtmlLocalWarnings(
-      iframeBundle.html,
-      iframeBundle.css,
-      iframeBundle.javascript,
+  const handleSyncPublicLibrarySnapshot = useCallback(() => {
+    setLibraryShareMessage(null);
+    patchMutation.mutate(
+      { library_sync_public_snapshot: true },
+      {
+        onSuccess: () =>
+          setLibraryShareMessage({
+            tone: 'info',
+            text: 'Die öffentliche Bibliotheksfassung wurde mit deinem aktuellen Arbeitsstand abgeglichen.',
+          }),
+        onError: (err: unknown) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            'Aktualisierung fehlgeschlagen.';
+          setLibraryShareMessage({ tone: 'error', text: detail });
+        },
+      },
     );
-  }, [iframeBundle.css, iframeBundle.html, iframeBundle.javascript]);
+  }, [patchMutation]);
 
   const handleRevise = () => {
     setReviseError(null);
@@ -371,7 +310,7 @@ export function BoardDetailPage() {
     const latestId = revisions[0]?.id;
     if (!latestId) return;
     const confirmed = window.confirm(
-      'Stand vor der letzten KI-Überarbeitung wiederherstellen? Die aktuelle Fassung (inklusive manueller Änderungen nach der Revision) wird dabei verworfen.',
+      'Stand vor der letzten KI-Überarbeitung wiederherstellen? Die aktuelle Fassung wird dabei verworfen.',
     );
     if (!confirmed) return;
     setRevertError(null);
@@ -385,61 +324,6 @@ export function BoardDetailPage() {
     if (!confirmed) return;
     deleteRevisionMutation.mutate(revisionId);
   };
-
-  const showShareQrModalWithPayload = useCallback(
-    (payload: { url: string; expiresAt: string | null; title: string }) => {
-      void (async () => {
-        await exitElementFullscreen();
-        setShareQrPayload(payload);
-        setShareQrOpen(true);
-      })();
-    },
-    [],
-  );
-
-  const handleConfirmStudentShare = useCallback(
-    (validMinutes: number) => {
-      patchMutation.mutate(
-        { student_link_enabled: true, student_link_valid_minutes: validMinutes },
-        {
-          onSuccess: async (data) => {
-            await exitElementFullscreen();
-            setSharePrepOpen(false);
-            const token = data.share_token ?? board?.share_token ?? null;
-            if (token) {
-              setShareQrPayload({
-                url: buildStudentBoardUrl(token),
-                expiresAt: data.student_link_expires_at ?? null,
-                title: data.title || board?.title || '',
-              });
-              setShareQrOpen(true);
-            }
-          },
-        },
-      );
-    },
-    [patchMutation, board?.share_token, board?.title],
-  );
-
-  const openExistingShareQr = useCallback(() => {
-    if (!board?.share_token || !board.student_link_enabled) return;
-    showShareQrModalWithPayload({
-      url: buildStudentBoardUrl(board.share_token),
-      expiresAt: board.student_link_expires_at ?? null,
-      title: board.title || '',
-    });
-  }, [board, showShareQrModalWithPayload]);
-
-  const handleShareToolbarClick = useCallback(() => {
-    void (async () => {
-      await exitElementFullscreen();
-      if (!board || needsStudentSharePrep(board)) {
-        setSharePrepOpen(true);
-        return;
-      }
-      openExistingShareQr();
-    })();
-  }, [board, openExistingShareQr]);
 
   const reviseBlockedTitle: string | undefined = !canReviseWithAi
     ? !isHeadView
@@ -468,142 +352,12 @@ export function BoardDetailPage() {
 
   const showFatalErrors = (board.validation_errors || []).length > 0;
 
-  const renderMetaToolsBody = () => (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 border-b border-slate-100 pb-3">
-        {(
-          [
-            ['validation', 'Prüfung'],
-            ['quality', 'Qualität'],
-            ['pipeline', 'Pipeline'],
-            ['hints', 'Hinweise'],
-            ['resources', 'Ressourcen'],
-            ['share', 'Freigabe'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => {
-              setMetaSection(key);
-              if (key === 'validation') validateMutation.mutate(undefined);
-            }}
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-              metaSection === key
-                ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-200'
-                : 'text-slate-600 hover:bg-slate-50',
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {metaSection === 'validation' ? (
-        <FreeHtmlValidationPanel
-          apiOk={validateResult.ok}
-          apiErrors={validateResult.errors}
-          apiWarnings={validateResult.warnings}
-          onRunValidate={() => validateMutation.mutate(undefined)}
-          busy={validateMutation.isPending}
-        />
-      ) : null}
-      {metaSection === 'quality' ? (
-        <BoardQualityReportPanel
-          report={board.quality_report}
-          isChecking={qualityCheckMutation.isPending}
-          isRepairing={autoRepairMutation.isPending}
-          onRunCheck={() => qualityCheckMutation.mutate()}
-          onAutoRepair={() => autoRepairMutation.mutate(undefined)}
-          assetsSummary={board.assets_summary}
-          disableAutoRepair={!canReviseWithAi}
-          autoRepairDisabledTitle={reviseBlockedTitle}
-        />
-      ) : null}
-      {metaSection === 'pipeline' ? (
-        <BoardPipelineDetailsPanel
-          intent={board.intent_analysis}
-          risk={board.risk_analysis}
-          brief={board.creative_brief}
-          dna={board.style_dna}
-          modelConfig={board.used_model_config}
-          tokenUsage={board.token_usage}
-          estimatedCost={board.estimated_cost}
-          repairHistory={board.repair_history}
-        />
-      ) : null}
-      {metaSection === 'hints' ? <HintsTab board={board} revisions={revisions} /> : null}
-      {metaSection === 'resources' ? (
-        <FreeHtmlResourcesPanel
-          usedLibraries={board.used_libraries}
-          usedAssets={board.used_assets}
-          usedDatasets={board.used_datasets}
-          warnings={[...board.warnings, ...board.validation_warnings]}
-        />
-      ) : null}
-      {metaSection === 'share' ? (
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600"
-              checked={board.student_link_enabled}
-              disabled={patchMutation.isPending}
-              onChange={(e) => patchMutation.mutate({ student_link_enabled: e.target.checked })}
-            />
-            <span className="text-sm text-slate-700">
-              <span className="font-medium text-slate-900">Schüler-Link</span>
-              <span className="mt-0.5 block text-xs text-slate-600">
-                Kurzlink und QR ohne Anmeldung; gültig bis zu 3 Tage (dann erneut freigeben).
-              </span>
-            </span>
-          </label>
-          {board.student_link_enabled && board.share_token ? (
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={() => openExistingShareQr()}>
-                QR anzeigen
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (board.share_token) void navigator.clipboard.writeText(buildStudentBoardUrl(board.share_token));
-                }}
-              >
-                Link kopieren
-              </Button>
-            </div>
-          ) : null}
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600"
-              checked={board.library_public}
-              disabled={patchMutation.isPending}
-              onChange={(e) => patchMutation.mutate({ library_public: e.target.checked })}
-            />
-            <span className="text-sm text-slate-700">
-              <span className="font-medium text-slate-900">In der Bibliothek listen</span>
-            </span>
-          </label>
-          {board.library_public ? (
-            <p className="text-xs text-slate-500">
-              Bewertung:{' '}
-              {board.avg_rating != null ? `Ø ${board.avg_rating.toFixed(1)}` : 'noch keine'}
-              {board.rating_count
-                ? ` · ${board.rating_count} Bewertung${board.rating_count === 1 ? '' : 'en'}`
-                : ''}
-            </p>
-          ) : null}
-          {board.source_board ? (
-            <p className="text-xs text-slate-500">Übernommen aus der öffentlichen Bibliothek.</p>
-          ) : null}
-          <p className="text-[11px] text-slate-400">Stand: {formatDate(board.updated_at)}</p>
-        </div>
-      ) : null}
-    </div>
-  );
+  const publicOnlineVersionLabel =
+    board.library_snapshot_at != null && String(board.library_snapshot_at).trim() !== ''
+      ? formatDateTime(board.library_snapshot_at)
+      : board.library_published_at
+        ? formatDateTime(board.library_published_at)
+        : '—';
 
   return (
     <div className="flex h-full min-h-0 w-full max-w-none flex-1 flex-col overflow-x-hidden bg-[var(--color-bg-app)]">
@@ -696,70 +450,139 @@ export function BoardDetailPage() {
             </>
           ) : null}
 
-          <span className="hidden h-6 w-px bg-slate-200 lg:block" aria-hidden />
+          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
 
-          <div className="flex flex-wrap items-center gap-0.5">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="!px-2"
-              disabled={!isHeadView || patchMutation.isPending}
-              title={!isHeadView ? aiBlockedHint : undefined}
-              onClick={() => {
-                setCodeEditorTab('html');
-                setCodeEditorOpen(true);
-              }}
-              aria-haspopup="dialog"
-            >
-              <Code2 size={14} className="sm:mr-1" aria-hidden />
-              <span className="hidden sm:inline">Code</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="!px-2"
-              disabled={!canReviseWithAi}
-              title={reviseBlockedTitle}
-              onClick={() => setReviseOpen(true)}
-            >
-              <Sparkles size={14} className="sm:mr-1" aria-hidden />
-              <span className="hidden sm:inline">Nachprompten</span>
-            </Button>
-          </div>
-
-          <span className="hidden h-6 w-px bg-slate-200 lg:block" aria-hidden />
-
-          <Button type="button" variant="secondary" size="sm" className="!px-2" onClick={() => openMetaSection('quality')}>
-            <Gauge size={14} className="sm:mr-1" aria-hidden />
-            <span className="hidden sm:inline">Qualität</span>
-          </Button>
           <Button
             type="button"
-            variant="secondary"
             size="sm"
             className="!px-2"
-            onClick={() => openMetaSection('resources')}
-            aria-label="Ressourcen öffnen"
+            disabled={!canReviseWithAi}
+            title={reviseBlockedTitle}
+            onClick={() => setReviseOpen(true)}
           >
-            <FolderOpen size={14} className="sm:mr-1" aria-hidden />
-            <span className="hidden sm:inline">Ressourcen</span>
-          </Button>
-          <Button type="button" variant="secondary" size="sm" className="!px-2" onClick={() => openMetaSection('hints')}>
-            <BookOpen size={14} className="sm:mr-1" aria-hidden />
-            <span className="hidden sm:inline">Hinweise</span>
+            <Sparkles size={14} className="sm:mr-1" aria-hidden />
+            <span className="hidden sm:inline">Nachprompten</span>
           </Button>
         </div>
+
+        {libraryShareMessage ? (
+          <div className="pt-1">
+            <Alert tone={libraryShareMessage.tone === 'error' ? 'error' : 'info'}>{libraryShareMessage.text}</Alert>
+          </div>
+        ) : null}
+
+        {board.library_public ? (
+          <div className="mt-1 rounded-xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50 to-teal-50/90 px-3 py-2.5 ring-1 ring-emerald-200/70">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
+              <div className="flex min-w-0 flex-1 gap-2">
+                <Globe2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold tracking-wide text-emerald-950">Öffentlich in der Bibliothek</p>
+                  <p className="mt-0.5 text-sm font-semibold text-emerald-900">
+                    Online-Version: <span className="tabular-nums text-emerald-950">{publicOnlineVersionLabel}</span>
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-emerald-800/90">
+                    <span className="font-medium">Karte:</span>{' '}
+                    {board.library_listing_title?.trim() || board.title || '—'}
+                  </p>
+                  {board.library_public_live_differs ? (
+                    <p className="mt-2 text-[11px] font-semibold text-amber-900">
+                      Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-emerald-800/80">
+                      Gespeicherter Stand und öffentliche Fassung stimmen überein.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 lg:items-end">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:pt-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    loading={patchMutation.isPending}
+                    disabled={patchMutation.isPending}
+                    onClick={handleSyncPublicLibrarySnapshot}
+                  >
+                    Öffentliche Fassung aktualisieren
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={patchMutation.isPending}
+                    onClick={() => {
+                      setLibraryModalError(null);
+                      setLibraryModalMode('edit_listing');
+                    }}
+                  >
+                    Bibliotheks-Texte
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-800 hover:bg-red-50"
+                    disabled={patchMutation.isPending}
+                    onClick={() => {
+                      const ok = window.confirm(
+                        'Dieses Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
+                      );
+                      if (!ok) return;
+                      setLibraryShareMessage(null);
+                      patchMutation.mutate(
+                        { library_public: false },
+                        {
+                          onError: (err: unknown) => {
+                            const detail =
+                              (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                              (err as Error)?.message ||
+                              'Konnte nicht entfernt werden.';
+                            setLibraryShareMessage({ tone: 'error', text: detail });
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    Aus Bibliothek nehmen
+                  </Button>
+                </div>
+                {board.avg_rating != null || (board.rating_count ?? 0) > 0 ? (
+                  <p className="text-[11px] text-emerald-900/80 lg:text-right">
+                    Bewertung:{' '}
+                    {board.avg_rating != null ? `Ø ${board.avg_rating.toFixed(1)}` : 'noch keine'}
+                    {board.rating_count
+                      ? ` · ${board.rating_count} Bewertung${board.rating_count === 1 ? '' : 'en'}`
+                      : ''}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
+            <span>Dieses Board ist nur für dich sichtbar.</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={patchMutation.isPending}
+              onClick={() => {
+                setLibraryModalError(null);
+                setLibraryModalMode('publish');
+              }}
+            >
+              In Bibliothek veröffentlichen
+            </Button>
+          </div>
+        )}
       </header>
 
       <BoardFullscreenPreview
         className="min-h-0 flex-1"
         layoutKey={id}
         viewTransitionGroupName="board-editor-fs-root"
-        shareToolbarAction={{
-          onClick: handleShareToolbarClick,
-          loading: patchMutation.isPending && sharePrepOpen,
-        }}
         reloadKey={reloadKey}
         onReload={() => setReloadKey((k) => k + 1)}
         html={iframeBundle.html}
@@ -771,74 +594,6 @@ export function BoardDetailPage() {
         scriptsEnabled={scriptsEnabled}
       />
     </div>
-
-      <BoardShellModal
-        open={codeEditorOpen}
-        title="HTML, CSS & JavaScript"
-        onClose={() => {
-          if (!patchMutation.isPending) setCodeEditorOpen(false);
-        }}
-        wide
-      >
-        <div className="flex flex-wrap gap-1 border-b border-slate-100 pb-3">
-          {(
-            [
-              ['html', 'HTML'],
-              ['css', 'CSS'],
-              ['javascript', 'JavaScript'],
-            ] as const
-          ).map(([tab, label]) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setCodeEditorTab(tab)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-                codeEditorTab === tab
-                  ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-200'
-                  : 'text-slate-600 hover:bg-slate-50',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-4">
-          {codeEditorTab === 'html' ? (
-            <FreeHtmlCodeEditor
-              code={board.html}
-              language="html"
-              busy={patchMutation.isPending}
-              localWarnings={localWarnings}
-              onSave={(html) => {
-                patchMutation.mutate({ html });
-              }}
-            />
-          ) : null}
-          {codeEditorTab === 'css' ? (
-            <FreeHtmlCodeEditor
-              code={board.css}
-              language="css"
-              busy={patchMutation.isPending}
-              localWarnings={localWarnings}
-              onSave={(css) => {
-                patchMutation.mutate({ css });
-              }}
-            />
-          ) : null}
-          {codeEditorTab === 'javascript' ? (
-            <FreeHtmlCodeEditor
-              code={board.javascript}
-              language="javascript"
-              busy={patchMutation.isPending}
-              localWarnings={localWarnings}
-              onSave={(javascript) => {
-                patchMutation.mutate({ javascript });
-              }}
-            />
-          ) : null}
-        </div>
-      </BoardShellModal>
 
       <BoardShellModal
         open={reviseOpen}
@@ -863,15 +618,6 @@ export function BoardDetailPage() {
         />
       </BoardShellModal>
 
-      <BoardShellModal
-        open={metaOpen}
-        title="Werkzeuge & Freigabe"
-        onClose={() => setMetaOpen(false)}
-        wide
-      >
-        {renderMetaToolsBody()}
-      </BoardShellModal>
-
       <BoardShellModal open={fatalOpen} title="Validierungsfehler" onClose={() => setFatalOpen(false)}>
         <Alert tone="error">
           <ul className="list-inside list-disc text-sm">
@@ -882,22 +628,69 @@ export function BoardDetailPage() {
         </Alert>
       </BoardShellModal>
 
-      <BoardStudentSharePrepModal
-        open={sharePrepOpen}
-        onClose={() => setSharePrepOpen(false)}
-        onConfirm={handleConfirmStudentShare}
-        busy={patchMutation.isPending}
-      />
-      <BoardShareQrModal
-        open={shareQrOpen && Boolean(shareQrPayload?.url)}
-        onClose={() => {
-          setShareQrOpen(false);
-          setShareQrPayload(null);
-        }}
-        studentUrl={shareQrPayload?.url ?? ''}
-        title={shareQrPayload?.title ?? ''}
-        expiresAt={shareQrPayload?.expiresAt}
-      />
+      {board ? (
+        <BoardLibraryPublishModal
+          open={libraryModalMode !== null}
+          mode={libraryModalMode === 'edit_listing' ? 'edit_listing' : 'publish'}
+          onClose={() => {
+            if (patchMutation.isPending) return;
+            setLibraryModalMode(null);
+            setLibraryModalError(null);
+          }}
+          busy={patchMutation.isPending}
+          error={libraryModalError}
+          privateHints={{ title: board.title, topic: board.topic }}
+          initialListing={
+            libraryModalMode === 'edit_listing'
+              ? {
+                  library_listing_title: board.library_listing_title ?? '',
+                  library_listing_topic: board.library_listing_topic ?? '',
+                  library_listing_description: board.library_listing_description ?? '',
+                }
+              : undefined
+          }
+          onSubmit={(p) => {
+            if (libraryModalMode === 'publish') {
+              patchMutation.mutate(
+                { library_public: true, ...p },
+                {
+                  onSuccess: () => {
+                    setLibraryModalMode(null);
+                    setLibraryModalError(null);
+                  },
+                  onError: (err: unknown) => {
+                    const detail =
+                      (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                      (err as Error)?.message ||
+                      'Veröffentlichen fehlgeschlagen.';
+                    setLibraryModalError(detail);
+                  },
+                },
+              );
+              return;
+            }
+            if (libraryModalMode === 'edit_listing') {
+              patchMutation.mutate(
+                { ...p },
+                {
+                  onSuccess: () => {
+                    setLibraryModalMode(null);
+                    setLibraryModalError(null);
+                  },
+                  onError: (err: unknown) => {
+                    const detail =
+                      (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                      (err as Error)?.message ||
+                      'Speichern fehlgeschlagen.';
+                    setLibraryModalError(detail);
+                  },
+                },
+              );
+            }
+          }}
+          moderationRequired={!user?.is_staff}
+        />
+      ) : null}
     </div>
   );
 }
@@ -991,55 +784,3 @@ const ReviseTab = ({
     </div>
   );
 };
-
-const HintsTab = ({
-  board,
-  revisions,
-}: {
-  board: BoardDetail;
-  revisions: { id: string; created_at: string }[];
-}) => (
-  <div className="space-y-4">
-    <section>
-      <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Lehrer-Hinweise</h3>
-      <p className="whitespace-pre-line text-sm text-slate-700">
-        {board.teacher_notes || 'Keine zusätzlichen Hinweise.'}
-      </p>
-    </section>
-    <section>
-      <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Schritte</h3>
-      {board.usage_instructions.length === 0 ? (
-        <p className="text-sm text-slate-500">Keine Schrittfolge angegeben.</p>
-      ) : (
-        <ol className="list-inside list-decimal space-y-1 text-sm text-slate-700">
-          {board.usage_instructions.map((s, i) => (
-            <li key={i}>{s}</li>
-          ))}
-        </ol>
-      )}
-    </section>
-    {board.warnings.length > 0 && (
-      <Alert tone="warn">
-        <ul className="list-inside list-disc text-sm">
-          {board.warnings.map((w, i) => (
-            <li key={i}>{w}</li>
-          ))}
-        </ul>
-      </Alert>
-    )}
-    {revisions.length > 0 && (
-      <section>
-        <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">Versionen</h3>
-        <ul className="space-y-1 text-sm text-slate-600">
-          {revisions.slice(0, 8).map((r, i) => (
-            <li key={r.id} className="flex items-baseline gap-2">
-              <span className="font-medium text-slate-800">
-                {revisionVLabel(i, revisions.length)} · {formatDate(r.created_at)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-    )}
-  </div>
-);

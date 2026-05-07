@@ -173,6 +173,9 @@ export type BoardListItem = {
   title: string;
   subject: string;
   grade: string;
+  /** Numerischer Bereich 1–13; für Bibliotheksfilter, falls vorhanden. */
+  grade_from?: number | null;
+  grade_to?: number | null;
   topic: string;
   board_type: string;
   status: string;
@@ -180,7 +183,11 @@ export type BoardListItem = {
   folder: BoardFolderBrief | null;
   source_board: string | null;
   library_public: boolean;
+  /** Keine Freigabe / eingereicht / live in Bibliothek / abgelehnt */
+  library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
   student_link_enabled: boolean;
+  /** True, wenn der privat gespeicherte Stand von der öffentlichen Bibliotheks-Snapshot unterscheidet sich. */
+  library_public_live_differs?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -191,6 +198,8 @@ export type BoardDetail = {
   description: string;
   subject: string;
   grade: string;
+  grade_from?: number | null;
+  grade_to?: number | null;
   topic: string;
   board_type: string;
   status: string;
@@ -230,7 +239,13 @@ export type BoardDetail = {
   student_link_enabled: boolean;
   student_link_expires_at?: string | null;
   library_public: boolean;
+  library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
   library_published_at: string | null;
+  library_listing_title?: string;
+  library_listing_topic?: string;
+  library_listing_description?: string;
+  library_snapshot_at?: string | null;
+  library_public_live_differs?: boolean;
   source_board: string | null;
   avg_rating: number | null;
   rating_count: number;
@@ -287,8 +302,12 @@ export type BoardFolderDto = {
 export type BoardGeneratePayload = {
   prompt: string;
   subject?: string;
+  /** Legacy; server befüllt Anzeige aus ``grade_from``/``grade_to``. */
   grade?: string;
-  topic?: string;
+  /** Klassenstufen 1–13 (Kreativ-Pflicht). */
+  grade_from: number;
+  grade_to: number;
+  topic: string;
   board_type?: string;
   duration_minutes?: number;
   creativity?: CreativityLevel;
@@ -345,6 +364,10 @@ export type BoardCodeUpdate = {
   student_link_enabled?: boolean;
   student_link_valid_minutes?: number | null;
   library_public?: boolean;
+  library_listing_title?: string;
+  library_listing_topic?: string;
+  library_listing_description?: string;
+  library_sync_public_snapshot?: boolean;
 };
 
 export type BoardLibraryItem = {
@@ -353,7 +376,10 @@ export type BoardLibraryItem = {
   description?: string;
   subject: string;
   grade: string;
+  grade_from?: number | null;
+  grade_to?: number | null;
   topic: string;
+  board_type?: string;
   html: string;
   css: string;
   javascript: string;
@@ -370,6 +396,8 @@ export type BoardLibraryItem = {
   share_token?: string | null;
   /** Nur für Owner sinnvoll; für andere Nutzer immer `false`. */
   student_link_enabled?: boolean;
+  /** Aus `generation_input.duration_minutes` bei freier Smartboard-Generierung; sonst `null`. */
+  planned_duration_minutes?: number | null;
 };
 
 export type BoardLibraryCommentDto = {

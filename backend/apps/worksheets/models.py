@@ -4,6 +4,12 @@ from django.contrib.auth.models import User
 from apps.patterns.models import WorksheetPattern
 
 class Worksheet(models.Model):
+    class LibraryModerationStatus(models.TextChoices):
+        NONE = 'none', 'Nicht eingereicht'
+        PENDING = 'pending', 'Freigabe ausstehend'
+        APPROVED = 'approved', 'Freigegeben'
+        REJECTED = 'rejected', 'Abgelehnt'
+
     id=models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner=models.ForeignKey(User, on_delete=models.CASCADE, related_name='worksheets')
     pattern=models.ForeignKey(WorksheetPattern, null=True, blank=True, on_delete=models.SET_NULL)
@@ -16,6 +22,17 @@ class Worksheet(models.Model):
     render_model=models.JSONField(default=dict)
     status=models.CharField(max_length=20, default='draft')
     generation_meta=models.JSONField(default=dict)
+    library_public=models.BooleanField(default=False)
+    library_published_at=models.DateTimeField(null=True, blank=True)
+    library_moderation_status=models.CharField(
+        max_length=20,
+        choices=LibraryModerationStatus.choices,
+        default=LibraryModerationStatus.NONE,
+        db_index=True,
+    )
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
     def __str__(self): return self.title
+
+    def is_catalog_listed(self) -> bool:
+        return self.library_public and self.library_moderation_status == self.LibraryModerationStatus.APPROVED

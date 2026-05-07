@@ -16,6 +16,7 @@ export type AuthUser = {
   last_name: string;
   credits_balance: number;
   credits_reference_cap: number;
+  is_staff: boolean;
 };
 
 type AuthContextValue = {

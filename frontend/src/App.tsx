@@ -19,6 +19,7 @@ import { PasswordForgotPage } from './features/auth/PasswordForgotPage';
 import { PasswordResetConfirmPage } from './features/auth/PasswordResetConfirmPage';
 import { PublicLoginPage } from './features/auth/PublicLoginPage';
 import { DatenschutzPage, ImpressumPage } from './features/legal/LegalNoticePages';
+import { BackofficePage } from './features/backoffice/BackofficePage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
 
@@ -94,6 +95,25 @@ const AuthRootRedirect = () => {
   return <Navigate to="/login" replace />;
 };
 
+const StaffOnlyBackoffice = () => {
+  const { user, bootstrapped } = useAuth();
+  if (!bootstrapped) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center bg-[var(--color-bg-app)] text-slate-500">
+        Laden…
+      </div>
+    );
+  }
+  if (!user?.is_staff) {
+    return <Navigate to="/app/dashboard" replace />;
+  }
+  return (
+    <ShellRoute topbar={{ title: 'Backoffice', subtitle: 'Bibliotheks-Freigaben' }}>
+      <BackofficePage />
+    </ShellRoute>
+  );
+};
+
 const ProtectedAppLayout = () => {
   const { bootstrapped, user } = useAuth();
   const location = useLocation();
@@ -130,7 +150,7 @@ export default function App() {
           element={
             <ShellRoute
               fullBleed
-              topbar={{ title: 'Dashboard', subtitle: 'KI-gestützte Arbeitsblätter — übersichtlich verwaltet' }}
+              topbar={{ title: 'Startseite', subtitle: 'Weiter machen, wo du aufgehört hast — und die Bibliothek entdecken' }}
             >
               <DashboardPage />
             </ShellRoute>
@@ -180,6 +200,7 @@ export default function App() {
             </ShellRoute>
           }
         />
+        <Route path="backoffice" element={<StaffOnlyBackoffice />} />
         <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

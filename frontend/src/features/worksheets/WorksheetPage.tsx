@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type SetStateAction } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { PanelRight } from 'lucide-react';
 import axios from 'axios';
@@ -9,9 +10,11 @@ import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetR
 import { normalizeContentForEdit } from './WorksheetContentEditor';
 import { WorksheetEditSidebar } from './WorksheetEditSidebar';
 import { EditorToolbar } from './EditorToolbar';
-import { Alert, IconButton, SectionCard } from '../../components/ui';
+import { Alert, Button, IconButton, SectionCard } from '../../components/ui';
 import { ResizableEditorDock } from '../../components/ResizableEditorDock';
 import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
+import { WORKSHEET_LIST_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
+import { useAuth } from '../../lib/authContext';
 
 const MAX_DRAFT_UNDO = 10;
 
@@ -109,6 +112,8 @@ function useDominantA4PageInScroll(
 
 export function WorksheetPage() {
   const { id } = useParams();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const fetchGen = useRef(0);
   const [loading, setLoading] = useState(true);
   const [ws, setWs] = useState<Worksheet | null>(null);
@@ -124,6 +129,7 @@ export function WorksheetPage() {
     Record<number, { vertical: boolean; horizontal: boolean; px: number }>
   >({});
   const [showCurriculumWizardHint, setShowCurriculumWizardHint] = useState(false);
+  const [libraryBusy, setLibraryBusy] = useState(false);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -265,6 +271,7 @@ export function WorksheetPage() {
 
   useEffect(() => {
     if (!draft || !id) return;
+    if (ws?.viewer_is_owner === false) return;
     const t = window.setTimeout(() => {
       api
         .post(`/worksheets/${id}/preview-render/`, { content: draft })
@@ -282,7 +289,7 @@ export function WorksheetPage() {
         .catch(() => setPreviewRm(null));
     }, 380);
     return () => window.clearTimeout(t);
-  }, [draft, id]);
+  }, [draft, id, ws?.viewer_is_owner]);
 
   useEffect(() => {
     if (!ws) return;
@@ -333,7 +340,7 @@ export function WorksheetPage() {
   };
 
   const save = async () => {
-    if (!ws || !id || !draft) return;
+    if (!ws || !id || !draft || ws.viewer_is_owner === false) return;
     setSaving(true);
     setErr('');
     try {
@@ -450,6 +457,74 @@ export function WorksheetPage() {
   if (!draft)
     return <p className="p-6 text-slate-600">Arbeitsblatt wird vorbereitet…</p>;
 
+  const isReadOnly = ws.viewer_is_owner === false;
+
+  const libMod = ws.library_moderation_status ?? 'none';
+  const libListed = ws.library_public === true && libMod === 'approved';
+  const libraryButtonLabel = user?.is_staff
+    ? ws.library_public
+      ? 'Aus öffentlicher Bibliothek nehmen'
+      : 'In öffentliche Bibliothek legen'
+    : libMod === 'pending'
+      ? 'Einreichung zurückziehen'
+      : libListed
+        ? 'Aus öffentlicher Bibliothek nehmen'
+        : 'Zur Freigabe einreichen';
+
+  const handleLibraryToggle = async () => {
+    if (!id || isReadOnly || !ws) return;
+    const mod = ws.library_moderation_status ?? 'none';
+    const listed = ws.library_public === true && mod === 'approved';
+
+    const runPatch = async (body: { library_public: boolean }) => {
+      setLibraryBusy(true);
+      setErr('');
+      try {
+        const r = await api.patch<Worksheet>(`/worksheets/${id}/`, body);
+        setWs(r.data);
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      } catch (e: unknown) {
+        const m = e as { response?: { data?: { detail?: string } } };
+        setErr(m.response?.data?.detail ?? 'Bibliotheks-Einstellung konnte nicht gespeichert werden.');
+      } finally {
+        setLibraryBusy(false);
+      }
+    };
+
+    if (user?.is_staff) {
+      const next = !ws.library_public;
+      const ok = next
+        ? window.confirm('Dieses Arbeitsblatt öffentlich in der Bibliothek sichtbar machen?')
+        : window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?');
+      if (!ok) return;
+      void runPatch({ library_public: next });
+      return;
+    }
+
+    if (mod === 'pending') {
+      if (!window.confirm('Die Einreichung zurückziehen?')) return;
+      void runPatch({ library_public: false });
+      return;
+    }
+
+    if (listed) {
+      if (!window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?')) return;
+      void runPatch({ library_public: false });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        'Dieses Arbeitsblatt zur Freigabe einreichen? Sobald eine Administratorin es freigibt, erscheint es in der Bibliothek.',
+      )
+    ) {
+      return;
+    }
+    void runPatch({ library_public: true });
+  };
+
   const displayRm = previewRm ?? ((ws.render_model || {}) as Record<string, unknown>);
 
   const viewWorksheet: Worksheet = {
@@ -470,6 +545,7 @@ export function WorksheetPage() {
   const curriculumPanel = ws.curriculum_usage_panel;
 
   const handleOpenRegenPage = (pageIndex: number) => {
+    if (isReadOnly) return;
     setRegenInstruction('');
     setRegenModalPage(pageIndex);
   };
@@ -481,7 +557,7 @@ export function WorksheetPage() {
   };
 
   const handleConfirmRegenPage = async () => {
-    if (!id || !draft || regenModalPage === null) return;
+    if (!id || !draft || regenModalPage === null || isReadOnly) return;
     setRegenBusyPage(regenModalPage);
     setErr('');
     try {
@@ -575,9 +651,10 @@ export function WorksheetPage() {
             saving={saving}
             hasUnsavedChanges={hasUnsavedChanges}
             onSave={() => void save()}
+            readOnly={isReadOnly}
             editSidebarOpen={sidebarChromeOpen}
-            onToggleEditSidebar={handleToggleEditSidebar}
-            onUndo={handleDraftUndo}
+            onToggleEditSidebar={isReadOnly ? undefined : handleToggleEditSidebar}
+            onUndo={isReadOnly ? undefined : handleDraftUndo}
             canUndo={canDraftUndo}
             statusLabel={
               ws.updated_at
@@ -585,6 +662,30 @@ export function WorksheetPage() {
                 : undefined
             }
           />
+          {!isReadOnly ? (
+            <div className="no-print flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-muted)]/40 px-4 py-2 sm:px-6">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={libraryBusy}
+                onClick={() => void handleLibraryToggle()}
+              >
+                {libraryButtonLabel}
+              </Button>
+              {libListed ? (
+                <span className="text-[11px] text-[var(--color-ink-500)]">
+                  Ist im Reiter „Bibliothek“ unter Arbeitsblätter sichtbar.
+                </span>
+              ) : !user?.is_staff && libMod === 'pending' ? (
+                <span className="text-[11px] text-[var(--color-ink-500)]">
+                  Freigabe durch eine Administratorin ausstehend — noch nicht öffentlich.
+                </span>
+              ) : !user?.is_staff && libMod === 'rejected' ? (
+                <span className="text-[11px] text-amber-800">Letzte Einreichung wurde abgelehnt. Du kannst erneut einreichen.</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col print:h-auto print:min-h-0 print:overflow-visible">
@@ -702,7 +803,7 @@ export function WorksheetPage() {
             ) : null}
           </div>
 
-          {!editDock.isLgViewport && mobileEditOpen ? (
+          {!editDock.isLgViewport && mobileEditOpen && !isReadOnly ? (
             <button
               type="button"
               className="no-print absolute inset-0 z-[30] bg-[var(--color-ink-900)]/25 backdrop-blur-[1px] lg:hidden"
@@ -711,7 +812,7 @@ export function WorksheetPage() {
             />
           ) : null}
 
-          {!editDock.isLgViewport && mobileEditOpen ? (
+          {!editDock.isLgViewport && mobileEditOpen && !isReadOnly ? (
             <div className="no-print absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-xl lg:hidden">
               <WorksheetEditSidebar
                 draft={draft}
@@ -740,7 +841,7 @@ export function WorksheetPage() {
             </div>
           ) : null}
 
-          {!editDock.isLgViewport ? (
+          {!editDock.isLgViewport && !isReadOnly ? (
             <button
               type="button"
               className={cn(
@@ -761,7 +862,7 @@ export function WorksheetPage() {
       </div>
       </div>
 
-      {editDock.isLgViewport ? (
+      {editDock.isLgViewport && !isReadOnly ? (
         <ResizableEditorDock
           ariaLabel="Struktur bearbeiten"
           title="Bearbeitung"

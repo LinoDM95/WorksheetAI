@@ -1,8 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, FileText, LayoutGrid, Book, Share2, Presentation, X } from 'lucide-react';
+import { Home, FileText, Book, Share2, Presentation, X, Shield } from 'lucide-react';
 import { Logo } from '../Logo';
 import { cn } from '../../lib/cn';
+import { useAuth } from '../../lib/authContext';
 
 type NavItem = {
   to: string;
@@ -18,7 +19,6 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/app/dashboard', label: 'Dashboard', icon: Home },
   { to: '/app/worksheets', label: 'Meine Arbeitsblätter', icon: FileText, matchPrefix: '/app/worksheets' },
   { to: '/app/boards', label: 'Smartboard', icon: Presentation, matchPrefix: '/app/boards' },
-  { to: '/app/patterns', label: 'Vorlagen', icon: LayoutGrid, matchPrefix: '/app/patterns' },
 ];
 
 const SCHOOL_NAV: NavItem[] = [
@@ -36,6 +36,7 @@ type SidebarProps = {
 };
 
 export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: SidebarProps) => {
+  const { user } = useAuth();
   const drawerMode = !isLg;
   /** Desktop: eingeklappt = schmale Leiste nur mit Icons (nicht width 0). */
   const railMode = !drawerMode && !open;
@@ -122,6 +123,24 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
             />
           ))}
         </nav>
+
+        {user?.is_staff ? (
+          <>
+            <SectionLabel rail={railMode}>Administration</SectionLabel>
+            <nav className="flex flex-col gap-0.5">
+              <NavItemLink
+                item={{
+                  to: '/app/backoffice',
+                  label: 'Backoffice',
+                  icon: Shield,
+                  matchPrefix: '/app/backoffice',
+                }}
+                railMode={railMode}
+                onNavigate={() => drawerMode && onClose()}
+              />
+            </nav>
+          </>
+        ) : null}
 
         <div className="flex-1" />
       </aside>

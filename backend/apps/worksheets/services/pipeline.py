@@ -279,6 +279,14 @@ class WorksheetGenerator(WorksheetPipeline):
             meta['curriculum_warning'] = self._curriculum_warning
         if self._matched_row:
             meta['used_curriculum_context_id'] = str(self._matched_row['context'].id)
+        tb = self.payload.get('time_budget_minutes')
+        if tb is not None:
+            try:
+                tbi = int(tb)
+                if tbi > 0:
+                    meta['time_budget_minutes'] = tbi
+            except (TypeError, ValueError):
+                pass
         worksheet = Worksheet.objects.create(
             owner=self.user,
             pattern=self.pattern,

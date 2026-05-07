@@ -23,8 +23,16 @@ type Props = {
   fitContainer?: boolean;
   /** Nach kurzer Zeit Anim/Transition stoppen, Medien pausieren, rAF abstellen — auch mit laufenden Skripten (Thumbnails). */
   frozenPreview?: boolean;
+  /** Verzögerung vor dem Freeze (ms), nur wenn `frozenPreview`; Standard wird in `buildFreeHtmlSrcDoc` gesetzt. */
+  frozenPreviewFreezeDelayMs?: number;
   /** Bei scriptsEnabled:false kein gelber Hinweis-Balken (z. B. kleine Thumbnails). */
   hideScriptsDisabledNotice?: boolean;
+  /** Sandbox-Dokument hat `load` abgeschlossen (srcdoc initial + Subressourcen können noch laufen). */
+  onSandboxLoad?: () => void;
+  /** Zusätzliche Klassen für die weiße Bühnen-Fläche um das iframe (z. B. `bg-transparent` für Überlagerung). */
+  surfaceClassName?: string;
+  /** Zusätzliche Klassen direkt auf dem iframe (z. B. Abstimmung zur Surface). */
+  iframeClassName?: string;
 };
 
 const datasetIdsKey = (ids: DatasetId[] | undefined): string =>
@@ -43,7 +51,11 @@ export const FreeHtmlBoardFrame = ({
   fillHeight = false,
   fitContainer = false,
   frozenPreview = false,
+  frozenPreviewFreezeDelayMs,
   hideScriptsDisabledNotice = false,
+  onSandboxLoad,
+  surfaceClassName,
+  iframeClassName,
 }: Props) => {
   const [boardDatasets, setBoardDatasets] = useState<Record<string, unknown> | null>(null);
   const idsSignature = useMemo(() => datasetIdsKey(usedDatasets), [usedDatasets]);
@@ -96,6 +108,7 @@ export const FreeHtmlBoardFrame = ({
         boardDatasets: {},
         documentBaseHref,
         frozenPreview,
+        frozenPreviewFreezeDelayMs,
       });
     }
     return buildFreeHtmlSrcDoc({
@@ -107,6 +120,7 @@ export const FreeHtmlBoardFrame = ({
       boardDatasets: boardDatasets ?? {},
       documentBaseHref,
       frozenPreview,
+      frozenPreviewFreezeDelayMs,
     });
   }, [
     html,
@@ -119,6 +133,7 @@ export const FreeHtmlBoardFrame = ({
     reloadKey,
     documentBaseHref,
     frozenPreview,
+    frozenPreviewFreezeDelayMs,
   ]);
 
   const iframeMountKey = `${boardFrameId ?? 'board'}-${reloadKey}`;
@@ -138,6 +153,7 @@ export const FreeHtmlBoardFrame = ({
       <div
         className={cn(
           'relative w-full min-h-0 bg-white',
+          surfaceClassName,
           showAspectCard && 'aspect-video',
           expandInParent && 'flex-1',
         )}
@@ -146,7 +162,11 @@ export const FreeHtmlBoardFrame = ({
           key={iframeMountKey}
           title={boardFrameId ? `Board ${boardFrameId}` : 'Board (Sandbox)'}
           srcDoc={srcDoc}
-          className="absolute inset-0 block h-full w-full min-h-0 border-0 bg-white"
+          onLoad={onSandboxLoad}
+          className={cn(
+            'absolute inset-0 block h-full w-full min-h-0 border-0 bg-white',
+            iframeClassName,
+          )}
           sandbox="allow-scripts"
         />
       </div>

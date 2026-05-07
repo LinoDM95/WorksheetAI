@@ -191,6 +191,8 @@ export type BuildSrcDocOptions = {
    * scriptsEnabled:false setzen).
    */
   frozenPreview?: boolean;
+  /** Verzögerung vor dem Freeze (ms). Standard nur wirksam wenn `frozenPreview`. */
+  frozenPreviewFreezeDelayMs?: number;
 };
 
 /** Zeit, die CSS-Animationen im Thumbnail-iframe laufen dürfen, bevor „Freeze“ greift. */
@@ -392,6 +394,7 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
     boardDatasets,
     documentBaseHref,
     frozenPreview,
+    frozenPreviewFreezeDelayMs,
   } = opts;
   const safeCss = escapeStyleFragment(css || '');
   const userJs = scriptsEnabled ? escapeScriptFragment(javascript || '') : '';
@@ -400,9 +403,8 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
   const datasetsHtml = boardDatasetsScript(boardDatasets);
   const baseTag = documentBaseTag(documentBaseHref);
   const resetCss = buildResetCss(STAGE_BASE_W, STAGE_BASE_H);
-  const frozenThumbScript = frozenPreview
-    ? buildFrozenThumbFreezeScript(FROZEN_THUMB_FREEZE_DELAY_MS)
-    : '';
+  const freezeDelayMs = frozenPreviewFreezeDelayMs ?? FROZEN_THUMB_FREEZE_DELAY_MS;
+  const frozenThumbScript = frozenPreview ? buildFrozenThumbFreezeScript(freezeDelayMs) : '';
   const sandboxBootstrapHtml = buildSandboxBootstrap(STAGE_BASE_W, STAGE_BASE_H);
 
   const userScriptBlock = scriptsEnabled
