@@ -7,10 +7,24 @@ from django.utils import timezone
 from .models import Worksheet
 from .services.render_model import build_render_model
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
+from .services.creative_html_pipeline import (
+    build_creative_html_render_model,
+    is_creative_html_content,
+    repair_creative_html_worksheet,
+    worksheet_pages_are_creative_html_shape,
+)
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+_LISTING_CAP_TITLE = 255
+_LISTING_CAP_TOPIC = 220
+_LISTING_CAP_DESC = 8000
+
+
+def _worksheet_content_is_creative_html(content: dict) -> bool:
+    return is_creative_html_content(content) or worksheet_pages_are_creative_html_shape(content)
 
 
 def _planned_duration_from_worksheet(obj: Worksheet) -> int | None:
@@ -63,6 +77,18 @@ def build_curriculum_usage_payload(worksheet: Worksheet) -> dict:
         ),
     }
 
+
+def _resolve_worksheet_listing(instance: Worksheet, data: dict) -> tuple[str, str, str]:
+    lt_raw = data['library_listing_title'] if 'library_listing_title' in data else instance.library_listing_title
+    lk_raw = data['library_listing_topic'] if 'library_listing_topic' in data else instance.library_listing_topic
+    ld_raw = data['library_listing_description'] if 'library_listing_description' in data else instance.library_listing_description
+    return (
+        str(lt_raw or '').strip(),
+        str(lk_raw or '').strip(),
+        str(ld_raw or '').strip(),
+    )
+
+
 class WorksheetSerializer(serializers.ModelSerializer):
     pattern_name = serializers.CharField(source='pattern.name', read_only=True)
     curriculum_warning = serializers.SerializerMethodField()
@@ -75,7 +101,8 @@ class WorksheetSerializer(serializers.ModelSerializer):
         fields=['id','title','subject','grade','topic','page_setup','content','render_model','status',
                 'generation_meta','pattern','pattern_name','created_at','updated_at',
                 'curriculum_warning','curriculum_show_usage','curriculum_usage_panel',
-                'library_public','library_moderation_status','library_published_at','viewer_is_owner']
+                'library_public','library_listing_title','library_listing_topic','library_listing_description',
+                'library_moderation_status','library_published_at','viewer_is_owner']
         read_only_fields=['owner','created_at','updated_at','generation_meta','library_published_at','viewer_is_owner','library_moderation_status']
 
     def get_viewer_is_owner(self, obj: Worksheet) -> bool:
@@ -110,12 +137,16 @@ class WorksheetSerializer(serializers.ModelSerializer):
             return data
 
         try:
-            data['render_model'] = build_render_model(
-                content,
-                instance.page_setup,
-                instance.pattern,
-                req,
-            )
+            if _worksheet_content_is_creative_html(content):
+                c2, _ = repair_creative_html_worksheet(copy.deepcopy(content), instance.page_setup)
+                data['render_model'] = build_creative_html_render_model(c2, instance.page_setup, req)
+            else:
+                data['render_model'] = build_render_model(
+                    content,
+                    instance.page_setup,
+                    instance.pattern,
+                    req,
+                )
         except Exception as exc:
             logger.warning('render_model Neuaufbau fehlgeschlagen, nutze gespeichertes Modell: %s', exc)
             if isinstance(instance.render_model, dict) and instance.render_model:
@@ -137,10 +168,20 @@ class WorksheetSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         is_staff = bool(request and getattr(request.user, 'is_staff', False))
         MOD = Worksheet.LibraryModerationStatus
+        listing_keys = ('library_listing_title', 'library_listing_topic', 'library_listing_description')
+        listing_in = any(k in validated_data for k in listing_keys)
 
         if 'library_public' in validated_data:
             wants = bool(validated_data['library_public'])
             if wants:
+                lt, lk, ld = _resolve_worksheet_listing(instance, validated_data)
+                if not lt or not lk or not ld:
+                    raise serializers.ValidationError({
+                        'detail': 'Für die Bibliothek sind öffentlicher Titel, Thema und Beschreibung erforderlich.',
+                    })
+                validated_data['library_listing_title'] = lt[:_LISTING_CAP_TITLE]
+                validated_data['library_listing_topic'] = lk[:_LISTING_CAP_TOPIC]
+                validated_data['library_listing_description'] = ld[:_LISTING_CAP_DESC]
                 if is_staff:
                     validated_data['library_moderation_status'] = MOD.APPROVED
                     validated_data['library_public'] = True
@@ -150,12 +191,35 @@ class WorksheetSerializer(serializers.ModelSerializer):
             else:
                 validated_data['library_public'] = False
                 validated_data['library_moderation_status'] = MOD.NONE
+                validated_data['library_listing_title'] = ''
+                validated_data['library_listing_topic'] = ''
+                validated_data['library_listing_description'] = ''
+        elif listing_in:
+            lt, lk, ld = _resolve_worksheet_listing(instance, validated_data)
+            mod = instance.library_moderation_status
+            if mod in (MOD.PENDING, MOD.APPROVED) or instance.library_public:
+                if not lt or not lk or not ld:
+                    raise serializers.ValidationError({
+                        'detail': (
+                            'Öffentlicher Titel, Thema und Beschreibung dürfen für den Bibliotheksstatus '
+                            'nicht leer sein.'
+                        ),
+                    })
+            if 'library_listing_title' in validated_data:
+                validated_data['library_listing_title'] = lt[:_LISTING_CAP_TITLE]
+            if 'library_listing_topic' in validated_data:
+                validated_data['library_listing_topic'] = lk[:_LISTING_CAP_TOPIC]
+            if 'library_listing_description' in validated_data:
+                validated_data['library_listing_description'] = ld[:_LISTING_CAP_DESC]
 
         was_catalog = instance.is_catalog_listed()
         if isinstance(content, dict):
             c = copy.deepcopy(content)
-            c, _ = apply_page_coalesce_to_content(c)
-            c, _ = apply_page_overflow_reflow(c)
+            if _worksheet_content_is_creative_html(c):
+                c, _ = repair_creative_html_worksheet(c, instance.page_setup)
+            else:
+                c, _ = apply_page_coalesce_to_content(c)
+                c, _ = apply_page_overflow_reflow(c)
             validated_data['content'] = c
         instance = super().update(instance, validated_data)
         if 'library_public' in validated_data:
@@ -170,12 +234,20 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 'theme':(instance.render_model or {}).get('theme','neutral'),
                 'creativity':(instance.render_model or {}).get('creativity','balanced'),
             }
-            instance.render_model=build_render_model(
-                instance.content,
-                instance.page_setup,
-                instance.pattern,
-                req,
-            )
+            ic = instance.content if isinstance(instance.content, dict) else {}
+            if _worksheet_content_is_creative_html(ic):
+                instance.render_model=build_creative_html_render_model(
+                    ic,
+                    instance.page_setup,
+                    req,
+                )
+            else:
+                instance.render_model=build_render_model(
+                    instance.content,
+                    instance.page_setup,
+                    instance.pattern,
+                    req,
+                )
             ct=instance.content.get('title') if isinstance(instance.content,dict) else None
             if ct:
                 instance.title=str(ct)[:255]
@@ -187,6 +259,9 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
     """Leichtgewichtiger Katalog-Eintrag (ohne content/render_model)."""
 
     kind = serializers.SerializerMethodField()
+    title = serializers.SerializerMethodField()
+    topic = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
     grade = serializers.SerializerMethodField()
     owner_label = serializers.SerializerMethodField()
     viewer_is_owner = serializers.SerializerMethodField()
@@ -201,6 +276,7 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
             'subject',
             'grade',
             'topic',
+            'description',
             'planned_duration_minutes',
             'library_published_at',
             'owner_label',
@@ -209,6 +285,20 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
 
     def get_kind(self, obj: Worksheet) -> str:
         return 'worksheet'
+
+    @staticmethod
+    def get_title(obj: Worksheet) -> str:
+        pub = (obj.library_listing_title or '').strip()
+        return pub if pub else (obj.title or '')
+
+    @staticmethod
+    def get_topic(obj: Worksheet) -> str:
+        pub = (obj.library_listing_topic or '').strip()
+        return pub if pub else (obj.topic or '')
+
+    @staticmethod
+    def get_description(obj: Worksheet) -> str:
+        return (obj.library_listing_description or '').strip()
 
     def get_grade(self, obj: Worksheet) -> str:
         return str(obj.grade) if obj.grade is not None else ''

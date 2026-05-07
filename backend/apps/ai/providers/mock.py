@@ -56,6 +56,41 @@ class MockWorksheetProvider:
 
     def generate(self, payload):
         req = payload.get('request', {})
+        if (req.get('worksheet_mode') or '').strip().lower() == 'creative':
+            topic = req.get('topic') or 'Arbeitsblatt'
+            grade = int(req.get('grade_value') or req.get('grade') or 4)
+            subject = req.get('subject_name') or req.get('subject') or 'Mathematik'
+            out = {
+                'title': topic,
+                'subtitle': f'{subject} · Klasse {grade} (Mock Kreativ · HTML)',
+                'pages': [
+                    {
+                        'page_label': '',
+                        'html': (
+                            '<div class="ws-creative-page-inner"><h2>Übung (Mock)</h2>'
+                            '<p>Löse die Aufgaben zum Thema. <strong>Hinweis:</strong> Kein LaTeX im Kreativmodus — '
+                            'nur HTML.</p><ol class="ws-mock-tasks"><li>Beispielaufgabe 1</li>'
+                            '<li>Beispielaufgabe 2</li></ol></div>'
+                        ),
+                        'page_css': (
+                            '.ws-creative-page-inner h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.75rem; } '
+                            '.ws-creative-page-inner .ws-mock-tasks { margin: 0.5rem 0 0 1.25rem; padding: 0; } '
+                            '.ws-creative-page-inner .ws-mock-tasks li { margin-bottom: 0.35rem; }'
+                        ),
+                    }
+                ],
+                'solutions': [{'label': '1', 'answer': 'Mock-Lösung'}],
+            }
+            ca = self._alignment_from_curriculum(payload)
+            if ca:
+                out['curriculum_alignment'] = ca
+            self._stamp_usage(
+                'worksheet_generation_creative_html',
+                input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
+                output_approx=max(8, int(len(json.dumps(out, default=str)) / 4)),
+            )
+            return out
+
         topic = req.get('topic') or 'Arbeitsblatt'
         grade = int(req.get('grade_value') or req.get('grade') or 2)
         subject = req.get('subject_name') or req.get('subject') or 'Mathematik'
@@ -130,6 +165,25 @@ class MockWorksheetProvider:
         return out
 
     def regenerate_page(self, payload):
+        from apps.worksheets.services.creative_html_pipeline import RENDER_KIND_CREATIVE_HTML
+
+        if (payload.get('worksheet_render_kind') or '').strip() == RENDER_KIND_CREATIVE_HTML:
+            old = payload.get('current_page') or {}
+            html = str(old.get('html') or '')
+            suffix = '<p class="ws-mock-regen"><em>Mock: Seite ergänzt.</em></p>'
+            merged = html.replace('</div>', suffix + '</div>', 1) if '</div>' in html else html + suffix
+            result = {
+                'page_label': old.get('page_label', '') or '',
+                'html': merged,
+                'page_css': str(old.get('page_css') or ''),
+            }
+            self._stamp_usage(
+                'worksheet_page_regenerate_creative_html',
+                input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
+                output_approx=max(8, int(len(json.dumps(result, default=str)) / 4)),
+            )
+            return result
+
         old = payload.get('current_page') or {}
         blocks = list(old.get('blocks') or [])
         blocks.append({

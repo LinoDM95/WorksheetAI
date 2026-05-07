@@ -30,7 +30,6 @@ export const useWizardState = (initial: WizardState = INITIAL_WIZARD_STATE) => {
         dispatch({ type: 'setMargin', side, value }),
       setMarginValue: (value: number) => dispatch({ type: 'setMarginValue', value }),
       toggleMarginLink: () => dispatch({ type: 'toggleMarginLink' }),
-      clearPattern: () => dispatch({ type: 'clearPattern' }),
       reset: () => dispatch({ type: 'reset' }),
     }),
     [],

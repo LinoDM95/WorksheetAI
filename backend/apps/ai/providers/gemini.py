@@ -13,6 +13,8 @@ from apps.ai.prompt_loader import (
     build_free_html_repair_prompt,
     build_free_html_revision_prompt,
     build_page_regeneration_prompt,
+    build_worksheet_creative_html_generation_prompt_for_gemini,
+    build_worksheet_creative_html_page_regeneration_prompt,
     build_worksheet_generation_prompt_for_gemini,
     build_worksheet_review_prompt,
 )
@@ -216,6 +218,45 @@ SCHEMA = {
   'required': ['title', 'pages', 'solutions', 'presentation'],
 }
 
+CREATIVE_WORKSHEET_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Printable worksheet: each page is HTML+CSS only. Root of html must be .ws-creative-page-inner. '
+        'No LaTeX delimiters, no script tags.'
+    ),
+    'properties': {
+        'title': {'type': 'STRING'},
+        'subtitle': {'type': 'STRING'},
+        'pages': {
+            'type': 'ARRAY',
+            'minItems': 1,
+            'items': {
+                'type': 'OBJECT',
+                'properties': {
+                    'page_label': {'type': 'STRING'},
+                    'html': {'type': 'STRING'},
+                    'page_css': {'type': 'STRING'},
+                },
+                'required': ['html'],
+            },
+        },
+        'solutions': {'type': 'ARRAY', 'items': {'type': 'OBJECT'}},
+        'curriculum_alignment': SCHEMA['properties']['curriculum_alignment'],
+    },
+    'required': ['title', 'pages', 'solutions'],
+}
+
+CREATIVE_PAGE_REGEN_SCHEMA = {
+    'type': 'OBJECT',
+    'description': 'One creative worksheet page: html + optional page_css and page_label.',
+    'properties': {
+        'page_label': {'type': 'STRING'},
+        'html': {'type': 'STRING'},
+        'page_css': {'type': 'STRING'},
+    },
+    'required': ['html'],
+}
+
 PAGE_REGEN_SCHEMA = {
     'type': 'OBJECT',
     'description': (
@@ -379,8 +420,12 @@ class GeminiWorksheetProvider:
 
             step = (trace_step or '').strip() or 'risk'
             inp, out, ex = parse_gemini_usage(resp)
-            if inp == 0 and out == 0 and fallback_char_source:
-                inp = max(0, int(len(fallback_char_source) / 4))
+            fb = (fallback_char_source or '').strip()
+            txt = getattr(resp, 'text', None) or ''
+            if inp == 0 and fb:
+                inp = max(0, int(len(fb) / 4))
+            if out == 0 and txt:
+                out = max(0, int(len(txt) / 4))
             route_provider_usage(
                 provider_self=self,
                 step_type=step,
@@ -507,6 +552,34 @@ class GeminiWorksheetProvider:
 
     def generate(self, payload: dict) -> dict:
         req = payload.get('request') or {}
+        if (req.get('worksheet_mode') or '').strip().lower() == 'creative':
+            system_instr, user_content = build_worksheet_creative_html_generation_prompt_for_gemini(
+                req,
+                payload.get('page_setup') or {},
+                curriculum_context=payload.get('curriculum_context'),
+            )
+            gen_cfg = {
+                'temperature': settings.GEMINI_TEMPERATURE,
+                'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+                'response_mime_type': 'application/json',
+                'response_schema': CREATIVE_WORKSHEET_SCHEMA,
+            }
+            if system_instr:
+                gen_cfg['system_instruction'] = system_instr
+            fb_gen = self._prompt_fallback_chars(user_content)
+            if system_instr:
+                sys_s = system_instr if isinstance(system_instr, str) else str(system_instr)
+                fb_gen = f'{sys_s}\n{fb_gen}' if fb_gen.strip() else sys_s
+            resp = self._generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=user_content,
+                config=types.GenerateContentConfig(**gen_cfg),
+                trace_step='worksheet_generation_creative_html',
+                fallback_char_source=fb_gen,
+            )
+            text = resp.text or '{}'
+            return json.loads(text)
+
         system_instr, user_content = build_worksheet_generation_prompt_for_gemini(
             req,
             payload.get('page_setup') or {},
@@ -521,12 +594,16 @@ class GeminiWorksheetProvider:
         }
         if system_instr:
             gen_cfg['system_instruction'] = system_instr
+        fb_gen = self._prompt_fallback_chars(user_content)
+        if system_instr:
+            sys_s = system_instr if isinstance(system_instr, str) else str(system_instr)
+            fb_gen = f'{sys_s}\n{fb_gen}' if fb_gen.strip() else sys_s
         resp = self._generate_content(
             model=settings.GEMINI_MODEL,
             contents=user_content,
             config=types.GenerateContentConfig(**gen_cfg),
             trace_step='worksheet_generation',
-            fallback_char_source=self._prompt_fallback_chars(user_content),
+            fallback_char_source=fb_gen,
         )
         text = resp.text or '{}'
         return json.loads(text)
@@ -556,6 +633,27 @@ class GeminiWorksheetProvider:
         return json.loads(text)
 
     def regenerate_page(self, payload: dict) -> dict:
+        from apps.worksheets.services.creative_html_pipeline import RENDER_KIND_CREATIVE_HTML
+
+        rk = (payload.get('worksheet_render_kind') or '').strip()
+        if rk == RENDER_KIND_CREATIVE_HTML:
+            prompt = build_worksheet_creative_html_page_regeneration_prompt(payload)
+            gen_cfg = {
+                'temperature': settings.GEMINI_TEMPERATURE,
+                'max_output_tokens': settings.GEMINI_MAX_OUTPUT_TOKENS,
+                'response_mime_type': 'application/json',
+                'response_schema': CREATIVE_PAGE_REGEN_SCHEMA,
+            }
+            resp = self._generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(**gen_cfg),
+                trace_step='worksheet_page_regenerate_creative_html',
+                fallback_char_source=prompt,
+            )
+            text = resp.text or '{}'
+            return json.loads(text)
+
         prompt = build_page_regeneration_prompt(payload)
         gen_cfg = {
             'temperature': settings.GEMINI_TEMPERATURE,

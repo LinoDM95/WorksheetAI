@@ -23,6 +23,9 @@ class Worksheet(models.Model):
     status=models.CharField(max_length=20, default='draft')
     generation_meta=models.JSONField(default=dict)
     library_public=models.BooleanField(default=False)
+    library_listing_title = models.CharField(max_length=255, blank=True)
+    library_listing_topic = models.CharField(max_length=220, blank=True)
+    library_listing_description = models.TextField(blank=True)
     library_published_at=models.DateTimeField(null=True, blank=True)
     library_moderation_status=models.CharField(
         max_length=20,

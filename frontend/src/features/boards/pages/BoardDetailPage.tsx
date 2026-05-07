@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,7 +20,6 @@ import {
   updateBoardCode,
 } from '../boardsApi';
 import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
-import { BoardAiGenerationOverlay } from '../components/BoardAiGenerationOverlay';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
 import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
@@ -33,12 +32,16 @@ import { BoardDetailMetaPanel } from './boardDetail/BoardDetailMetaPanel';
 import { BoardDetailPageHeader } from './boardDetail/BoardDetailPageHeader';
 import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
 import { BoardShellModal } from './boardDetail/BoardShellModal';
+import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 export function BoardDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
+  const reviseJobRef = useRef<string | null>(null);
 
   const [reviseOpen, setReviseOpen] = useState(false);
   const [fatalOpen, setFatalOpen] = useState(false);
@@ -179,9 +182,30 @@ export function BoardDetailPage() {
   );
 
   const reviseMutation = useMutation({
-    mutationFn: ({ prompt, mode }: { prompt: string; mode: RevisionMode }) =>
-      reviseBoard(id, prompt, { revision_mode: mode }),
+    mutationFn: ({ prompt, mode }: { prompt: string; mode: RevisionMode }) => {
+      const jid = reviseJobRef.current;
+      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
+      return runSerialized(jid, async () => {
+        updateJob(jid, {
+          phaseLabel: 'Die KI passt HTML, CSS und JavaScript an …',
+          progressPercent: null,
+        });
+        return reviseBoard(id, prompt, { revision_mode: mode });
+      });
+    },
+    onMutate: () => {
+      reviseJobRef.current = startJob({
+        kind: 'board-revise',
+        title: 'Board wird überarbeitet',
+        subtitle: board?.title?.trim() || undefined,
+      });
+    },
     onSuccess: () => {
+      const jid = reviseJobRef.current;
+      if (jid) {
+        completeJob(jid, { successMessage: 'Vorschau wurde aktualisiert.' });
+        reviseJobRef.current = null;
+      }
       queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
       queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
@@ -193,8 +217,20 @@ export function BoardDetailPage() {
       setPreviewRevisionId(null);
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail;
-      setReviseError(detail || (err as Error)?.message || 'Revision fehlgeschlagen.');
+      if (isAiGenerationQueueAbortedError(err)) {
+        reviseJobRef.current = null;
+        return;
+      }
+      const jid = reviseJobRef.current;
+      const detail =
+        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+        || (err as Error)?.message
+        || 'Revision fehlgeschlagen.';
+      if (jid) {
+        failJob(jid, detail);
+        reviseJobRef.current = null;
+      }
+      setReviseError(detail);
     },
   });
 
@@ -516,8 +552,6 @@ export function BoardDetailPage() {
 
   return (
     <div className="flex h-full min-h-0 w-full max-w-none flex-1 flex-col overflow-x-hidden bg-[var(--color-bg-app)]">
-      <BoardAiGenerationOverlay open={reviseMutation.isPending} variant="revise" />
-
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <BoardDetailPageHeader
           board={board}
@@ -593,7 +627,7 @@ export function BoardDetailPage() {
       <BoardShellModal
         open={reviseOpen}
         title="Board per KI überarbeiten"
-        onClose={() => !reviseMutation.isPending && setReviseOpen(false)}
+        onClose={() => setReviseOpen(false)}
         wide
       >
         <BoardDetailReviseTab

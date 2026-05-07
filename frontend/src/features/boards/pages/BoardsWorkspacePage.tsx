@@ -1,4 +1,3 @@
-import { createPortal } from 'react-dom';
 import {
   useCallback,
   useEffect,
@@ -42,7 +41,15 @@ import {
 } from '../boardsApi';
 import { cn } from '../../../lib/cn';
 import { LG_MEDIA_QUERY, useMediaQuery } from '../../../lib/useMediaQuery';
-import { MobileWorkspaceTabs, type WorkspaceMobileTab } from '../../../components/shell/MobileWorkspaceTabs';
+import type { WorkspaceMobileTab } from '../../../components/shell/MobileWorkspaceTabs';
+import {
+  WorkspaceExplorerFrame,
+  WorkspaceExplorerGalerieHint,
+  WorkspaceExplorerListScroll,
+  WorkspaceExplorerToolbar,
+} from '../../../components/workspace/WorkspaceExplorer';
+import { ExplorerListItemContextMenuPortal } from '../../../components/workspace/ExplorerListItemContextMenu';
+import { ExplorerFolderContextMenuPortal } from '../../../components/workspace/ExplorerFolderContextMenu';
 import type { BoardFolderDto, BoardListItem, BoardCodeUpdate } from '../types';
 import { BoardDetailPage } from './BoardDetailPage';
 import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
@@ -578,25 +585,16 @@ export function BoardsWorkspacePage() {
   };
 
   return (
-    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
-      <MobileWorkspaceTabs
-        value={mobileTab}
-        onChange={setMobileTab}
-        contentDisabled={!selectedBoardId}
-      />
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      <aside
-        className={cn(
-          'flex shrink-0 flex-col border-slate-200 bg-[var(--color-bg-card)] lg:w-[min(100%,300px)] lg:max-w-[340px] lg:border-r lg:border-b-0',
-          'border-b',
-          draggingBoardId != null && 'select-none',
-          !isLg && mobileTab !== 'list' && 'hidden',
-          !isLg && mobileTab === 'list' && 'min-h-0 flex-1',
-          'lg:flex lg:max-h-none',
-        )}
-      >
-        <div className="shrink-0 space-y-2 border-b border-slate-100 p-2">
-          <div className="flex flex-wrap items-center gap-1 sm:flex-nowrap">
+    <>
+    <WorkspaceExplorerFrame
+      mobileTab={mobileTab}
+      onMobileTabChange={setMobileTab}
+      contentDisabled={!selectedBoardId}
+      isLg={isLg}
+      sidebarDragging={draggingBoardId != null}
+      sidebar={
+        <>
+        <WorkspaceExplorerToolbar>
             <IconButton
               type="button"
               variant="secondary"
@@ -625,8 +623,7 @@ export function BoardsWorkspacePage() {
               aria-label="Boards durchsuchen"
               containerClassName="min-w-0 flex-1 basis-[min(100%,12rem)] sm:basis-auto"
             />
-          </div>
-        </div>
+        </WorkspaceExplorerToolbar>
 
         {createFolderMutation.isError && (
           <div className="shrink-0 px-2">
@@ -670,7 +667,7 @@ export function BoardsWorkspacePage() {
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-2">
+        <WorkspaceExplorerListScroll>
           {isPending ? (
             <p className="px-2 text-sm text-slate-500">Lade …</p>
           ) : items.length === 0 ? (
@@ -690,27 +687,17 @@ export function BoardsWorkspacePage() {
             />
           ) : (
             <>
-              <div className="px-1 pb-2">
-                <NavLink
-                  to="."
-                  end
-                  className={({ isActive }) =>
-                    cn(
-                      'block rounded-lg px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors outline-none focus-visible:ring-2 focus-visible:ring-indigo-400',
-                      isActive ? 'bg-indigo-50 text-indigo-900' : 'text-slate-500 hover:bg-slate-50',
-                    )
-                  }
-                >
-                  Galerie
-                </NavLink>
-                <p className="mt-1 px-2 text-[10px] leading-snug text-slate-400">
-                  Rechtsklick für Optionen. Zum Sortieren das{' '}
-                  <span className="font-semibold text-slate-500">Griff-Symbol</span> links neben dem Titel greifen und auf
-                  einen Ordner ziehen — der Titel-Link dient nur zum Öffnen, damit Klick und Ziehen sich nicht stören.
-                  Neu erzeugte, aus der Bibliothek übernommene oder duplizierte Boards sind grün hinterlegt,
-                  bis du sie einmal in der Bearbeitung geöffnet hast.
-                </p>
-              </div>
+              <WorkspaceExplorerGalerieHint
+                hint={
+                  <>
+                    Rechtsklick für Optionen. Zum Sortieren das{' '}
+                    <span className="font-semibold text-slate-500">Griff-Symbol</span> links neben dem Titel greifen und auf
+                    einen Ordner ziehen — der Titel-Link dient nur zum Öffnen, damit Klick und Ziehen sich nicht stören.
+                    Neu erzeugte, aus der Bibliothek übernommene oder duplizierte Boards sind grün hinterlegt, bis du sie
+                    einmal in der Bearbeitung geöffnet hast.
+                  </>
+                }
+              />
 
               {filteredItems.length === 0 ? (
                 <p className="px-2 text-sm text-slate-500">Keine Treffer — Suche anpassen.</p>
@@ -798,18 +785,12 @@ export function BoardsWorkspacePage() {
               )}
             </>
           )}
-        </div>
-      </aside>
-
-      <section
-        className={cn(
-          'flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0',
-          !isLg && mobileTab !== 'content' && 'hidden',
-        )}
-      >
+        </WorkspaceExplorerListScroll>
+        </>
+      }
+    >
         <Outlet />
-      </section>
-      </div>
+    </WorkspaceExplorerFrame>
 
       <NewBoardModal
         open={newBoardOpen}
@@ -855,8 +836,8 @@ export function BoardsWorkspacePage() {
       />
 
       {folderMenu ? (
-        <FolderContextMenuPortal
-          state={folderMenu}
+        <ExplorerFolderContextMenuPortal
+          coords={{ x: folderMenu.x, y: folderMenu.y }}
           onClose={closeFolderMenu}
           onRename={() => {
             const id = folderMenu.folderId;
@@ -877,13 +858,14 @@ export function BoardsWorkspacePage() {
       ) : null}
 
       {boardMenu && boardMenuTarget ? (
-        <BoardContextMenuPortal
-          state={boardMenu}
-          board={boardMenuTarget}
+        <ExplorerListItemContextMenuPortal
+          coords={{ x: boardMenu.x, y: boardMenu.y }}
+          itemLabel={boardMenuTarget.title ?? ''}
           onClose={closeBoardMenu}
           duplicatePending={duplicateMutation.isPending}
-          patchPending={flagsMutation.isPending}
+          renamePending={flagsMutation.isPending}
           deletePending={deleteMutation.isPending}
+          deleteLabel="Board löschen …"
           onRename={() => {
             closeBoardMenu();
             handleRenameBoard(boardMenuTarget);
@@ -895,7 +877,7 @@ export function BoardsWorkspacePage() {
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1054,142 +1036,3 @@ const FolderBranch = ({
   );
 };
 
-const MenuDivider = () => <div className="my-1 border-t border-slate-100" role="separator" />;
-
-const BoardContextMenuPortal = ({
-  state,
-  board,
-  onClose,
-  onRename,
-  onDuplicate,
-  onDelete,
-  duplicatePending,
-  patchPending,
-  deletePending,
-}: {
-  state: BoardMenuState;
-  board: BoardListItem;
-  onClose: () => void;
-  onRename: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  duplicatePending: boolean;
-  patchPending: boolean;
-  deletePending: boolean;
-}) => {
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    const id = window.requestAnimationFrame(() => {
-      document.addEventListener('mousedown', onDoc, true);
-    });
-    return () => {
-      window.cancelAnimationFrame(id);
-      document.removeEventListener('mousedown', onDoc, true);
-    };
-  }, [onClose]);
-
-  const title = board.title || 'Ohne Titel';
-  const busy = patchPending || duplicatePending || deletePending;
-
-  return createPortal(
-    <div
-      ref={ref}
-      role="menu"
-      aria-label={`Kontextmenü: ${title}`}
-      style={{ position: 'fixed', left: state.x, top: state.y, zIndex: 60 }}
-      className="min-w-[220px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-    >
-      <MenuButton onClick={onRename} disabled={busy}>
-        Titel umbenennen …
-      </MenuButton>
-      <MenuButton onClick={onDuplicate} disabled={busy}>
-        Duplizieren
-      </MenuButton>
-      <MenuDivider />
-      <MenuButton onClick={onDelete} disabled={busy} className="text-red-600 hover:bg-red-50">
-        Board löschen …
-      </MenuButton>
-    </div>,
-    document.body,
-  );
-};
-
-const FolderContextMenuPortal = ({
-  state,
-  onClose,
-  onRename,
-  onNewSubfolder,
-  onDelete,
-}: {
-  state: FolderMenuState;
-  onClose: () => void;
-  onRename: () => void;
-  onNewSubfolder: () => void;
-  onDelete: () => void;
-}) => {
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    const id = window.requestAnimationFrame(() => {
-      document.addEventListener('mousedown', onDoc, true);
-    });
-    return () => {
-      window.cancelAnimationFrame(id);
-      document.removeEventListener('mousedown', onDoc, true);
-    };
-  }, [onClose]);
-
-  return createPortal(
-    <div
-      ref={ref}
-      role="menu"
-      style={{ position: 'fixed', left: state.x, top: state.y, zIndex: 60 }}
-      className="min-w-[200px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-    >
-      <MenuButton onClick={onNewSubfolder}>Neuer Unterordner</MenuButton>
-      <MenuButton onClick={onRename}>Umbenennen …</MenuButton>
-      <MenuButton onClick={onDelete} className="text-red-600 hover:bg-red-50">
-        Ordner löschen …
-      </MenuButton>
-    </div>,
-    document.body,
-  );
-};
-
-const MenuButton = ({
-  children,
-  onClick,
-  className,
-  disabled,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  className?: string;
-  disabled?: boolean;
-}) => (
-  <button
-    type="button"
-    role="menuitem"
-    disabled={disabled}
-    className={cn(
-      'block w-full px-3 py-2 text-left text-[13px] text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50',
-      className,
-    )}
-    onClick={(e) => {
-      e.stopPropagation();
-      if (disabled) return;
-      onClick();
-    }}
-  >
-    {children}
-  </button>
-);

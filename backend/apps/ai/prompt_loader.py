@@ -92,6 +92,80 @@ def _curriculum_context_markdown(curriculum_context: dict | None) -> str:
     )
 
 
+def _worksheet_creative_html_dir() -> Path:
+    return _FORMATS_DIR / 'worksheet_creative_html'
+
+
+def build_worksheet_creative_html_generation_prompt(
+    request: dict,
+    page_setup: dict,
+    curriculum_context: dict | None = None,
+) -> str:
+    path = _worksheet_creative_html_dir() / 'generation.md'
+    md = path.read_text(encoding='utf-8')
+    teacher = _teacher_block(request)
+    cc_block = _curriculum_context_markdown(curriculum_context)
+    base = (
+        md.replace('{{TEACHER_CONTEXT}}', teacher)
+        .replace('{{REQUEST_JSON}}', _json_block(request))
+        .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
+        .replace('{{CURRICULUM_CONTEXT_BLOCK}}', cc_block)
+    )
+    return _append_teacher_visual_quality_supplement(base)
+
+
+def build_worksheet_creative_html_generation_prompt_for_gemini(
+    request: dict,
+    page_setup: dict,
+    curriculum_context: dict | None = None,
+) -> tuple[str | None, str]:
+    mono = build_worksheet_creative_html_generation_prompt(request, page_setup, curriculum_context)
+    if not getattr(settings, 'GEMINI_PROMPT_SPLIT_SYSTEM_USER', True):
+        return None, mono
+
+    path = _worksheet_creative_html_dir() / 'generation.md'
+    md = path.read_text(encoding='utf-8')
+    if _KONTEXT_ANCHOR not in md or _OUTPUT_ANCHOR not in md:
+        return None, mono
+
+    ik = md.index(_KONTEXT_ANCHOR)
+    io = md.index(_OUTPUT_ANCHOR)
+    head = md[:ik].strip()
+    variable_mid = md[ik:io].strip()
+    foot = md[io:].strip()
+
+    teacher = _teacher_block(request)
+    cc_block = _curriculum_context_markdown(curriculum_context)
+    user_text = (
+        variable_mid.replace('{{TEACHER_CONTEXT}}', teacher)
+        .replace('{{REQUEST_JSON}}', _json_block(request))
+        .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
+        .replace('{{CURRICULUM_CONTEXT_BLOCK}}', cc_block)
+    )
+
+    system_core = _append_teacher_visual_quality_supplement(head + '\n\n---\n\n' + foot)
+    return system_core, user_text
+
+
+def build_worksheet_creative_html_page_regeneration_prompt(payload: dict) -> str:
+    path = _worksheet_creative_html_dir() / 'page_regenerate.md'
+    md = path.read_text(encoding='utf-8')
+    meta = payload.get('worksheet_meta') or {}
+    instr = (payload.get('teacher_instruction') or '').strip()
+    if not instr:
+        instr = '*(Keine zusätzliche Lehrer-Anweisung. Bitte Seite inhaltlich und strukturell sinnvoll neu gestalten.)*'
+    base = (
+        md.replace('{{WORKSHEET_META_JSON}}', _json_block(meta))
+        .replace('{{PAGE_INDEX}}', str(payload.get('page_index', 0)))
+        .replace('{{PAGE_TOTAL}}', str(payload.get('page_total', 1)))
+        .replace('{{OTHER_PAGES_SUMMARY}}', str(payload.get('other_pages_summary') or '(keine weiteren Seiten)'))
+        .replace('{{CURRENT_PAGE_JSON}}', _json_block(payload.get('current_page') or {}))
+        .replace('{{PAGE_SETUP_JSON}}', _json_block(payload.get('page_setup') or {}))
+        .replace('{{TEACHER_INSTRUCTION}}', instr)
+    )
+    return _append_teacher_visual_quality_supplement(base)
+
+
 def build_worksheet_generation_prompt(
     request: dict,
     page_setup: dict,

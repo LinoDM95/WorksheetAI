@@ -24,7 +24,7 @@ export function MobileWorkspaceTabs({
       role="tablist"
       aria-label="Ansicht wechseln"
       className={cn(
-        'flex shrink-0 gap-1 border-b border-slate-200 bg-[var(--color-bg-card)] px-2 py-2 lg:hidden',
+        'no-print flex shrink-0 gap-1 border-b border-slate-200 bg-[var(--color-bg-card)] px-2 py-2 lg:hidden',
         className,
       )}
     >

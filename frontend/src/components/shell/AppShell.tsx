@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { ShellChromeProvider } from './ShellChromeContext';
 import { Topbar, type TopbarProps } from './Topbar';
 import { cn } from '../../lib/cn';
+import { AiGenerationStatusDock } from '../ai-generation/AiGenerationStatusDock';
 
 /** Desktop-Sidebar (Labels vs. Rail): über Routen hinweg, AppShell mountet pro Route neu. */
 const SIDEBAR_DESKTOP_OPEN_KEY = 'worksheetai.shell.sidebarOpenDesktop';
@@ -118,6 +119,7 @@ export const AppShell = ({ topbar, fullBleed = false, layoutVariant = 'default',
               <>
                 {topbar.actions}
                 <CreditsBubble />
+                <AiGenerationStatusDock />
                 <AccountMenu />
               </>
             }

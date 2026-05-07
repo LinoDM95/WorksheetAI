@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Blocks, Sparkles, X } from 'lucide-react';
@@ -12,11 +12,12 @@ import {
 } from '../../../components/ui';
 import { BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
 import { generateBoardWithProgress } from '../boardsApi';
-import { BoardAiGenerationOverlay } from './BoardAiGenerationOverlay';
 import type { BoardGeneratePayload, VisualStyleId } from '../types';
 import { cn } from '../../../lib/cn';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_GRADE_STEPS, LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
+import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
   { id: 'auto', label: 'Automatisch', hint: 'KI wählt Stil zum Thema.' },
@@ -46,6 +47,8 @@ type NewBoardModalProps = {
 
 export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBoardModalProps) => {
   const queryClient = useQueryClient();
+  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
+  const boardJobRef = useRef<string | null>(null);
 
   const [subject, setSubject] = useState('');
   const [gradeFrom, setGradeFrom] = useState('');
@@ -55,27 +58,50 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const [visualStyle, setVisualStyle] = useState<VisualStyleId>('auto');
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [genOverlay, setGenOverlay] = useState<{ label: string; pct: number } | null>(null);
 
   const createMutation = useMutation({
-    mutationFn: (payload: BoardGeneratePayload) =>
-      generateBoardWithProgress(payload, {
-        onPhase: (p) => setGenOverlay({ label: p.label, pct: p.pct }),
-      }),
-    onMutate: () =>
-      setGenOverlay({ label: 'Wir bereiten die Generierung vor …', pct: 4 }),
-    onSuccess: (board) => {
+    mutationFn: async (payload: BoardGeneratePayload) => {
+      const jid = boardJobRef.current;
+      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
+      return runSerialized(jid, async () => {
+        updateJob(jid, { phaseLabel: 'Wir bereiten die Generierung vor …', progressPercent: 4 });
+        const board = await generateBoardWithProgress(payload, {
+          onPhase: (p) => updateJob(jid, { phaseLabel: p.label, progressPercent: p.pct }),
+        });
+        return { board, jid };
+      });
+    },
+    onMutate: (payload: BoardGeneratePayload) => {
+      boardJobRef.current = startJob({
+        kind: 'board-creative',
+        title: 'Board wird erstellt',
+        subtitle: payload.topic.trim() || undefined,
+      });
+    },
+    onSuccess: ({ board, jid }) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       addPendingFirstOpenBoard(board.id);
       onPendingHighlightChange?.();
+      completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
+      boardJobRef.current = null;
       onClose();
       setError(null);
-      setGenOverlay(null);
     },
     onError: (err: unknown) => {
-      setGenOverlay(null);
-      const detail = (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail;
-      setError(detail || (err as Error)?.message || 'Generierung fehlgeschlagen.');
+      if (isAiGenerationQueueAbortedError(err)) {
+        boardJobRef.current = null;
+        return;
+      }
+      const jid = boardJobRef.current;
+      const detail =
+        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+        || (err as Error)?.message
+        || 'Generierung fehlgeschlagen.';
+      if (jid) {
+        failJob(jid, detail);
+        boardJobRef.current = null;
+      }
+      setError(detail);
     },
   });
 
@@ -93,11 +119,11 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createMutation.isPending) onClose();
+      if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, createMutation.isPending]);
+  }, [open, onClose]);
 
   const handleSubmit = () => {
     setError(null);
@@ -147,19 +173,12 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
 
   return createPortal(
     <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
-      <BoardAiGenerationOverlay
-        open={busy}
-        variant="generate"
-        phaseDescription={genOverlay?.label ?? null}
-        progressPercent={genOverlay?.pct ?? null}
-      />
       <button
         type="button"
         className="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]"
         aria-label="Dialog schließen"
-        disabled={busy}
         onClick={() => {
-          if (!busy) onClose();
+          onClose();
         }}
       />
       <div
@@ -175,7 +194,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
               Kreativ: die KI baut das Board aus deinem Prompt. Der Bausteinmodus mit geprüften Templates kommt demnächst.
             </p>
           </div>
-          <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" disabled={busy} onClick={onClose}>
+          <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" onClick={onClose}>
             <X size={18} aria-hidden />
           </IconButton>
         </div>
@@ -333,7 +352,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
               {error && <Alert tone="error">{error}</Alert>}
 
               <div className="flex flex-nowrap items-center justify-end gap-2 pt-2">
-                <Button type="button" variant="secondary" className="shrink-0" onClick={onClose} disabled={busy}>
+                <Button type="button" variant="secondary" className="shrink-0" onClick={onClose}>
                   Abbrechen
                 </Button>
                 <Button

@@ -220,6 +220,9 @@ function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; 
             <span className="line-clamp-1 min-w-0">{gradeLine || 'Ohne Angabe zu Fach oder Klasse'}</span>
             <LibraryPlannedDuration minutes={ws.planned_duration_minutes} />
           </div>
+          {ws.description?.trim() ? (
+            <p className="line-clamp-2 text-[12px] leading-snug text-slate-600">{ws.description.trim()}</p>
+          ) : null}
           <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
             <p className="text-[12px] text-slate-400">Druck & Vorschau im Editor</p>
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-100/90 transition-[background-color,color] group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-500">

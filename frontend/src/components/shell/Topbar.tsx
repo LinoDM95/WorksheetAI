@@ -28,7 +28,7 @@ export const Topbar = ({
 }: TopbarProps) => (
   <header
     className={cn(
-      'no-print sticky top-0 z-30 flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-2 sm:gap-4 sm:px-6 lg:px-7',
+      'no-print sticky top-0 z-[55] flex min-h-16 shrink-0 items-center justify-between gap-3 overflow-visible border-b border-slate-200 bg-white px-3 py-2 sm:gap-4 sm:px-6 lg:px-7',
       className,
     )}
   >
@@ -85,6 +85,6 @@ export const Topbar = ({
       </div>
     </div>
 
-    <div className="flex shrink-0 items-center gap-2">{actions}</div>
+    <div className="relative z-[1] flex shrink-0 items-center gap-2 overflow-visible">{actions}</div>
   </header>
 );

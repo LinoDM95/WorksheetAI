@@ -18,15 +18,15 @@ import {
   insertDraftChecklistItem,
   insertDraftTaskGridItem,
   insertDraftTaskListItem,
-  removeDraftBlock,
   removeDraftChecklistItem,
-  removeDraftPage,
   removeDraftTaskGridItem,
   removeDraftTaskListItem,
   updateDraftBlock,
   updateDraftBlockItem,
   updateDraftRoot,
   WORKSHEET_BLOCK_OPTIONS,
+  WORKSHEET_CREATIVE_RENDER_KIND,
+  isCreativeHtmlWorksheetContent,
   type WorksheetBlockKind,
 } from '../../lib/contentDraft';
 
@@ -279,11 +279,6 @@ function InlineBlockToolbar({
     editCtx.setDraft((prev) => insertDraftBlock(prev as Record<string, unknown>, pageIndex, at, nb));
   };
 
-  const handleRemove = () => {
-    if (!window.confirm('Diesen Block wirklich entfernen?')) return;
-    editCtx.setDraft((prev) => removeDraftBlock(prev as Record<string, unknown>, pageIndex, blockIndex));
-  };
-
   return (
     <div
       className="no-print pointer-events-none absolute right-0 top-0 z-[55] flex max-w-[calc(100%-2px)] justify-end"
@@ -321,14 +316,6 @@ function InlineBlockToolbar({
         >
           Darunter
         </button>
-        <button
-          type="button"
-          title="Ganzen Block löschen"
-          className="rounded border border-red-200 bg-red-50 px-1 py-0.5 font-semibold text-red-800 hover:bg-red-100"
-          onClick={handleRemove}
-        >
-          Löschen
-        </button>
       </div>
     </div>
   );
@@ -336,12 +323,12 @@ function InlineBlockToolbar({
 
 function PageEndEditStrip({
   pageIndex,
-  totalPages,
   editCtx,
+  creativeMode = false,
 }: {
   pageIndex: number;
-  totalPages: number;
   editCtx: ContentDraftEdit;
+  creativeMode?: boolean;
 }) {
   const handleAppendBlockEnd = () => {
     editCtx.setDraft((prev) => {
@@ -357,23 +344,18 @@ function PageEndEditStrip({
     editCtx.setDraft((prev) => appendDraftPage(prev as Record<string, unknown>, true));
   };
 
-  const handleRemovePage = () => {
-    if (totalPages <= 1) return;
-    if (!window.confirm(`Seite ${pageIndex + 1} wirklich aus dem Dokument entfernen? Inhalt dieser Seite geht verloren.`))
-      return;
-    editCtx.setDraft((prev) => removeDraftPage(prev as Record<string, unknown>, pageIndex));
-  };
-
   return (
     <div className="no-print mt-auto flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-slate-300/90 pt-2 text-[11px] text-slate-600">
       <span className="font-semibold text-slate-800">Struktur (Seite {pageIndex + 1})</span>
-      <button
-        type="button"
-        className="rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-slate-50"
-        onClick={handleAppendBlockEnd}
-      >
-        + Block unten auf dieser Seite
-      </button>
+      {creativeMode ? null : (
+        <button
+          type="button"
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-800 hover:bg-slate-50"
+          onClick={handleAppendBlockEnd}
+        >
+          + Block unten auf dieser Seite
+        </button>
+      )}
       <button
         type="button"
         className="rounded-md border border-indigo-300 bg-indigo-50 px-2 py-1 font-medium text-indigo-900 hover:bg-indigo-100"
@@ -381,15 +363,6 @@ function PageEndEditStrip({
       >
         + Neue Seite
       </button>
-      {totalPages > 1 ? (
-        <button
-          type="button"
-          className="rounded-md border border-red-200 bg-red-50 px-2 py-1 font-medium text-red-900 hover:bg-red-100"
-          onClick={handleRemovePage}
-        >
-          Seite löschen
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -835,44 +808,6 @@ function Block({
   );
 }
 
-function PageAiWandButton({
-  pageIndex,
-  busy,
-  onClick,
-}: {
-  pageIndex: number;
-  busy: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={onClick}
-      title="Diese Seite mit KI neu gestalten"
-      aria-label={`Seite ${pageIndex + 1} mit KI neu gestalten`}
-      className="no-print pointer-events-auto absolute right-1 top-1 z-[60] flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-violet-300 bg-violet-50 text-violet-700 shadow-md transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={1.5}
-        stroke="currentColor"
-        className="h-5 w-5"
-        aria-hidden
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
-        />
-      </svg>
-    </button>
-  );
-}
-
-/** Layout-Messung (Bearbeitungsmodus): Inhalt ragt aus dem A4-Hauptbereich (overflow hidden). */
 export type PageLayoutOverflowInfo = {
   pageIndex: number;
   overflowsVertical: boolean;
@@ -880,6 +815,46 @@ export type PageLayoutOverflowInfo = {
   /** Geschätzter vertikaler Überstand in CSS-Pixeln (nur wenn overflowsVertical). */
   overflowPxVertical: number;
 };
+
+function CreativeHtmlShadowBody({
+  html,
+  pageCss,
+  pageIndex,
+}: {
+  html: string;
+  pageCss: string;
+  pageIndex: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let sr = el.shadowRoot;
+    if (!sr) {
+      sr = el.attachShadow({ mode: 'open' });
+    }
+    while (sr.firstChild) {
+      sr.removeChild(sr.firstChild);
+    }
+    const style = document.createElement('style');
+    style.textContent =
+      ':host{display:block;min-height:0;flex:1 1 auto;width:100%;color:#0f172a;font-size:14px;line-height:1.45;}' +
+      (pageCss || '');
+    sr.appendChild(style);
+    const mount = document.createElement('div');
+    mount.className = 'ws-creative-mount';
+    mount.innerHTML = html;
+    sr.appendChild(mount);
+  }, [html, pageCss, pageIndex]);
+  return (
+    <div
+      ref={ref}
+      className="min-h-0 w-full flex-1"
+      data-creative-page={pageIndex}
+      aria-label={`Kreativ-Inhalt Seite ${pageIndex + 1}`}
+    />
+  );
+}
 
 function A4PageShell({
   page,
@@ -890,11 +865,10 @@ function A4PageShell({
   ty,
   showGuide,
   editCtx,
-  onRequestRegeneratePage,
-  regeneratePageBusyIndex,
   onPageLayoutOverflow,
+  creativeMode = false,
 }: {
-  page: { page_label?: string; blocks: any[] };
+  page: { page_label?: string; blocks?: any[]; html?: string; page_css?: string };
   pageIndex: number;
   totalPages: number;
   rm: any;
@@ -902,9 +876,8 @@ function A4PageShell({
   ty: ReturnType<typeof typography>;
   showGuide: boolean;
   editCtx?: ContentDraftEdit;
-  onRequestRegeneratePage?: (pageIndex: number) => void;
-  regeneratePageBusyIndex?: number | null;
   onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
+  creativeMode?: boolean;
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const pageBodyRef = useRef<HTMLDivElement>(null);
@@ -920,25 +893,49 @@ function A4PageShell({
     (editCtx?.draft as { subtitle?: string })?.subtitle ?? rm.subtitle ?? worksheet.subject ?? '',
   );
 
-  const layoutFingerprint = useMemo(
-    () =>
-      JSON.stringify({
+  const layoutFingerprint = useMemo(() => {
+    if (creativeMode) {
+      return JSON.stringify({
         i: pageIndex,
-        blocks: (page.blocks || []).map((b: any) => ({
-          id: b.id,
-          t: b.type,
-          lines: b.lines,
-          il: Array.isArray(b.items) ? b.items.length : 0,
-          dh: b.type === 'drawing_box' ? b.height_mm : undefined,
-          dex: b.type === 'drawing_box' ? b.expand_to_page_bottom : undefined,
-        })),
+        creative: true,
+        html: page.html || '',
+        page_css: page.page_css || '',
+        page_label: (page.page_label || '').trim(),
         edit: !!editCtx,
-      }),
-    [page.blocks, pageIndex, editCtx],
-  );
+      });
+    }
+    return JSON.stringify({
+      i: pageIndex,
+      blocks: (page.blocks || []).map((b: any) => ({
+        id: b.id,
+        t: b.type,
+        lines: b.lines,
+        il: Array.isArray(b.items) ? b.items.length : 0,
+        dh: b.type === 'drawing_box' ? b.height_mm : undefined,
+        dex: b.type === 'drawing_box' ? b.expand_to_page_bottom : undefined,
+      })),
+      edit: !!editCtx,
+    });
+  }, [creativeMode, page.html, page.page_css, page.page_label, page.blocks, pageIndex, editCtx]);
 
   const overflowEffectKey = useMemo(() => {
     if (!onPageLayoutOverflow) return '';
+    if (creativeMode) {
+      return JSON.stringify({
+        i: pageIndex,
+        creative: true,
+        htmlLen: (page.html || '').length,
+        cssLen: (page.page_css || '').length,
+        edit: !!editCtx,
+        metaTitle,
+        metaSubtitle,
+        footerPageLabel,
+        footerLeft,
+        pageLabel: (page.page_label || '').trim(),
+        textScale: String((rm.presentation?.text_scale as string) || 'md'),
+        worksheetSubject: String(worksheet.subject ?? ''),
+      });
+    }
     return JSON.stringify({
       i: pageIndex,
       blocks: (page.blocks || []).map((b: any) => ({
@@ -960,7 +957,10 @@ function A4PageShell({
     });
   }, [
     onPageLayoutOverflow,
+    creativeMode,
     pageIndex,
+    page.html,
+    page.page_css,
     page.blocks,
     editCtx,
     metaTitle,
@@ -1071,13 +1071,6 @@ function A4PageShell({
         ['--page-margin-right' as string]: mm(pageSetup.margins_mm.right),
       }}
     >
-      {editCtx && onRequestRegeneratePage ? (
-        <PageAiWandButton
-          pageIndex={pageIndex}
-          busy={regeneratePageBusyIndex === pageIndex}
-          onClick={() => onRequestRegeneratePage(pageIndex)}
-        />
-      ) : null}
       <main
         ref={mainRef}
         className="page-content worksheet-page-frame flex min-h-0 h-full min-w-0 flex-col overflow-hidden"
@@ -1108,7 +1101,11 @@ function A4PageShell({
           ) : (
             <>
               <h1 className={ty.heading}>
-                <LatexText text={rm.title || worksheet.title} />
+                {creativeMode ? (
+                  <span>{String(rm.title || worksheet.title || '')}</span>
+                ) : (
+                  <LatexText text={rm.title || worksheet.title} />
+                )}
               </h1>
               {rm.subtitle || worksheet.subject ? (
                 <p
@@ -1116,38 +1113,52 @@ function A4PageShell({
                     TW[normToken((rm.presentation?.text_scale as string) || 'md', 'md')] || 'text-base'
                   }`}
                 >
-                  <LatexText text={rm.subtitle || worksheet.subject} as="span" />
+                  {creativeMode ? (
+                    <span>{String(rm.subtitle || worksheet.subject || '')}</span>
+                  ) : (
+                    <LatexText text={rm.subtitle || worksheet.subject} as="span" />
+                  )}
                 </p>
               ) : null}
             </>
           )}
     </header>
         <div ref={pageBodyRef} className="worksheet-page-body min-h-0 flex flex-1 flex-col">
-          <div
-            className={
-              isLandscape
-                ? 'grid min-h-0 flex-1 grid-cols-2 gap-x-6 gap-y-0'
-                : `${ty.gap} flex min-h-0 flex-1 flex-col print:flex print:min-h-0 print:flex-1 print:flex-col`
-            }
-          >
-            {(() => {
-              const n = page.blocks?.length ?? 0;
-              return page.blocks?.map((b: any, bi: number) => (
-                <Block
-                  block={b}
-                  ty={ty}
-                  pageIndex={pageIndex}
-                  blockIndex={bi}
-                  totalBlocksOnPage={n}
-                  isLandscape={isLandscape}
-                  editCtx={editCtx}
-                  key={b.id || `p-${pageIndex}-b-${bi}`}
-                />
-              ));
-            })()}
-          </div>
+          {creativeMode ? (
+            <CreativeHtmlShadowBody
+              html={String(page.html || '')}
+              pageCss={String(page.page_css || '')}
+              pageIndex={pageIndex}
+            />
+          ) : (
+            <div
+              className={
+                isLandscape
+                  ? 'grid min-h-0 flex-1 grid-cols-2 gap-x-6 gap-y-0'
+                  : `${ty.gap} flex min-h-0 flex-1 flex-col print:flex print:min-h-0 print:flex-1 print:flex-col`
+              }
+            >
+              {(() => {
+                const n = page.blocks?.length ?? 0;
+                return page.blocks?.map((b: any, bi: number) => (
+                  <Block
+                    block={b}
+                    ty={ty}
+                    pageIndex={pageIndex}
+                    blockIndex={bi}
+                    totalBlocksOnPage={n}
+                    isLandscape={isLandscape}
+                    editCtx={editCtx}
+                    key={b.id || `p-${pageIndex}-b-${bi}`}
+                  />
+                ));
+              })()}
+            </div>
+          )}
         </div>
-        {editCtx ? <PageEndEditStrip pageIndex={pageIndex} totalPages={totalPages} editCtx={editCtx} /> : null}
+        {editCtx ? (
+          <PageEndEditStrip pageIndex={pageIndex} editCtx={editCtx} creativeMode={creativeMode} />
+        ) : null}
    </main>
       <footer
         ref={footerRef}
@@ -1190,8 +1201,6 @@ type RendererProps = {
   showGuide?: boolean;
   contentDraft?: Record<string, unknown> | null;
   onContentDraftChange?: Dispatch<SetStateAction<Record<string, unknown>>>;
-  onRequestRegeneratePage?: (pageIndex: number) => void;
-  regeneratePageBusyIndex?: number | null;
   /** Nur Bearbeiten: Meldet pro Seite, ob der Inhalt aus dem A4-Hauptfenster überläuft (DOM-Messung). */
   onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
 };
@@ -1201,18 +1210,29 @@ export function A4WorksheetRenderer({
   showGuide = false,
   contentDraft,
   onContentDraftChange,
-  onRequestRegeneratePage,
-  regeneratePageBusyIndex,
   onPageLayoutOverflow,
 }: RendererProps) {
   const rm = worksheet.render_model || {};
   const tokens = rm.tokens || {};
   const pres = rm.presentation || tokens.presentation;
   const ty = typography(pres);
+  const isCreativeHtml = Boolean(
+    rm.version === WORKSHEET_CREATIVE_RENDER_KIND ||
+      (contentDraft != null &&
+        isCreativeHtmlWorksheetContent(contentDraft as Record<string, unknown>)),
+  );
   const pages =
     Array.isArray(rm.pages) && rm.pages.length > 0
       ? rm.pages
-      : [{ page_label: '', blocks: rm.blocks || [] }];
+      : isCreativeHtml
+        ? [
+            {
+              page_label: '',
+              html: '<div class="ws-creative-page-inner"><p>Leer</p></div>',
+              page_css: '',
+            },
+          ]
+        : [{ page_label: '', blocks: rm.blocks || [] }];
 
   const pageSetup = (rm.page_setup || worksheet.page_setup) as PageSetup;
   const pageOrient = pageSetup?.orientation === 'landscape' ? 'landscape' : 'portrait';
@@ -1281,9 +1301,8 @@ export function A4WorksheetRenderer({
             ty={ty}
             showGuide={showGuide}
             editCtx={editCtx}
-            onRequestRegeneratePage={onRequestRegeneratePage}
-            regeneratePageBusyIndex={regeneratePageBusyIndex}
             onPageLayoutOverflow={onPageLayoutOverflow}
+            creativeMode={isCreativeHtml}
           />
         ))}
  </div>

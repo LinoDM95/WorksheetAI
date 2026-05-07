@@ -1,5 +1,25 @@
 import { arrayMove } from '@dnd-kit/sortable';
 
+/** Render-Modell / Inhalt: Kreativmodus (HTML+CSS pro Seite, kein Block-JSON). */
+export const WORKSHEET_CREATIVE_RENDER_KIND = 'html-a4-creative-v1';
+
+export function isCreativeHtmlWorksheetContent(
+  c: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!c || typeof c !== 'object') return false;
+  if (String(c.render_kind || '').trim() === WORKSHEET_CREATIVE_RENDER_KIND) return true;
+  const pages = c.pages as unknown[] | undefined;
+  if (!Array.isArray(pages) || pages.length === 0) return false;
+  for (const p of pages) {
+    if (!p || typeof p !== 'object') return false;
+    const page = p as { blocks?: unknown[]; html?: unknown };
+    const blocks = page.blocks;
+    if (Array.isArray(blocks) && blocks.length > 0) return false;
+    if (!String(page.html ?? '').trim()) return false;
+  }
+  return true;
+}
+
 export function updateDraftRoot(
   draft: Record<string, unknown>,
   patch: Record<string, unknown>,
@@ -258,11 +278,21 @@ export function appendDraftPage(
   withStarterTextBlock?: boolean,
 ): Record<string, unknown> {
   const next = JSON.parse(JSON.stringify(draft)) as Record<string, unknown>;
-  const pages = [...(((next.pages as { blocks?: unknown[] }[]) || []) as { page_label?: string; blocks: unknown[] }[])];
-  pages.push({
-    page_label: '',
-    blocks: withStarterTextBlock ? [createDefaultWorksheetBlock('text')] : [],
-  });
+  const pages: Array<Record<string, unknown>> = [
+    ...(((next.pages as Record<string, unknown>[]) || []) as Record<string, unknown>[]),
+  ];
+  if (isCreativeHtmlWorksheetContent(next)) {
+    pages.push({
+      page_label: '',
+      html: '<div class="ws-creative-page-inner"><p>Neue Seite</p></div>',
+      page_css: '',
+    });
+  } else {
+    pages.push({
+      page_label: '',
+      blocks: withStarterTextBlock ? [createDefaultWorksheetBlock('text')] : [],
+    });
+  }
   next.pages = pages;
   return next;
 }

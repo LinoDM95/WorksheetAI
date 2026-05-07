@@ -16,12 +16,12 @@ export const CreditsBubble = () => {
   const labelExact = `${bal.toLocaleString('de-DE')} Credits`;
 
   return (
-    <div className="shrink-0">
+    <div className="relative shrink-0 overflow-visible">
       <button
         type="button"
         aria-label={`Credits — aktuell ${labelExact}, Bezugsgröße bis ${cap.toLocaleString('de-DE')} Credits.`}
         className={cn(
-          'group relative block h-11 w-11 shrink-0 rounded-full sm:h-12 sm:w-12',
+          'group relative z-[2] block h-11 w-11 shrink-0 overflow-visible rounded-full sm:h-12 sm:w-12',
           'shadow-[0_2px_10px_rgba(15,23,42,0.08)]',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
         )}
@@ -64,7 +64,7 @@ export const CreditsBubble = () => {
 
         <span
           className={cn(
-            'pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap',
+            'pointer-events-none absolute left-1/2 top-full z-[100] mt-2 -translate-x-1/2 whitespace-nowrap',
             'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-800 shadow-md',
             'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
           )}

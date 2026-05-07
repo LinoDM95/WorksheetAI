@@ -5,7 +5,6 @@ import { Sparkles, X } from 'lucide-react';
 import { Alert, Button, Field, IconButton, TextInput } from '../../../components/ui';
 import { BOARDS_BLOCKS_QUERY_KEY, BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
 import { fetchBlockRegistry, generateBoardFromBlocks } from '../boardsApi';
-import { BoardAiGenerationOverlay } from '../components/BoardAiGenerationOverlay';
 import type { BlockRegistryEntry, CompositionPlan } from '../types';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { canAddSlot, useBoardBuilderState } from './useBoardBuilderState';
@@ -14,6 +13,8 @@ import { PageEditor, type PageEditorHandle } from './PageEditor';
 import { PagesRail } from './PagesRail';
 import { LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 import { cn } from '../../../lib/cn';
+import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 type Props = {
   open: boolean;
@@ -23,6 +24,8 @@ type Props = {
 
 export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: Props) => {
   const queryClient = useQueryClient();
+  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
+  const boardJobRef = useRef<string | null>(null);
   const registryQ = useQuery({
     queryKey: BOARDS_BLOCKS_QUERY_KEY,
     queryFn: fetchBlockRegistry,
@@ -67,12 +70,47 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
   );
 
   const generateM = useMutation({
-    mutationFn: (p: CompositionPlan) => generateBoardFromBlocks(p),
-    onSuccess: (board) => {
+    mutationFn: async (p: CompositionPlan) => {
+      const jid = boardJobRef.current;
+      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
+      return runSerialized(jid, async () => {
+        updateJob(jid, {
+          phaseLabel: 'KI füllt Bausteine und komponiert das Board …',
+          progressPercent: null,
+        });
+        const board = await generateBoardFromBlocks(p);
+        return { board, jid };
+      });
+    },
+    onMutate: (p: CompositionPlan) => {
+      boardJobRef.current = startJob({
+        kind: 'board-blocks',
+        title: 'Board aus Bausteinen wird erstellt',
+        subtitle: p.title.trim() || p.topic.trim() || undefined,
+      });
+    },
+    onSuccess: ({ board, jid }) => {
       queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
       addPendingFirstOpenBoard(board.id);
       onPendingHighlightChange?.();
+      completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
+      boardJobRef.current = null;
       onClose();
+    },
+    onError: (err: unknown) => {
+      if (isAiGenerationQueueAbortedError(err)) {
+        boardJobRef.current = null;
+        return;
+      }
+      const jid = boardJobRef.current;
+      const detail =
+        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+        || (err as Error)?.message
+        || 'Generierung fehlgeschlagen.';
+      if (jid) {
+        failJob(jid, detail);
+        boardJobRef.current = null;
+      }
     },
   });
   const busy = generateM.isPending;
@@ -80,7 +118,6 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (busy) return;
       const target = e.target as HTMLElement | null;
       const isEditable =
         target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
@@ -131,13 +168,13 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
 
   return createPortal(
     <div className="fixed inset-0 z-[140] flex items-stretch justify-center p-2 sm:p-4" role="dialog" aria-modal="true">
-      <BoardAiGenerationOverlay open={busy} variant="generate" />
       <button
         type="button"
         className="absolute inset-0 bg-slate-900/55 backdrop-blur-[2px]"
         aria-label="Builder schließen"
-        disabled={busy}
-        onClick={() => { if (!busy) onClose(); }}
+        onClick={() => {
+          onClose();
+        }}
       />
       <div className="relative z-10 flex min-h-0 w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         {/* Header */}
@@ -163,7 +200,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
             >
               Board erzeugen
             </Button>
-            <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" onClick={onClose} disabled={busy}>
+            <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" onClick={onClose}>
               <X size={16} aria-hidden />
             </IconButton>
           </div>

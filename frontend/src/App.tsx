@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { Construction } from 'lucide-react';
 import { AuthProvider, useAuth } from './lib/authContext';
+import { AiGenerationJobsProvider } from './components/ai-generation/AiGenerationJobsContext';
 import { AppShell } from './components/shell/AppShell';
 import { MockBadge } from './components/MockBadge';
 import { Card } from './components/ui';
@@ -181,6 +182,7 @@ const ProtectedAppLayout = () => {
 export default function App() {
   return (
     <AuthProvider>
+      <AiGenerationJobsProvider>
       <Routes>
         <Route path="/" element={<AuthRootRedirect />} />
         <Route path="/login" element={<PublicLoginPage />} />
@@ -252,6 +254,7 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+      </AiGenerationJobsProvider>
     </AuthProvider>
   );
 }

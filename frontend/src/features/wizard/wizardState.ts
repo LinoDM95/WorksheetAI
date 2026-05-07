@@ -6,6 +6,8 @@ export type WizardDecoLevel = 'keine' | 'leicht' | 'mittel' | 'kreativ';
 export type WizardDesignStyle = 'klassisch' | 'modern' | 'grundschule' | 'akademisch' | 'kreativ';
 export type WizardRenderer = 'auto' | 'html' | 'latex';
 
+export type WorksheetWizardMode = 'standard' | 'creative';
+
 /** API-Werte für `audience` — werden aus Schulform + Klassenstufe abgeleitet, nicht mehr manuell gewählt. */
 export type AudienceId = 'primary' | 'lower_secondary' | 'upper_secondary' | 'vocational' | 'university';
 
@@ -45,10 +47,14 @@ export const audienceDisplayLabel = (id: AudienceId): string => {
 };
 
 export type WizardState = {
-  /* Step 1 — Inhalt */
+  /* Step 1 — Modus */
+  worksheetMode: WorksheetWizardMode;
+
+  /* Step 2 — Inhalt */
   topic: string;
   subject: string;
-  grade: string;
+  gradeFrom: string;
+  gradeTo: string;
   schoolForm: string;
   state: string;
   worksheetType: string;
@@ -59,9 +65,6 @@ export type WizardState = {
   teacherPrompt: string;
   differentiation: string;
   additionalConstraints: string;
-
-  /* Step 2 — Vorlage */
-  patternId: string | null;
 
   /* Step 3 — Design & Seite */
   orientation: WizardOrientation;
@@ -75,22 +78,21 @@ export type WizardState = {
 };
 
 export const INITIAL_WIZARD_STATE: WizardState = {
-  topic: 'Lineare Gleichungen lösen',
-  subject: 'Mathematik',
-  grade: '9',
-  schoolForm: 'Gymnasium',
-  state: 'Bayern',
-  worksheetType: 'practice',
-  difficulty: 'standard',
-  duration: '45',
-  language: 'de',
-  learningGoal:
-    'Lineare Gleichungen mit einer Variable durch Äquivalenzumformung sicher lösen können.',
-  teacherPrompt:
-    'Fokus auf Aufgaben mit Parametern. Keine Multiple-Choice-Fragen. Lösungen kurz aber vollständig.',
+  worksheetMode: 'standard',
+  topic: '',
+  subject: '',
+  gradeFrom: '',
+  gradeTo: '',
+  schoolForm: '',
+  state: '',
+  worksheetType: '',
+  difficulty: '',
+  duration: '',
+  language: '',
+  learningGoal: '',
+  teacherPrompt: '',
   differentiation: '',
   additionalConstraints: '',
-  patternId: null,
   orientation: 'portrait',
   margins: { top: 12, right: 12, bottom: 12, left: 12 },
   marginLinked: true,
@@ -137,7 +139,6 @@ export type WizardAction =
   | { type: 'setMargin'; side: MarginSide; value: number }
   | { type: 'setMarginValue'; value: number }
   | { type: 'toggleMarginLink' }
-  | { type: 'clearPattern' }
   | { type: 'reset' };
 
 const equalMargins = (m: WizardState['margins'], v: number) =>
@@ -187,34 +188,64 @@ export const wizardReducer = (state: WizardState, action: WizardAction): WizardS
       return { ...state, marginLinked: linked };
     }
 
-    case 'clearPattern':
-      if (state.patternId == null) return state;
-      return { ...state, patternId: null };
-
     case 'reset':
       return INITIAL_WIZARD_STATE;
   }
 };
 
+const resolveGradeFromWizard = (
+  gradeFrom: string,
+  gradeTo: string,
+): { gradeValue: number | null; gradeBand: string | null } => {
+  const a = gradeFrom.trim();
+  const b = gradeTo.trim();
+  if (!a || !b) return { gradeValue: null, gradeBand: null };
+  const nFrom = Number(a);
+  const nTo = Number(b);
+  if (!Number.isFinite(nFrom) || !Number.isFinite(nTo)) return { gradeValue: null, gradeBand: null };
+  const lo = Math.min(nFrom, nTo);
+  const hi = Math.max(nFrom, nTo);
+  const gradeValue = Math.round((lo + hi) / 2);
+  const gradeBand = lo === hi ? `${lo}` : `${lo}–${hi}`;
+  return { gradeValue, gradeBand };
+};
+
+export const validateWizardInhaltStep = (state: WizardState): string | null => {
+  if (!state.topic.trim()) return 'Bitte ein Thema angeben.';
+  if (!state.subject.trim()) return 'Bitte ein Fach wählen.';
+  if (!state.gradeFrom.trim() || !state.gradeTo.trim()) {
+    return 'Bitte Klassenstufe von und bis wählen.';
+  }
+  if (!state.teacherPrompt.trim()) return 'Bitte den Lehrer-Prompt / Zusatzwünsche ausfüllen.';
+  return null;
+};
+
 export const buildGeneratePayload = (state: WizardState): GenerateWorksheetPayload => {
-  const grade = state.grade.trim() === '' ? null : Number(state.grade);
-  const gradeValue = Number.isFinite(grade as number) ? (grade as number) : null;
-  const time = state.duration.trim() === '' ? null : Number(state.duration);
+  const { gradeValue, gradeBand } = resolveGradeFromWizard(state.gradeFrom, state.gradeTo);
+  const timeRaw = state.duration.trim();
+  const timeParsed = timeRaw === '' ? NaN : Number(timeRaw);
+  const time_budget_minutes = Number.isFinite(timeParsed) ? timeParsed : null;
   const learningGoal = state.learningGoal.trim();
   const schoolForm = state.schoolForm.trim();
   const federalState = state.state.trim();
   const audience = deriveAudienceFromSchoolContext(schoolForm, gradeValue);
+  const mode = state.worksheetMode === 'creative' ? 'creative' : 'standard';
+  const difficulty = state.difficulty.trim() || 'standard';
+  const worksheetType = state.worksheetType.trim() || 'practice';
+  const language = state.language.trim() || 'de';
   return {
+    worksheet_mode: mode,
     topic: state.topic,
     subject_name: state.subject,
     grade_value: gradeValue,
+    ...(gradeBand ? { grade_band: gradeBand } : {}),
     teacher_prompt: state.teacherPrompt,
     audience,
-    difficulty: state.difficulty,
-    worksheet_type: state.worksheetType,
+    difficulty,
+    worksheet_type: worksheetType,
     tone: 'neutral',
-    language: state.language,
-    time_budget_minutes: Number.isFinite(time as number) ? (time as number) : null,
+    language,
+    time_budget_minutes,
     differentiation: state.differentiation,
     additional_constraints: state.additionalConstraints,
     creativity:
@@ -225,8 +256,7 @@ export const buildGeneratePayload = (state: WizardState): GenerateWorksheetPaylo
           : 'minimal_professional',
     theme: 'minimal',
     page_setup: buildPageSetup(state),
-    pattern_id: state.patternId || undefined,
-    use_pattern_matching: !state.patternId,
+    use_pattern_matching: mode === 'standard',
     ...(learningGoal ? { learning_goal: learningGoal } : {}),
     ...(schoolForm ? { school_form: schoolForm } : {}),
     ...(federalState ? { federal_state: federalState } : {}),

@@ -14,6 +14,8 @@ from apps.ai.prompt_loader import (
     build_free_html_repair_prompt,
     build_free_html_revision_prompt,
     build_page_regeneration_prompt,
+    build_worksheet_creative_html_generation_prompt_for_gemini,
+    build_worksheet_creative_html_page_regeneration_prompt,
     build_worksheet_generation_prompt_for_gemini,
     build_worksheet_review_prompt,
 )
@@ -87,8 +89,13 @@ class ClaudeWorksheetProvider:
         from apps.boards.services.pipeline_ai_meter import parse_claude_usage, route_provider_usage
 
         inp, out, ex = parse_claude_usage(msg)
+        sys_s = system or ''
         if inp == 0 and out == 0:
-            inp = max(0, int(len(user) / 4))
+            inp = max(0, int((len(user) + len(sys_s)) / 4))
+            out = max(0, int(len(text) / 4))
+        elif inp == 0:
+            inp = max(0, int((len(user) + len(sys_s)) / 4))
+        elif out == 0 and text:
             out = max(0, int(len(text) / 4))
         route_provider_usage(
             provider_self=self,
@@ -104,6 +111,21 @@ class ClaudeWorksheetProvider:
 
     def generate(self, payload: dict) -> dict[str, Any]:
         req = payload.get('request') or {}
+        if (req.get('worksheet_mode') or '').strip().lower() == 'creative':
+            system_instr, user_content = build_worksheet_creative_html_generation_prompt_for_gemini(
+                req,
+                payload.get('page_setup') or {},
+                curriculum_context=payload.get('curriculum_context'),
+            )
+            temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
+            text = self._complete(
+                system=system_instr,
+                user=user_content,
+                temperature=temp,
+                trace_step='worksheet_generation_creative_html',
+            )
+            return _extract_json_object(text)
+
         system_instr, user_content = build_worksheet_generation_prompt_for_gemini(
             req,
             payload.get('page_setup') or {},
@@ -127,6 +149,22 @@ class ClaudeWorksheetProvider:
         return _extract_json_object(text)
 
     def regenerate_page(self, payload: dict) -> dict[str, Any]:
+        from apps.worksheets.services.creative_html_pipeline import RENDER_KIND_CREATIVE_HTML
+
+        if (payload.get('worksheet_render_kind') or '').strip() == RENDER_KIND_CREATIVE_HTML:
+            prompt = build_worksheet_creative_html_page_regeneration_prompt(payload)
+            temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
+            text = self._complete(
+                system=None,
+                user=prompt
+                + '\n\n---\n\n**Wichtig:** Antworte ausschließlich mit einem einzigen JSON-Objekt '
+                'mit den Feldern page_label (optional), html (Pflicht), page_css (optional). '
+                'Kein Markdown außerhalb des JSON.',
+                temperature=temp,
+                trace_step='worksheet_page_regenerate_creative_html',
+            )
+            return _extract_json_object(text)
+
         prompt = build_page_regeneration_prompt(payload)
         temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
         text = self._complete(system=None, user=prompt, temperature=temp, trace_step='worksheet_page_regenerate')

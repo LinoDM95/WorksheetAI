@@ -1,6 +1,8 @@
 import type { ChangeEvent, ReactNode } from 'react';
 
-import { ensureDraftBlockIds } from '../../lib/contentDraft';
+import { ensureDraftBlockIds, isCreativeHtmlWorksheetContent, WORKSHEET_CREATIVE_RENDER_KIND } from '../../lib/contentDraft';
+
+export { WORKSHEET_CREATIVE_RENDER_KIND, isCreativeHtmlWorksheetContent };
 
 function clampTableRowHeightMm(raw: unknown): number | null {
   if (raw === '' || raw === null || raw === undefined) return null;
@@ -22,6 +24,19 @@ export function normalizeContentForEdit(c: Record<string, unknown> | null | unde
     });
   }
   const out = JSON.parse(JSON.stringify(c)) as Record<string, unknown>;
+  if (isCreativeHtmlWorksheetContent(out)) {
+    const pagesRaw = (out.pages as Record<string, unknown>[]) || [];
+    out.pages = pagesRaw.map((p) => ({
+      page_label: String(p.page_label ?? ''),
+      html: String(p.html ?? ''),
+      page_css: String(p.page_css ?? ''),
+    }));
+    if (!Array.isArray(out.solutions)) out.solutions = [];
+    out.render_kind = WORKSHEET_CREATIVE_RENDER_KIND;
+    out.title = String(out.title ?? '');
+    out.subtitle = String(out.subtitle ?? '');
+    return ensureDraftBlockIds(out);
+  }
   const blocks = out.blocks as unknown[] | undefined;
   const pages = out.pages as { page_label?: string; blocks: unknown[] }[] | undefined;
   if ((!pages || pages.length === 0) && blocks?.length) {

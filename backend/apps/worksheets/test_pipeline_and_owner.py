@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.boards.owner import resolve_board_owner
 from apps.worksheets.owner import LOCAL_DEV_USERNAME, resolve_worksheet_owner
-from apps.worksheets.services.pipeline import WorksheetPipeline, _sanitize_curriculum_alignment
+from apps.worksheets.services.pipeline import WorksheetGenerator, WorksheetPipeline, _sanitize_curriculum_alignment
 from apps.worksheets.services.page import normalize_page_setup
 
 
@@ -53,6 +53,23 @@ class WorksheetPipelineRepairHookTests(TestCase):
         c: dict = {'validation_errors': ['old']}
         WorksheetPipeline.attach_validation_errors(c, [])
         self.assertNotIn('validation_errors', c)
+
+
+class WorksheetInboxListingDefaultsTests(SimpleTestCase):
+    def test_fills_subtitle_from_payload_when_missing(self) -> None:
+        content: dict = {'title': 'T', 'pages': []}
+        WorksheetGenerator.apply_inbox_listing_defaults(content, {'subject_name': ' Mathe '})
+        self.assertEqual(content['subtitle'], 'Mathe')
+
+    def test_skips_when_subtitle_present(self) -> None:
+        content = {'subtitle': 'Bio', 'pages': []}
+        WorksheetGenerator.apply_inbox_listing_defaults(content, {'subject_name': 'Mathe'})
+        self.assertEqual(content['subtitle'], 'Bio')
+
+    def test_noop_without_payload_subject(self) -> None:
+        content: dict = {'title': 'T'}
+        WorksheetGenerator.apply_inbox_listing_defaults(content, {})
+        self.assertNotIn('subtitle', content)
 
 
 @override_settings(API_REQUIRE_AUTH=False)

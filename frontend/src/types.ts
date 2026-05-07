@@ -46,6 +46,9 @@ export type Worksheet={
   curriculum_show_usage?: boolean;
   curriculum_usage_panel?: CurriculumUsagePanelPayload;
   library_public?: boolean;
+  library_listing_title?: string;
+  library_listing_topic?: string;
+  library_listing_description?: string;
   library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
   library_published_at?: string | null;
   viewer_is_owner?: boolean;
@@ -59,6 +62,8 @@ export type WorksheetLibraryItem={
   subject:string;
   grade:string;
   topic:string;
+  /** Öffentliche Kurzbeschreibung für die Bibliothekskarte (Leerstring möglich). */
+  description?: string;
   /** Aus `generation_meta.time_budget_minutes` bei Erstellung; ältere Blätter ohne Eintrag: `null`. */
   planned_duration_minutes?: number | null;
   library_published_at:string|null;
@@ -73,7 +78,11 @@ export type Pattern={
 
 /** Payload für POST /worksheets/generate/ — wird 1:1 an die KI übergeben */
 export type GenerateWorksheetPayload={
+  /** Standard: Lehrplan-/Vorlagen-Pipeline; Kreativ: freiere HTML/CSS-Gestaltung, kein Pattern-Match */
+  worksheet_mode?:'standard'|'creative';
   topic:string;subject_name:string;grade_value:number|null;
+  /** Optional, z. B. „8–10“ für die KI; `grade_value` bleibt ein repräsentativer Punkt für DB/Audience. */
+  grade_band?:string|null;
   teacher_prompt:string;
   audience:string;difficulty:string;worksheet_type:string;tone:string;language:string;
   time_budget_minutes:number|null;differentiation:string;additional_constraints:string;

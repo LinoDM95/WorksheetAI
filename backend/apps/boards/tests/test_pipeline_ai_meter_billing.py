@@ -6,6 +6,7 @@ from apps.boards.models import AIUsageLog
 from apps.boards.services.pipeline_ai_meter import (
     PipelineAIMeter,
     generation_meter_context,
+    log_standalone_gemini_usage,
     route_provider_usage,
 )
 
@@ -15,6 +16,13 @@ User = get_user_model()
 
 class _DummyProvider:
     pass
+
+
+class _GeminiRespEmptyUsageMeta:
+    """Simuliert API ohne usage_metadata (Fallback über Zeichenlänge)."""
+
+    usage_metadata = None
+    text = 'out' * 200
 
 
 class MeterBillingTests(TestCase):
@@ -119,3 +127,28 @@ class MeterBillingTests(TestCase):
             )
         self.assertEqual(AIUsageLog.objects.filter(user=user).count(), 1)
         self.assertEqual(len(meter._entries), 0)
+
+    @override_settings(
+        AI_GEMINI_FLASH_INPUT_PRICE_PER_MILLION_USD=1000.0,
+        AI_GEMINI_FLASH_OUTPUT_PRICE_PER_MILLION_USD=1000.0,
+        AI_FALLBACK_INPUT_PRICE_PER_MILLION_USD=0,
+        AI_FALLBACK_OUTPUT_PRICE_PER_MILLION_USD=0,
+    )
+    def test_log_standalone_gemini_estimates_tokens_when_usage_metadata_missing(self) -> None:
+        user = User.objects.create_user(
+            username='meter5@test.example',
+            email='meter5@test.example',
+            password='TestPass123!',
+        )
+        log_standalone_gemini_usage(
+            resp=_GeminiRespEmptyUsageMeta(),
+            model='gemini-2.5-flash',
+            step_type='worksheet_generation',
+            user=user,
+            fallback_char_source='in' * 200,
+        )
+        row = AIUsageLog.objects.get(user=user)
+        self.assertEqual(row.step_type, 'worksheet_generation')
+        self.assertEqual(row.input_tokens, 100)
+        self.assertEqual(row.output_tokens, 150)
+        self.assertGreater(row.estimated_cost_cents, 0)

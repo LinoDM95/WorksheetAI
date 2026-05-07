@@ -1,4 +1,4 @@
-from rest_framework import viewsets, decorators, response
+from rest_framework import viewsets, decorators, response, status
 import copy
 
 from django.db.models import Q
@@ -10,6 +10,12 @@ from apps.patterns.models import WorksheetPattern
 from .models import Worksheet
 from .serializers import WorksheetSerializer, build_curriculum_usage_payload, WorksheetLibraryEntrySerializer
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
+from .services.creative_html_pipeline import (
+    build_creative_html_render_model,
+    is_creative_html_content,
+    repair_creative_html_worksheet,
+    worksheet_pages_are_creative_html_shape,
+)
 from .services.generation import generate_worksheet
 from .services.page_regenerate import regenerate_worksheet_page
 from .services.page import normalize_page_setup
@@ -61,12 +67,19 @@ class WorksheetViewSet(viewsets.ModelViewSet):
         ws = self.get_object()
         raw = request.data.get('content', ws.content)
         content = copy.deepcopy(raw) if isinstance(raw, dict) else copy.deepcopy(ws.content)
-        content, _ = apply_page_coalesce_to_content(content)
-        content, _ = apply_page_overflow_reflow(content)
         req = {
             'theme': (ws.render_model or {}).get('theme', 'neutral'),
             'creativity': (ws.render_model or {}).get('creativity', 'balanced'),
         }
+        if isinstance(content, dict) and (
+            is_creative_html_content(content) or worksheet_pages_are_creative_html_shape(content)
+        ):
+            content, _notes = repair_creative_html_worksheet(content, ws.page_setup)
+            rm = build_creative_html_render_model(content, ws.page_setup, req)
+            return response.Response({'render_model': rm, 'content': content})
+
+        content, _ = apply_page_coalesce_to_content(content)
+        content, _ = apply_page_overflow_reflow(content)
         rm = build_render_model(content, ws.page_setup, ws.pattern, req)
         return response.Response({'render_model': rm, 'content': content})
 
@@ -121,3 +134,35 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=False, methods=['post'], url_path='page-preview')
     def page_preview(self, request):
         return response.Response(normalize_page_setup(request.data or {}))
+
+    @decorators.action(detail=True, methods=['post'], url_path='duplicate')
+    def duplicate(self, request, pk=None):
+        ws = self.get_object()
+        base = (ws.title or '').strip() or 'Arbeitsblatt'
+        suffix = ' (Kopie)'
+        max_base = max(0, 255 - len(suffix))
+        new_title = f'{base[:max_base]}{suffix}'
+        clone = Worksheet(
+            owner=ws.owner,
+            pattern=ws.pattern,
+            title=new_title,
+            subject=ws.subject,
+            grade=ws.grade,
+            topic=ws.topic,
+            page_setup=copy.deepcopy(ws.page_setup) if isinstance(ws.page_setup, dict) else {},
+            content=copy.deepcopy(ws.content) if isinstance(ws.content, dict) else {},
+            render_model=copy.deepcopy(ws.render_model) if isinstance(ws.render_model, dict) else {},
+            status='draft',
+            generation_meta=copy.deepcopy(ws.generation_meta) if isinstance(ws.generation_meta, dict) else {},
+            library_public=False,
+            library_listing_title='',
+            library_listing_topic='',
+            library_listing_description='',
+            library_moderation_status=Worksheet.LibraryModerationStatus.NONE,
+            library_published_at=None,
+        )
+        clone.save()
+        return response.Response(
+            WorksheetSerializer(clone, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )

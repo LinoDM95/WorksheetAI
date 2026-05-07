@@ -181,6 +181,27 @@ input, select, textarea { font-family: inherit; }
     box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
   }
   .input::placeholder, .textarea::placeholder { color: var(--color-ink-400); }
+
+  .input-multiline {
+    width: 100%;
+    min-height: 38px;
+    height: auto;
+    padding: 10px 12px;
+    line-height: 1.5;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-strong);
+    background: #fff;
+    color: var(--color-ink-900);
+    font-size: 14px;
+    transition: border-color 120ms, box-shadow 120ms;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  .input-multiline:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+  }
 }
 
 .field-label {

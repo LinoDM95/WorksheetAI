@@ -245,8 +245,12 @@ def log_standalone_gemini_usage(
     from apps.boards.models import AIUsageLog
 
     inp, out, ex = parse_gemini_usage(resp)
-    if inp == 0 and out == 0 and fallback_char_source:
-        inp = max(0, int(len(fallback_char_source) / 4))
+    fb = (fallback_char_source or '').strip()
+    txt = getattr(resp, 'text', None) or ''
+    if inp == 0 and fb:
+        inp = max(0, int(len(fb) / 4))
+    if out == 0 and txt:
+        out = max(0, int(len(txt) / 4))
     bill_out = _billable_gemini_output(out, ex)
     cents = estimate_cost_cents(
         provider='gemini',

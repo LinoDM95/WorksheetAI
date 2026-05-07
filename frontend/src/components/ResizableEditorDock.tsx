@@ -9,7 +9,8 @@ export type ResizableEditorDockProps = {
   title: ReactNode;
   dock: ResizableEditorDockModel;
   expanded: ReactNode;
-  collapsedRail: ReactNode;
+  /** Optional zusätzliche Steuerung in eingeklapptem Zustand (z. B. Schnellaktion). */
+  collapsedRail?: ReactNode;
   asideClassName?: string;
 };
 
@@ -26,7 +27,7 @@ export function ResizableEditorDock({
   return (
     <aside
       className={cn(
-        'relative flex h-full min-h-0 shrink-0 flex-col border-l border-slate-200 bg-white shadow-sm',
+        'no-print relative flex h-full min-h-0 shrink-0 flex-col border-l border-slate-200 bg-white shadow-sm',
         asideClassName,
       )}
       style={asideStyle}
@@ -75,8 +76,12 @@ export function ResizableEditorDock({
           >
             <ChevronLeft size={18} aria-hidden />
           </IconButton>
-          <span className="my-0.5 h-px w-7 shrink-0 bg-slate-200" aria-hidden />
-          {collapsedRail}
+          {collapsedRail != null ? (
+            <>
+              <span className="my-0.5 h-px w-7 shrink-0 bg-slate-200" aria-hidden />
+              {collapsedRail}
+            </>
+          ) : null}
         </div>
       )}
     </aside>

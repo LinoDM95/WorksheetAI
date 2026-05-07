@@ -22,6 +22,8 @@ type Props = {
   onSubmit: (payload: BoardLibraryListingForm) => void;
   /** Standard: Lehrkraft — Einreichung vor Freigabe. Staff: direkte Veröffentlichung. */
   moderationRequired?: boolean;
+  /** Steuert Hilfstexte (Tafel vs. Arbeitsblatt). */
+  resourceKind?: 'board' | 'worksheet';
 };
 
 export const BoardLibraryPublishModal = ({
@@ -34,7 +36,18 @@ export const BoardLibraryPublishModal = ({
   initialListing,
   onSubmit,
   moderationRequired = true,
+  resourceKind = 'board',
 }: Props) => {
+  const rk = resourceKind;
+  const snapshotPossessive = rk === 'worksheet' ? 'deines Arbeitsblatts' : 'deiner Tafel';
+  const descriptionFieldHelp =
+    rk === 'worksheet'
+      ? 'Was Nutzer in der Bibliothek über dein Arbeitsblatt erfahren sollen.'
+      : 'Was Nutzer in der Bibliothek über deine Tafel erfahren sollen.';
+  const editListingIntro =
+    rk === 'worksheet'
+      ? 'Titel, Thema und Beschreibung gelten nur für die öffentliche Bibliothekskarte. Der private Titel deines Arbeitsblatts bleibt unverändert.'
+      : 'Titel, Thema und Beschreibung gelten nur für die öffentliche Bibliothekskarte. Dein privater Board-Titel bleibt unverändert.';
   const [title, setTitle] = useState('');
   const [topic, setTopic] = useState('');
   const [description, setDescription] = useState('');
@@ -106,9 +119,9 @@ export const BoardLibraryPublishModal = ({
             <p className="mt-1 text-[11px] leading-snug text-slate-500 sm:text-xs">
               {mode === 'publish'
                 ? moderationRequired
-                  ? 'Dein Eintrag wird von einer Administratorin oder einem Administrator geprüft. Erst nach Freigabe ist er für alle Kolleg:innen in der öffentlichen Bibliothek sichtbar. Bibliotheks-Besuchende sehen später einen festen Schnappschuss deiner Tafel.'
-                  : 'Bibliotheks-Besuchende sehen einen festen Schnappschuss deiner Tafel. Änderungen in deiner privaten Arbeitsversion werden nicht automatisch übernommen — du kannst die öffentliche Fassung später gezielt aktualisieren.'
-                : 'Titel, Thema und Beschreibung gelten nur für die öffentliche Bibliothekskarte. Dein privater Board-Titel bleibt unverändert.'}
+                  ? `Dein Eintrag wird von einer Administratorin oder einem Administrator geprüft. Erst nach Freigabe ist er für alle Kolleg:innen in der öffentlichen Bibliothek sichtbar. Bibliotheks-Besuchende sehen später einen festen Schnappschuss ${snapshotPossessive}.`
+                  : `Bibliotheks-Besuchende sehen einen festen Schnappschuss ${snapshotPossessive}. Änderungen in deiner privaten Arbeitsversion werden nicht automatisch übernommen — du kannst die öffentliche Fassung später gezielt aktualisieren.`
+                : editListingIntro}
             </p>
           </div>
           <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" disabled={busy} onClick={onClose}>
@@ -156,7 +169,7 @@ export const BoardLibraryPublishModal = ({
           <Field
             label="Öffentliche Beschreibung"
             htmlFor="lib-pub-desc"
-            help="Was Nutzer in der Bibliothek über dein Board erfahren sollen."
+            help={descriptionFieldHelp}
           >
             <textarea
               id="lib-pub-desc"

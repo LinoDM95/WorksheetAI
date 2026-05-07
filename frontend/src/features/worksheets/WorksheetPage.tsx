@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { PanelRight } from 'lucide-react';
 import axios from 'axios';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
@@ -9,22 +8,39 @@ import type { Worksheet } from '../../types';
 import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetRenderer';
 import { normalizeContentForEdit } from './WorksheetContentEditor';
 import { WorksheetEditSidebar } from './WorksheetEditSidebar';
-import { EditorToolbar } from './EditorToolbar';
-import { Alert, Button, IconButton, SectionCard } from '../../components/ui';
+import { WorksheetDetailPageHeader } from './WorksheetDetailPageHeader';
 import { ResizableEditorDock } from '../../components/ResizableEditorDock';
 import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
 import { WORKSHEET_LIST_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
 import { useAuth } from '../../lib/authContext';
+import { BoardLibraryPublishModal, type BoardLibraryListingForm } from '../boards/components/BoardLibraryPublishModal';
 import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boards/boardsApi';
 import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
-import { WorksheetStringList } from './WorksheetStringList';
+import { clearPendingFirstOpenWorksheet } from './lib/worksheetFirstOpenHighlight';
 
 const MAX_DRAFT_UNDO = 10;
+
+function formatWorksheetApiError(e: unknown): string {
+  const data = (e as { response?: { data?: unknown } })?.response?.data;
+  if (data && typeof data === 'object') {
+    const rec = data as Record<string, unknown>;
+    if (typeof rec.detail === 'string') return rec.detail;
+    if (Array.isArray(rec.detail)) return rec.detail.map(String).join(' ');
+    const firstVal = Object.values(rec).find((v) => v != null);
+    if (typeof firstVal === 'string') return firstVal;
+    if (Array.isArray(firstVal)) return firstVal.map(String).join(' ');
+  }
+  return 'Bibliotheks-Einstellung konnte nicht gespeichert werden.';
+}
 
 export function WorksheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (id) clearPendingFirstOpenWorksheet(id);
+  }, [id]);
   const queryClient = useQueryClient();
   const fetchGen = useRef(0);
   const [loading, setLoading] = useState(true);
@@ -34,15 +50,14 @@ export function WorksheetPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [fetchErr, setFetchErr] = useState('');
-  const [regenModalPage, setRegenModalPage] = useState<number | null>(null);
-  const [regenInstruction, setRegenInstruction] = useState('');
-  const [regenBusyPage, setRegenBusyPage] = useState<number | null>(null);
   const [pageLayoutOverflow, setPageLayoutOverflow] = useState<
     Record<number, { vertical: boolean; horizontal: boolean; px: number }>
   >({});
-  const [showCurriculumWizardHint, setShowCurriculumWizardHint] = useState(false);
   const [libraryBusy, setLibraryBusy] = useState(false);
+  const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
+  const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
   const [staffLibBusy, setStaffLibBusy] = useState(false);
+  const [regeneratePageBusy, setRegeneratePageBusy] = useState(false);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -61,14 +76,6 @@ export function WorksheetPage() {
     dominantPageMountKey,
   );
 
-  const [mobileEditOpen, setMobileEditOpen] = useState(() => {
-    try {
-      return localStorage.getItem('worksheetEditSidebarOpen') !== '0';
-    } catch {
-      return true;
-    }
-  });
-
   const editDock = useResizableEditorDock({
     widthStorageKey: 'worksheet-edit-dock-width',
     collapsedStorageKey: 'worksheet-edit-dock-collapsed',
@@ -79,7 +86,7 @@ export function WorksheetPage() {
       typeof window !== 'undefined' && localStorage.getItem('worksheetEditSidebarOpen') === '0',
   });
 
-  const sidebarChromeOpen = editDock.isLgViewport ? !editDock.collapsed : mobileEditOpen;
+  const sidebarChromeOpen = editDock.isLgViewport && !editDock.collapsed;
   const [previewScrollPadTransition, setPreviewScrollPadTransition] = useState(false);
   const prevEditSidebarOpenRef = useRef(sidebarChromeOpen);
 
@@ -91,22 +98,6 @@ export function WorksheetPage() {
     return () => window.clearTimeout(t);
   }, [sidebarChromeOpen]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('worksheetEditSidebarOpen', mobileEditOpen ? '1' : '0');
-    } catch {
-      /* ignore */
-    }
-  }, [mobileEditOpen]);
-
-  const handleToggleEditSidebar = () => {
-    if (editDock.isLgViewport) {
-      editDock.setCollapsed((c) => !c);
-    } else {
-      setMobileEditOpen((o) => !o);
-    }
-  };
-
   const draftUndoStackRef = useRef<Record<string, unknown>[]>([]);
   const [, setDraftUndoRerender] = useState(0);
 
@@ -116,19 +107,16 @@ export function WorksheetPage() {
   }, []);
 
   useEffect(() => {
-    if (regenModalPage !== null) return;
     if (!sidebarChromeOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (editDock.isLgViewport) {
         editDock.setCollapsed(true);
-      } else {
-        setMobileEditOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [sidebarChromeOpen, regenModalPage, editDock.isLgViewport]);
+  }, [sidebarChromeOpen, editDock.isLgViewport]);
 
   useEffect(() => {
     if (!id) {
@@ -168,19 +156,6 @@ export function WorksheetPage() {
         if (fetchGen.current === gen) setLoading(false);
       });
   }, [id, clearDraftUndoStack]);
-
-  useEffect(() => {
-    if (!id || !ws) return;
-    const k = `worksheet-curriculum-hint:${id}`;
-    try {
-      if (sessionStorage.getItem(k)) {
-        sessionStorage.removeItem(k);
-        setShowCurriculumWizardHint(true);
-      }
-    } catch {
-      /* ignore storage errors */
-    }
-  }, [id, ws]);
 
   useEffect(() => {
     if (!draft || !id) return;
@@ -247,9 +222,6 @@ export function WorksheetPage() {
     setPreviewRm((ws.render_model || null) as Record<string, unknown> | null);
     setPageLayoutOverflow({});
     setErr('');
-    setRegenModalPage(null);
-    setRegenInstruction('');
-    setRegenBusyPage(null);
   };
 
   const save = async () => {
@@ -314,6 +286,41 @@ export function WorksheetPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [handleDraftUndo]);
 
+  const handleRegenerateWorksheetPage = useCallback(
+    async (pageIndex: number, teacherInstruction: string) => {
+      if (!id || !draft || ws?.viewer_is_owner === false) return;
+      const instruction = teacherInstruction.trim();
+      if (!instruction) {
+        setErr('Bitte beschreibe, was die KI ändern soll.');
+        return;
+      }
+      setRegeneratePageBusy(true);
+      setErr('');
+      try {
+        const r = await api.post(`/worksheets/${id}/regenerate-page/`, {
+          page_index: pageIndex,
+          teacher_instruction: instruction,
+          content: draft,
+        });
+        setDraft(normalizeContentForEdit(r.data.content as Record<string, unknown>));
+        if (r.data.render_model && typeof r.data.render_model === 'object') {
+          setPreviewRm(r.data.render_model as Record<string, unknown>);
+        }
+      } catch (e: unknown) {
+        let msg = 'Seite konnte nicht überarbeitet werden.';
+        if (axios.isAxiosError(e)) {
+          const d = e.response?.data as { detail?: string } | undefined;
+          if (typeof d?.detail === 'string') msg = d.detail;
+        }
+        setErr(msg);
+        throw e;
+      } finally {
+        setRegeneratePageBusy(false);
+      }
+    },
+    [id, draft, ws?.viewer_is_owner],
+  );
+
   const handlePageLayoutOverflow = useCallback((info: PageLayoutOverflowInfo) => {
     const pxTol = 1;
     setPageLayoutOverflow((prev) => {
@@ -374,68 +381,118 @@ export function WorksheetPage() {
 
   const libMod = ws.library_moderation_status ?? 'none';
   const libListed = ws.library_public === true && libMod === 'approved';
-  const libraryButtonLabel = user?.is_staff
-    ? ws.library_public
-      ? 'Aus öffentlicher Bibliothek nehmen'
-      : 'In öffentliche Bibliothek legen'
+  const libraryPublishLabel = user?.is_staff ? 'In öffentliche Bibliothek legen' : 'Zur Freigabe einreichen';
+  const libraryWithdrawLabel = user?.is_staff
+    ? 'Aus öffentlicher Bibliothek nehmen'
     : libMod === 'pending'
       ? 'Einreichung zurückziehen'
-      : libListed
-        ? 'Aus öffentlicher Bibliothek nehmen'
-        : 'Zur Freigabe einreichen';
+      : 'Aus öffentlicher Bibliothek nehmen';
 
-  const handleLibraryToggle = async () => {
+  const runLibraryListingPatch = async (body: Record<string, unknown>) => {
+    if (!id) return;
+    setLibraryBusy(true);
+    setLibraryModalError(null);
+    setErr('');
+    try {
+      const r = await api.patch<Worksheet>(`/worksheets/${id}/`, body);
+      setWs(r.data);
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+    } catch (e: unknown) {
+      const msg = formatWorksheetApiError(e);
+      setLibraryModalError(msg);
+      setErr(msg);
+      throw e;
+    } finally {
+      setLibraryBusy(false);
+    }
+  };
+
+  const handleLibraryPublishOpen = () => {
+    if (!id || isReadOnly || !ws) return;
+    setLibraryModalError(null);
+    setLibraryModalMode('publish');
+  };
+
+  const handleLibraryListingEditOpen = () => {
+    if (!id || isReadOnly || !ws) return;
+    setLibraryModalError(null);
+    setLibraryModalMode('edit_listing');
+  };
+
+  const handleLibraryModalSubmit = async (p: BoardLibraryListingForm) => {
+    if (!libraryModalMode || !id) return;
+    try {
+      if (libraryModalMode === 'publish') {
+        await runLibraryListingPatch({ library_public: true, ...p });
+      } else {
+        await runLibraryListingPatch({ ...p });
+      }
+      setLibraryModalMode(null);
+      setLibraryModalError(null);
+      setErr('');
+    } catch {}
+  };
+
+  const handleLibraryWithdraw = async () => {
     if (!id || isReadOnly || !ws) return;
     const mod = ws.library_moderation_status ?? 'none';
     const listed = ws.library_public === true && mod === 'approved';
 
-    const runPatch = async (body: { library_public: boolean }) => {
+    if (user?.is_staff) {
+      if (!ws.library_public) return;
+      if (!window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?')) return;
       setLibraryBusy(true);
       setErr('');
       try {
-        const r = await api.patch<Worksheet>(`/worksheets/${id}/`, body);
+        const r = await api.patch<Worksheet>(`/worksheets/${id}/`, { library_public: false });
         setWs(r.data);
         void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
         void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
         void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
       } catch (e: unknown) {
-        const m = e as { response?: { data?: { detail?: string } } };
-        setErr(m.response?.data?.detail ?? 'Bibliotheks-Einstellung konnte nicht gespeichert werden.');
+        setErr(formatWorksheetApiError(e));
       } finally {
         setLibraryBusy(false);
       }
-    };
-
-    if (user?.is_staff) {
-      const next = !ws.library_public;
-      const ok = next
-        ? window.confirm('Dieses Arbeitsblatt öffentlich in der Bibliothek sichtbar machen?')
-        : window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?');
-      if (!ok) return;
-      void runPatch({ library_public: next });
       return;
     }
 
     if (mod === 'pending') {
       if (!window.confirm('Die Einreichung zurückziehen?')) return;
-      void runPatch({ library_public: false });
+      setLibraryBusy(true);
+      setErr('');
+      try {
+        const r = await api.patch<Worksheet>(`/worksheets/${id}/`, { library_public: false });
+        setWs(r.data);
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      } catch (e: unknown) {
+        setErr(formatWorksheetApiError(e));
+      } finally {
+        setLibraryBusy(false);
+      }
       return;
     }
 
     if (listed) {
       if (!window.confirm('Arbeitsblatt aus der öffentlichen Bibliothek entfernen?')) return;
-      void runPatch({ library_public: false });
-      return;
+      setLibraryBusy(true);
+      setErr('');
+      try {
+        const r = await api.patch<Worksheet>(`/worksheets/${id}/`, { library_public: false });
+        setWs(r.data);
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
+        void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
+        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      } catch (e: unknown) {
+        setErr(formatWorksheetApiError(e));
+      } finally {
+        setLibraryBusy(false);
+      }
     }
-
-    if (
-      !window.confirm(
-        'Dieses Arbeitsblatt zur Freigabe einreichen? Sobald eine Administratorin es freigibt, erscheint es in der Bibliothek.',
-      )
-    ) {
-      return;
-    }
-    void runPatch({ library_public: true });
   };
 
   const handleStaffUnpublishWorksheet = async () => {
@@ -488,185 +545,64 @@ export function WorksheetPage() {
     render_model: displayRm,
   };
 
-  const validationErrorsRaw = (draft as { validation_errors?: unknown[] }).validation_errors;
-  const validationErrors =
-    Array.isArray(validationErrorsRaw) && validationErrorsRaw.length > 0
-      ? validationErrorsRaw
-      : Array.isArray((ws.content as { validation_errors?: unknown[] })?.validation_errors)
-        ? (ws.content as { validation_errors: unknown[] }).validation_errors
-        : [];
-
-  const curriculumShow = ws.curriculum_show_usage !== false;
-  const curriculumPanel = ws.curriculum_usage_panel;
-
-  const handleOpenRegenPage = (pageIndex: number) => {
-    if (isReadOnly) return;
-    setRegenInstruction('');
-    setRegenModalPage(pageIndex);
-  };
-
-  const handleCloseRegenModal = () => {
-    if (regenBusyPage !== null) return;
-    setRegenModalPage(null);
-    setRegenInstruction('');
-  };
-
-  const handleConfirmRegenPage = async () => {
-    if (!id || !draft || regenModalPage === null || isReadOnly) return;
-    setRegenBusyPage(regenModalPage);
-    setErr('');
-    try {
-      const r = await api.post(`/worksheets/${id}/regenerate-page/`, {
-        page_index: regenModalPage,
-        teacher_instruction: regenInstruction.trim(),
-        content: draft,
-      });
-      clearDraftUndoStack();
-      setDraft(r.data.content);
-      setPreviewRm(r.data.render_model);
-      setRegenModalPage(null);
-      setRegenInstruction('');
-    } catch (e: unknown) {
-      const m = e as { response?: { data?: { detail?: string } } };
-      setErr(m.response?.data?.detail || 'Seiten-Neugenerierung fehlgeschlagen.');
-    } finally {
-      setRegenBusyPage(null);
-    }
-  };
-
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--color-bg-app)] lg:min-h-0 lg:flex-row print:h-auto print:min-h-0 print:flex-none print:bg-white print:overflow-visible">
-      {regenModalPage !== null ? (
-        <div
-          className="no-print fixed inset-0 z-[100] flex items-end justify-center bg-slate-900/45 p-3 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="regen-dialog-title"
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') handleCloseRegenModal();
+      {libraryModalMode !== null && ws ? (
+        <BoardLibraryPublishModal
+          open
+          mode={libraryModalMode === 'edit_listing' ? 'edit_listing' : 'publish'}
+          resourceKind="worksheet"
+          onClose={() => {
+            if (libraryBusy) return;
+            setLibraryModalMode(null);
+            setLibraryModalError(null);
           }}
-        >
-          <button
-            type="button"
-            className="absolute inset-0 cursor-default"
-            aria-label="Dialog schließen"
-            onClick={handleCloseRegenModal}
-          />
-          <div
-            className="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 id="regen-dialog-title" className="text-base font-semibold text-slate-900">
-              Seite {regenModalPage + 1} mit KI neu gestalten
-            </h2>
-            <p className="mt-1 text-xs leading-snug text-slate-600">
-              Es wird <strong>nur diese eine Seite</strong> ersetzt (Rest bleibt). Optional: Wünsche zur Struktur oder zum Schwierigkeitsgrad.
-            </p>
-            <label className="mt-3 block text-xs font-medium text-slate-700" htmlFor="regen-instruction">
-              Anweisung an die KI (optional)
-            </label>
-            <textarea
-              id="regen-instruction"
-              value={regenInstruction}
-              onChange={(e) => setRegenInstruction(e.target.value)}
-              rows={3}
-              maxLength={4000}
-              disabled={regenBusyPage !== null}
-              placeholder="z. B. mehr Übungsaufgaben, weniger Text, andere Aufgabenstellung …"
-              className="mt-1 w-full resize-y rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 disabled:bg-slate-50"
-            />
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                disabled={regenBusyPage !== null}
-                onClick={handleCloseRegenModal}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="button"
-                disabled={regenBusyPage !== null}
-                onClick={() => void handleConfirmRegenPage()}
-                className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
-              >
-                {regenBusyPage !== null ? 'KI arbeitet…' : 'Seite neu generieren'}
-              </button>
-            </div>
-          </div>
-        </div>
+          busy={libraryBusy}
+          error={libraryModalError}
+          privateHints={{ title: ws.title, topic: ws.topic }}
+          initialListing={
+            libraryModalMode === 'edit_listing'
+              ? {
+                  library_listing_title: ws.library_listing_title ?? '',
+                  library_listing_topic: ws.library_listing_topic ?? '',
+                  library_listing_description: ws.library_listing_description ?? '',
+                }
+              : undefined
+          }
+          onSubmit={(p) => void handleLibraryModalSubmit(p)}
+          moderationRequired={!user?.is_staff}
+        />
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col print:min-h-0 print:flex-none">
         <div className="no-print relative z-[45] shrink-0">
-          <EditorToolbar
-            title={String(draft.title ?? ws.title)}
-            subject={ws.subject}
-            grade={ws.grade}
+          <WorksheetDetailPageHeader
+            ws={ws}
+            displayTitle={String(draft.title ?? ws.title)}
+            readOnly={isReadOnly}
+            userIsStaff={Boolean(user?.is_staff)}
+            libraryBusy={libraryBusy}
+            libraryPublishLabel={libraryPublishLabel}
+            libraryWithdrawLabel={libraryWithdrawLabel}
+            libListed={libListed}
+            libMod={libMod}
+            onLibraryPublish={() => handleLibraryPublishOpen()}
+            onLibraryWithdraw={() => void handleLibraryWithdraw()}
+            onLibraryListingEdit={libListed && !isReadOnly ? () => handleLibraryListingEditOpen() : undefined}
+            staffLibBusy={staffLibBusy}
+            onStaffUnpublish={() => void handleStaffUnpublishWorksheet()}
+            onStaffDelete={() => void handleStaffDeleteWorksheet()}
             saving={saving}
             hasUnsavedChanges={hasUnsavedChanges}
             onSave={() => void save()}
-            readOnly={isReadOnly}
-            editSidebarOpen={sidebarChromeOpen}
-            onToggleEditSidebar={isReadOnly ? undefined : handleToggleEditSidebar}
-            onUndo={isReadOnly ? undefined : handleDraftUndo}
-            canUndo={canDraftUndo}
             statusLabel={
               ws.updated_at
                 ? `Zuletzt geändert ${new Date(String(ws.updated_at)).toLocaleString('de-DE')}`
                 : undefined
             }
+            onUndo={isReadOnly ? undefined : handleDraftUndo}
+            canUndo={canDraftUndo}
           />
-          {user?.is_staff && isReadOnly ? (
-            <div className="no-print flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-amber-50/90 px-4 py-2 sm:px-6">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                loading={staffLibBusy}
-                disabled={staffLibBusy || !libListed}
-                onClick={() => void handleStaffUnpublishWorksheet()}
-              >
-                Aus öffentlicher Bibliothek entfernen
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-red-800 hover:bg-red-50"
-                loading={staffLibBusy}
-                disabled={staffLibBusy}
-                onClick={() => void handleStaffDeleteWorksheet()}
-              >
-                Arbeitsblatt endgültig löschen
-              </Button>
-              <span className="text-[11px] text-amber-950/80">Moderation (fremdes Arbeitsblatt)</span>
-            </div>
-          ) : null}
-          {!isReadOnly ? (
-            <div className="no-print flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-bg-muted)]/40 px-4 py-2 sm:px-6">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                loading={libraryBusy}
-                onClick={() => void handleLibraryToggle()}
-              >
-                {libraryButtonLabel}
-              </Button>
-              {libListed ? (
-                <span className="text-[11px] text-[var(--color-ink-500)]">
-                  Ist im Reiter „Bibliothek“ unter Arbeitsblätter sichtbar.
-                </span>
-              ) : !user?.is_staff && libMod === 'pending' ? (
-                <span className="text-[11px] text-[var(--color-ink-500)]">
-                  Freigabe durch eine Administratorin ausstehend — noch nicht öffentlich.
-                </span>
-              ) : !user?.is_staff && libMod === 'rejected' ? (
-                <span className="text-[11px] text-amber-800">Letzte Einreichung wurde abgelehnt. Du kannst erneut einreichen.</span>
-              ) : null}
-            </div>
-          ) : null}
         </div>
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col print:h-auto print:min-h-0 print:overflow-visible">
@@ -675,169 +611,54 @@ export function WorksheetPage() {
             'relative flex min-h-0 flex-1 flex-col overflow-hidden print:h-auto print:overflow-visible',
           )}
         >
-          <div
-            ref={previewScrollRef}
-            className={cn(
-              'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-16 pt-4 sm:px-5 print:overflow-visible print:pb-0 print:pt-0',
-              previewScrollPadTransition && 'transition-[padding] duration-300 ease-out',
-            )}
-          >
-            {curriculumShow ? (
-              <div className="no-print mx-auto mb-5 w-full max-w-4xl space-y-3">
-                {showCurriculumWizardHint ? (
-                  <Alert tone="info">
-                    Unter „Lehrplanbezug“ siehst du, welche Leitplanken bei der Erstellung berücksichtigt wurden —
-                    nur in dieser App sichtbar, nicht im gedruckten PDF.
-                  </Alert>
-                ) : null}
-                <SectionCard
-                  title="Lehrplanbezug"
-                  description="Orientierung an importierten und geprüften Lehrplan-Kontexten. Keine rechtsverbindliche oder vollständige Abbildung des Rahmenlehrplans."
-                  bodyClassName="space-y-3 px-5 py-4"
-                >
-                  {ws.curriculum_warning ? <Alert tone="warn">{ws.curriculum_warning}</Alert> : null}
-                  {curriculumPanel?.has_curriculum_context && curriculumPanel.usage ? (
-                    <>
-                      <dl className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2">
-                        {curriculumPanel.usage.title ? (
-                          <>
-                            <dt className="font-medium text-slate-500">Bezeichnung</dt>
-                            <dd>{curriculumPanel.usage.title}</dd>
-                          </>
-                        ) : null}
-                        {curriculumPanel.usage.source_label ? (
-                          <>
-                            <dt className="font-medium text-slate-500">Quelle</dt>
-                            <dd>{curriculumPanel.usage.source_label}</dd>
-                          </>
-                        ) : null}
-                        <dt className="font-medium text-slate-500">Bundesland / Region</dt>
-                        <dd>{curriculumPanel.usage.state ?? '—'}</dd>
-                        <dt className="font-medium text-slate-500">Fach</dt>
-                        <dd>{curriculumPanel.usage.subject ?? '—'}</dd>
-                        <dt className="font-medium text-slate-500">Klassenstufe / Band</dt>
-                        <dd>{curriculumPanel.usage.grade_band ?? '—'}</dd>
-                        <dt className="font-medium text-slate-500">Themenfeld</dt>
-                        <dd className="min-w-0 break-words">{curriculumPanel.usage.topic_area ?? '—'}</dd>
-                        <dt className="font-medium text-slate-500">Qualität</dt>
-                        <dd>{curriculumPanel.usage.quality_status ?? '—'}</dd>
-                        <dt className="font-medium text-slate-500">Match-Score</dt>
-                        <dd>
-                          {curriculumPanel.usage.match_score != null
-                            ? String(curriculumPanel.usage.match_score)
-                            : '—'}
-                        </dd>
-                      </dl>
-                      {curriculumPanel.usage.short_description ? (
-                        <p className="text-xs leading-snug text-slate-600">{curriculumPanel.usage.short_description}</p>
-                      ) : null}
-                      <WorksheetStringList label="Trefferbegründungen" items={curriculumPanel.usage.match_reasons} />
-                      <WorksheetStringList label="Teilbereiche / Unterthemen" items={curriculumPanel.usage.subtopics} />
-                      <WorksheetStringList label="Kompetenzen / Ziele" items={curriculumPanel.usage.competency_goals} />
-                      <WorksheetStringList label="Erlaubte Aufgabentypen" items={curriculumPanel.usage.allowed_task_types} />
-                      <WorksheetStringList label="Validierungsregeln" items={curriculumPanel.usage.validation_rules} />
-                      {curriculumPanel.usage.ai_usage_note ? (
-                        <p className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-xs text-slate-700">
-                          {curriculumPanel.usage.ai_usage_note}
-                        </p>
-                      ) : null}
-                      {curriculumPanel.usage.curriculum_alignment &&
-                      Object.keys(curriculumPanel.usage.curriculum_alignment).length > 0 ? (
-                        <details className="rounded-lg border border-slate-100 bg-slate-50 p-2">
-                          <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                            KI-Zuordnung (technisch)
-                          </summary>
-                          <pre className="mt-2 max-h-40 overflow-auto text-[11px] text-slate-600">
-                            {JSON.stringify(curriculumPanel.usage.curriculum_alignment, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
-                    </>
-                  ) : curriculumPanel && !curriculumPanel.has_curriculum_context ? (
-                    <p className="text-sm text-slate-600">
-                      {curriculumPanel.warning ??
-                        'Für dieses Arbeitsblatt wurde kein aktiver Lehrplan-Kontext gefunden oder genutzt.'}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-slate-600">Keine Angaben zum Lehrplanbezug.</p>
-                  )}
-                </SectionCard>
-              </div>
-            ) : null}
-            <div className="print:block">
-              <div className="flex min-h-0 min-w-0 justify-center print:block print:w-full print:justify-start">
-                <div className="w-full max-w-full shrink-0 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
-                  <A4WorksheetRenderer
-                    worksheet={viewWorksheet}
-                    showGuide={false}
-                    onPageLayoutOverflow={handlePageLayoutOverflow}
-                  />
+          <div className="relative min-h-0 flex flex-1 flex-col">
+            <div
+              ref={previewScrollRef}
+              className={cn(
+                'min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-16 pt-4 sm:px-5 print:overflow-visible print:pb-0 print:pt-0',
+                previewScrollPadTransition && 'transition-[padding] duration-300 ease-out',
+              )}
+            >
+              <div className="print:block">
+                <div className="flex min-h-0 min-w-0 justify-center print:block print:w-full print:justify-start">
+                  <div className="w-full max-w-full shrink-0 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
+                    <A4WorksheetRenderer
+                      worksheet={viewWorksheet}
+                      showGuide={false}
+                      onPageLayoutOverflow={handlePageLayoutOverflow}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {validationErrors.length > 0 ? (
-              <div className="no-print mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <b>Validierungswarnungen</b>
-                <pre className="mt-2 overflow-auto text-xs">{JSON.stringify(validationErrors, null, 2)}</pre>
+            {previewPageCountForHook > 1 ? (
+              <div
+                className="no-print pointer-events-none absolute bottom-6 left-1/2 z-[25] -translate-x-1/2 select-none"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                aria-label={`Vorschau: Seite ${dominantPreviewPageIndex0 + 1} von ${previewPageCountForHook}`}
+              >
+                <span className="rounded-full bg-white/95 px-4 py-1.5 text-xs font-semibold text-violet-900 shadow-md tabular-nums ring-1 ring-violet-300/90 backdrop-blur-sm sm:text-sm">
+                  Seite {dominantPreviewPageIndex0 + 1} von {previewPageCountForHook}
+                </span>
               </div>
             ) : null}
           </div>
 
-          {!editDock.isLgViewport && mobileEditOpen && !isReadOnly ? (
-            <button
-              type="button"
-              className="no-print absolute inset-0 z-[30] bg-[var(--color-ink-900)]/25 backdrop-blur-[1px] lg:hidden"
-              aria-label="Bearbeitungs-Sidebar schließen"
-              onClick={() => setMobileEditOpen(false)}
-            />
-          ) : null}
-
-          {!editDock.isLgViewport && mobileEditOpen && !isReadOnly ? (
-            <div className="no-print absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-xl lg:hidden">
+          {!editDock.isLgViewport && !isReadOnly ? (
+            <div className="no-print flex h-[min(45vh,28rem)] min-h-[12rem] max-h-[50vh] shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-bg-card)] lg:hidden">
               <WorksheetEditSidebar
                 draft={draft}
                 setDraft={handleDraftFromSheet}
                 displayTitle={String(draft.title ?? ws.title)}
                 err={err}
-                onRequestRegeneratePage={handleOpenRegenPage}
-                regeneratePageBusyIndex={regenBusyPage}
                 pageLayoutOverflow={pageLayoutOverflow}
-                onRequestClose={() => setMobileEditOpen(false)}
+                onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
+                regeneratePageBusy={regeneratePageBusy}
               />
             </div>
-          ) : null}
-
-          {previewPageCountForHook > 1 ? (
-            <div
-              className="no-print pointer-events-none absolute bottom-6 left-1/2 z-[25] -translate-x-1/2 select-none"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              aria-label={`Vorschau: Seite ${dominantPreviewPageIndex0 + 1} von ${previewPageCountForHook}`}
-            >
-              <span className="rounded-full bg-white/95 px-4 py-1.5 text-xs font-semibold text-violet-900 shadow-md tabular-nums ring-1 ring-violet-300/90 backdrop-blur-sm sm:text-sm">
-                Seite {dominantPreviewPageIndex0 + 1} von {previewPageCountForHook}
-              </span>
-            </div>
-          ) : null}
-
-          {!editDock.isLgViewport && !isReadOnly ? (
-            <button
-              type="button"
-              className={cn(
-                'no-print absolute right-0 top-1/2 z-[38] flex items-center gap-2 rounded-l-[var(--radius-lg)] border border-r-0 border-[var(--color-border)] bg-[var(--color-bg-card)] py-2.5 pl-3 pr-2 shadow-[var(--shadow-lg)] transition-transform duration-300 ease-out hover:bg-[var(--color-ink-50)] print:hidden lg:hidden',
-                mobileEditOpen && 'pointer-events-none opacity-0',
-              )}
-              style={{
-                transform: mobileEditOpen ? 'translate(100%, -50%)' : 'translateY(-50%)',
-              }}
-              onClick={() => setMobileEditOpen(true)}
-              aria-label="Bearbeitungs-Sidebar öffnen"
-            >
-              <PanelRight size={18} className="shrink-0 text-[var(--color-primary-600)]" aria-hidden />
-              <span className="text-xs font-semibold text-[var(--color-ink-800)]">Bearbeitung</span>
-            </button>
           ) : null}
         </div>
       </div>
@@ -855,25 +676,11 @@ export function WorksheetPage() {
               setDraft={handleDraftFromSheet}
               displayTitle={String(draft.title ?? ws.title)}
               err={err}
-              onRequestRegeneratePage={handleOpenRegenPage}
-              regeneratePageBusyIndex={regenBusyPage}
               pageLayoutOverflow={pageLayoutOverflow}
-              onRequestClose={() => editDock.setCollapsed(true)}
               rootElement="div"
+              onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
+              regeneratePageBusy={regeneratePageBusy}
             />
-          }
-          collapsedRail={
-            <IconButton
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-              aria-label="Bearbeitung ausklappen"
-              title="Bearbeitung"
-              onClick={() => editDock.setCollapsed(false)}
-            >
-              <PanelRight size={18} aria-hidden />
-            </IconButton>
           }
         />
       ) : null}

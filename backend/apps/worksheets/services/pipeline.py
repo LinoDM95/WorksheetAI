@@ -35,6 +35,13 @@ from .content_blocks import (
     apply_page_overflow_reflow,
     repair_incomplete_ai_blocks,
 )
+from .creative_html_pipeline import (
+    RENDER_KIND_CREATIVE_HTML,
+    build_creative_html_render_model,
+    is_creative_html_content,
+    repair_creative_html_worksheet,
+    worksheet_pages_are_creative_html_shape,
+)
 from .page import normalize_page_setup
 from .render_model import build_render_model
 from .validators import validate_and_repair
@@ -130,11 +137,24 @@ class WorksheetGenerator(WorksheetPipeline):
             curriculum_alignment: dict[str, Any] = {}
             if isinstance(content, dict):
                 curriculum_alignment = _sanitize_curriculum_alignment(content.pop('curriculum_alignment', None))
-            content = self._maybe_review(content)
-            if isinstance(content, dict):
-                content.pop('curriculum_alignment', None)
-            content, notes = self.repair(content, self.pattern, run_reflow=True)
-            render_model = self.render(content, self.page_setup, self.pattern, self.payload)
+            creative = (self.payload.get('worksheet_mode') or '').strip().lower() == 'creative'
+            if creative:
+                if isinstance(content, dict):
+                    content.pop('curriculum_alignment', None)
+                content, notes = repair_creative_html_worksheet(
+                    content if isinstance(content, dict) else {},
+                    self.page_setup,
+                )
+            else:
+                content = self._maybe_review(content)
+                if isinstance(content, dict):
+                    content.pop('curriculum_alignment', None)
+                content, notes = self.repair(content, self.pattern, run_reflow=True)
+            self.apply_inbox_listing_defaults(content, self.payload)
+            if creative:
+                render_model = build_creative_html_render_model(content, self.page_setup, self.payload)
+            else:
+                render_model = self.render(content, self.page_setup, self.pattern, self.payload)
             worksheet = self._persist(content, render_model, curriculum_alignment)
             meter.flush_logs_to_db(
                 board=None,
@@ -144,6 +164,19 @@ class WorksheetGenerator(WorksheetPipeline):
             worksheet.content['validation_errors'] = notes
             worksheet.save(update_fields=['content'])
         return worksheet
+
+    @staticmethod
+    def apply_inbox_listing_defaults(content: dict[str, Any], payload: dict[str, Any]) -> None:
+        """Neue KI-Blätter: leeres Listen-Fach (Ohne Ordner), Fach als Dokument-Untertitel.
+
+        ``Worksheet.subject`` bleibt leer, damit die Explorer-Gruppierung mit Boards parity hat.
+        Sichtbares Fach kommt aus ``content['subtitle']`` (Render-Modell), ggf. aus dem Auftrag.
+        """
+        if not isinstance(content, dict):
+            return
+        payload_subj = (payload.get('subject_name') or payload.get('subject') or '').strip()
+        if payload_subj and not (content.get('subtitle') or '').strip():
+            content['subtitle'] = payload_subj
 
     def _resolve_curriculum_match(self) -> None:
         self._curriculum_warning = None
@@ -185,6 +218,9 @@ class WorksheetGenerator(WorksheetPipeline):
         self._curriculum_bundle = CurriculumContextMatchingService.compact_context_for_prompt(ctx)
 
     def _resolve_pattern(self) -> None:
+        if (self.payload.get('worksheet_mode') or '').strip().lower() == 'creative':
+            self.pattern = None
+            return
         if self.payload.get('pattern_id'):
             self.pattern = WorksheetPattern.objects.get(id=self.payload['pattern_id'])
             return
@@ -291,7 +327,7 @@ class WorksheetGenerator(WorksheetPipeline):
             owner=self.user,
             pattern=self.pattern,
             title=content.get('title', 'Arbeitsblatt'),
-            subject=self.payload.get('subject_name') or self.payload.get('subject', ''),
+            subject='',
             grade=self.payload.get('grade_value') or self.payload.get('grade'),
             topic=self.payload.get('topic', ''),
             page_setup=self.page_setup,
@@ -361,26 +397,48 @@ class PageRegenerator(WorksheetPipeline):
         with generation_meter_context(user=self.worksheet.owner) as meter:
             src = self._prepare_source()
             old_page = src['pages'][self.page_index]
-            new_page = self.provider.regenerate_page(self._build_payload(src, old_page))
-            blocks = new_page.get('blocks')
-            if not isinstance(blocks, list) or len(blocks) == 0:
-                raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
-            src['pages'][self.page_index] = {
-                'page_label': str(
-                    new_page.get('page_label')
-                    if new_page.get('page_label') is not None
-                    else old_page.get('page_label') or ''
-                ),
-                'blocks': blocks,
-            }
-            src, notes = self.repair(src, self.worksheet.pattern, run_reflow=False)
+            creative = is_creative_html_content(src) or worksheet_pages_are_creative_html_shape(src)
+            payload = self._build_payload(src, old_page, creative=creative)
+            new_page = self.provider.regenerate_page(payload)
+            if creative:
+                html = new_page.get('html')
+                if not isinstance(html, str) or not html.strip():
+                    raise ValueError('Die KI hat kein gültiges HTML für diese Seite geliefert')
+                src['pages'][self.page_index] = {
+                    'page_label': str(
+                        new_page.get('page_label')
+                        if new_page.get('page_label') is not None
+                        else old_page.get('page_label') or ''
+                    ),
+                    'html': html,
+                    'page_css': str(new_page.get('page_css') if new_page.get('page_css') is not None else old_page.get('page_css') or ''),
+                }
+                src, notes = repair_creative_html_worksheet(src, self.normalize_setup(self.worksheet.page_setup))
+            else:
+                blocks = new_page.get('blocks')
+                if not isinstance(blocks, list) or len(blocks) == 0:
+                    raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
+                src['pages'][self.page_index] = {
+                    'page_label': str(
+                        new_page.get('page_label')
+                        if new_page.get('page_label') is not None
+                        else old_page.get('page_label') or ''
+                    ),
+                    'blocks': blocks,
+                }
+                src, notes = self.repair(src, self.worksheet.pattern, run_reflow=False)
             self.attach_validation_errors(src, notes)
-            render_model = self.render(
-                src,
-                self.worksheet.page_setup,
-                self.worksheet.pattern,
-                self._req_meta(),
-            )
+            if creative:
+                render_model = build_creative_html_render_model(
+                    src, self.worksheet.page_setup, self._req_meta()
+                )
+            else:
+                render_model = self.render(
+                    src,
+                    self.worksheet.page_setup,
+                    self.worksheet.pattern,
+                    self._req_meta(),
+                )
             meter.flush_logs_to_db(
                 board=None,
                 metadata_extra={
@@ -411,8 +469,8 @@ class PageRegenerator(WorksheetPipeline):
             'creativity': rm.get('creativity', 'balanced'),
         }
 
-    def _build_payload(self, src: dict, old_page: dict) -> dict[str, Any]:
-        return {
+    def _build_payload(self, src: dict, old_page: dict, *, creative: bool = False) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             'worksheet_meta': {
                 'title': src.get('title'),
                 'subtitle': src.get('subtitle'),
@@ -423,18 +481,33 @@ class PageRegenerator(WorksheetPipeline):
             'page_index': self.page_index,
             'page_total': len(src['pages']),
             'current_page': old_page,
-            'other_pages_summary': self._other_pages_summary(src['pages']),
+            'other_pages_summary': self._other_pages_summary(src['pages'], creative=creative),
             'teacher_instruction': self.teacher_instruction,
             'page_setup': self.normalize_setup(self.worksheet.page_setup),
             'presentation': src.get('presentation'),
         }
+        if creative:
+            payload['worksheet_render_kind'] = RENDER_KIND_CREATIVE_HTML
+        return payload
 
-    def _other_pages_summary(self, pages: list[dict]) -> str:
+    def _other_pages_summary(self, pages: list[dict], *, creative: bool = False) -> str:
         lines: list[str] = []
         for i, page in enumerate(pages):
             if i == self.page_index:
                 continue
-            blocks = page.get('blocks') or []
-            titles = [str(b.get('title') or b.get('type') or '?') for b in blocks[:6]]
-            lines.append(f'Seite {i + 1}: {len(blocks)} Blöcke — {", ".join(titles)}')
+            if not isinstance(page, dict):
+                continue
+            if creative or ('html' in page and not page.get('blocks')):
+                label = str(page.get('page_label') or '').strip()
+                raw = str(page.get('html') or '')
+                snippet = ' '.join(raw.replace('\n', ' ').split())[:180]
+                if len(raw) > 180:
+                    snippet = snippet + '…'
+                lines.append(
+                    f'Seite {i + 1}: {label + " — " if label else ""}{snippet or "(leer)"}'
+                )
+            else:
+                blocks = page.get('blocks') or []
+                titles = [str(b.get('title') or b.get('type') or '?') for b in blocks[:6]]
+                lines.append(f'Seite {i + 1}: {len(blocks)} Blöcke — {", ".join(titles)}')
         return '\n'.join(lines) if lines else '(nur diese Seite im Dokument)'
