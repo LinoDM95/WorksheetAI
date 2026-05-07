@@ -10,7 +10,18 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bold, ChevronDown, ChevronRight, GripVertical, Italic, RemoveFormatting, Sparkles, Underline } from 'lucide-react';
+import {
+  Bold,
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  Italic,
+  RemoveFormatting,
+  Sparkles,
+  Underline,
+  X,
+} from 'lucide-react';
+import { IconButton } from '../../components/ui/IconButton';
 import {
   appendDraftPage,
   createDefaultWorksheetBlock,
@@ -18,7 +29,6 @@ import {
   insertDraftChecklistItem,
   insertDraftTaskGridItem,
   insertDraftTaskListItem,
-  moveDraftBlockBetweenPages,
   removeDraftBlock,
   removeDraftChecklistItem,
   removeDraftPage,
@@ -297,10 +307,10 @@ function SortableCreativeFlowRow({
       id={id}
       dragHandle={<GripVertical className="h-4 w-4" aria-hidden />}
       header={
-        <div className="flex min-w-0 items-center gap-2 pr-1">
+        <div className="flex min-w-0 items-center gap-1 pr-1">
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-slate-50"
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-slate-50"
             onClick={onToggle}
             aria-expanded={isOpen}
           >
@@ -314,14 +324,16 @@ function SortableCreativeFlowRow({
             </span>
             <span className="truncate text-xs font-medium text-slate-800">{summary}</span>
           </button>
-          <button
+          <IconButton
             type="button"
-            className="shrink-0 rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-bold text-red-900 hover:bg-red-100"
-            onClick={onRemove}
+            variant="danger"
+            size="sm"
+            className="!h-7 !w-7 shrink-0"
             aria-label={`Abschnitt ${flowIndex + 1} entfernen`}
+            onClick={onRemove}
           >
-            Entfernen
-          </button>
+            <X className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+          </IconButton>
         </div>
       }
       panel={
@@ -1058,48 +1070,18 @@ export function WorksheetEditSidebar({
                                   </span>
                                   <span className="truncate text-xs font-medium text-slate-800">{summary}</span>
                                 </button>
-                                {pages.length > 1 ? (
-                                  <select
-                                    className="max-w-[6.5rem] shrink-0 rounded border border-slate-200 bg-white py-0.5 pl-1 pr-1 text-[10px]"
-                                    aria-label="Block auf andere Seite verschieben"
-                                    defaultValue=""
-                                    onChange={(e) => {
-                                      const toP = parseInt(e.target.value, 10);
-                                      e.currentTarget.value = '';
-                                      if (Number.isNaN(toP) || toP === pageIndex) return;
-                                      setDraft((prev) =>
-                                        moveDraftBlockBetweenPages(
-                                          prev,
-                                          pageIndex,
-                                          blockIndex,
-                                          toP,
-                                          (prev.pages as typeof pages)[toP]?.blocks?.length ?? 0,
-                                        ),
-                                      );
-                                    }}
-                                  >
-                                    <option value="" disabled>
-                                      → Seite…
-                                    </option>
-                                    {pages.map((_, pi) =>
-                                      pi === pageIndex ? null : (
-                                        <option key={pi} value={pi}>
-                                          Seite {pi + 1}
-                                        </option>
-                                      ),
-                                    )}
-                                  </select>
-                                ) : null}
-                                <button
+                                <IconButton
                                   type="button"
-                                  className="shrink-0 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-900 hover:bg-red-100"
+                                  variant="danger"
+                                  size="sm"
+                                  className="!h-7 !w-7 shrink-0"
+                                  aria-label="Block entfernen"
                                   onClick={() =>
                                     setDraft((prev) => removeDraftBlock(prev, pageIndex, blockIndex))
                                   }
-                                  aria-label="Block entfernen"
                                 >
-                                  Entfernen
-                                </button>
+                                  <X className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                                </IconButton>
                               </div>
                             }
                             panel={
