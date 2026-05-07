@@ -44,8 +44,20 @@ def _json_block(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
+def _append_teacher_visual_quality_supplement(base: str) -> str:
+    """Gekürzte UI/A11y-Ergänzung; immer nach Produkt-Hauptprompts (Rangfolge im Markdown)."""
+    path = _SHARED_DIR / 'teacher_visual_quality_supplement.md'
+    if not path.is_file():
+        return base
+    return base + '\n\n---\n\n' + path.read_text(encoding='utf-8')
+
+
 def _append_ref_material(base: str) -> str:
-    ref_paths = ('formulierung_schule_dach.md', 'latex_katex_schule_reference.md')
+    ref_paths = (
+        'formulierung_schule_dach.md',
+        'latex_katex_schule_reference.md',
+        'teacher_visual_quality_supplement.md',
+    )
     out = base
     for name in ref_paths:
         ref_path = _SHARED_DIR / name
@@ -150,12 +162,13 @@ def build_worksheet_review_prompt(
     """Zweiter LLM-Durchgang: Logik, Lückentext, Linien, Fläche, Fach-Kohärenz."""
     path = _worksheet_format_dir() / 'review.md'
     md = path.read_text(encoding='utf-8')
-    return (
+    base = (
         md.replace('{{REQUEST_JSON}}', _json_block(request))
         .replace('{{PAGE_SETUP_JSON}}', _json_block(page_setup))
         .replace('{{PATTERN_JSON}}', _json_block(pattern))
         .replace('{{WORKSHEET_JSON}}', _json_block(content))
     )
+    return _append_teacher_visual_quality_supplement(base)
 
 
 _BOARD_FORMAT_DIR = _FORMATS_DIR / 'interactive_board'
@@ -190,7 +203,8 @@ def _truncate_block(s: str, max_chars: int = 14_000) -> str:
 def build_block_filling_page_prompt(payload: dict) -> str:
     """Prompt für eine einzelne Board-Seite: Slots mit Stichpunkten → JSON contents."""
     md = (_board_format_dir() / 'blocks_filling.md').read_text(encoding='utf-8')
-    return md.replace('{{PAGE_PAYLOAD_JSON}}', _json_block(payload))
+    base = md.replace('{{PAGE_PAYLOAD_JSON}}', _json_block(payload))
+    return _append_teacher_visual_quality_supplement(base)
 
 
 def _format_asset_pack_summary(value) -> str:
@@ -262,7 +276,7 @@ def build_free_html_generation_prompt(payload: dict) -> str:
             return value
         return _json_block(value)
 
-    return (
+    filled = (
         md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
         .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
         .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
@@ -283,13 +297,14 @@ def build_free_html_generation_prompt(payload: dict) -> str:
         .replace('{{ golden_example }}', str(payload.get('golden_example') or '— keines —'))
         .replace('{{ prompt }}', prompt)
     )
+    return _append_teacher_visual_quality_supplement(filled)
 
 
 def build_free_html_revision_prompt(payload: dict) -> str:
     md = (_board_format_dir() / 'free_html_revision.md').read_text(encoding='utf-8')
     user_prompt = (payload.get('user_prompt') or '').strip() or '*(Kein Änderungswunsch.)*'
     cap = max(1_000, int(getattr(settings, 'AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', 200_000)))
-    return (
+    filled = (
         md.replace('{{ html }}', _truncate_block(str(payload.get('html') or ''), cap))
         .replace('{{ css }}', _truncate_block(str(payload.get('css') or ''), cap))
         .replace('{{ javascript }}', _truncate_block(str(payload.get('javascript') or ''), cap))
@@ -298,6 +313,7 @@ def build_free_html_revision_prompt(payload: dict) -> str:
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
         .replace('{{ prompt }}', user_prompt)
     )
+    return _append_teacher_visual_quality_supplement(filled)
 
 
 def build_free_html_repair_prompt(payload: dict) -> str:
@@ -310,7 +326,7 @@ def build_free_html_repair_prompt(payload: dict) -> str:
     else:
         err_block = '*(Keine Fehlerliste übermittelt — prüfe den Code dennoch auf Sandbox-Konformität.)*'
     ctx = str(payload.get('context_hint') or '').strip() or '*(Kein Zusatzkontext.)*'
-    return (
+    filled = (
         md.replace('{{ validation_errors }}', err_block)
         .replace('{{ repair_attempt }}', str(int(payload.get('repair_attempt') or 1)))
         .replace('{{ repair_attempt_max }}', str(int(payload.get('repair_attempt_max') or 1)))
@@ -322,6 +338,7 @@ def build_free_html_repair_prompt(payload: dict) -> str:
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
     )
+    return _append_teacher_visual_quality_supplement(filled)
 
 
 def build_intent_router_prompt(payload: dict) -> str:
@@ -360,7 +377,7 @@ def build_creative_brief_prompt(payload: dict) -> str:
 
 def build_style_dna_prompt(payload: dict) -> str:
     md = (_board_format_dir() / 'style_dna.md').read_text(encoding='utf-8')
-    return (
+    filled = (
         md.replace('{{ subject }}', str(payload.get('subject') or '— nicht angegeben —'))
         .replace('{{ grade }}', str(payload.get('grade') or '— nicht angegeben —'))
         .replace('{{ topic }}', str(payload.get('topic') or '— nicht angegeben —'))
@@ -370,6 +387,7 @@ def build_style_dna_prompt(payload: dict) -> str:
         .replace('{{ creative_brief }}', _json_block(payload.get('creative_brief') or {}))
         .replace('{{ visual_metaphor_catalog }}', str(payload.get('visual_metaphor_catalog') or ''))
     )
+    return _append_teacher_visual_quality_supplement(filled)
 
 
 def build_repair_mode_prompt(mode: str, payload: dict) -> str:
@@ -408,7 +426,7 @@ def build_repair_mode_prompt(mode: str, payload: dict) -> str:
         .replace('{{ touch_audit }}', _json_block(payload.get('touch_audit') or {}))
         .replace('{{ screenshot_quality }}', _json_block(payload.get('screenshot_quality') or {}))
     )
-    return _REPAIR_CONTENT_PRESERVATION_PREAMBLE + body
+    return _REPAIR_CONTENT_PRESERVATION_PREAMBLE + _append_teacher_visual_quality_supplement(body)
 
 
 def build_screenshot_judge_prompt(payload: dict) -> str:
@@ -527,4 +545,4 @@ def build_page_regeneration_prompt(payload: dict) -> str:
     ref_path = _SHARED_DIR / 'latex_katex_schule_reference.md'
     if ref_path.is_file():
         base += '\n\n---\n\n' + ref_path.read_text(encoding='utf-8')
-    return base
+    return _append_teacher_visual_quality_supplement(base)

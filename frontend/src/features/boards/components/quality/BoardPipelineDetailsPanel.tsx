@@ -7,8 +7,7 @@ import type {
   RiskAnalysis,
   StyleDNA,
 } from '../../types';
-import { SectionCard } from '../../../../components/ui/Card';
-import { Badge } from '../../../../components/ui/Badge';
+import { Badge, SectionCard } from '../../../../components/ui';
 import { cn } from '../../../../lib/cn';
 
 type Props = {

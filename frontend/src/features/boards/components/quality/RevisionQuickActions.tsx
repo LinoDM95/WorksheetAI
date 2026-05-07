@@ -1,5 +1,5 @@
 import type { RevisionMode } from '../../types';
-import { Button } from '../../../../components/ui/Button';
+import { Button } from '../../../../components/ui';
 
 type QuickAction = {
   id: string;

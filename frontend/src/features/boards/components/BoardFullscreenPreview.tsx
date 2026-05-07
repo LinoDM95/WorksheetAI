@@ -67,6 +67,9 @@ export type BoardFullscreenPreviewProps = {
     onClick: () => void;
     disabled?: boolean;
     loading?: boolean;
+    /** Tooltip; Standard: Kurzbeschreibung Schüler-Link. */
+    title?: string;
+    ariaLabel?: string;
   };
   /**
    * Dunkle Leiste + Bühne `inset-0` wie Lehrer-Großdarstellung, ohne dass dieses DIV per F11/Fullscreen-API
@@ -449,6 +452,7 @@ export function BoardFullscreenPreview({
               </label>
             ) : null}
             {reloadPlacedEarly ? reloadIconButton : null}
+            {!reloadPlacedEarly && showReloadButton ? reloadIconButton : null}
             {toolbarResolved}
             {!minimalToolbar && shareToolbarAction ? (
               <Button
@@ -456,8 +460,13 @@ export function BoardFullscreenPreview({
                 variant="secondary"
                 size="sm"
                 className={cn('!px-2', layoutFs && '!border-white/20 !bg-white/10 !text-white hover:!bg-white/15')}
-                title="QR-Code und Link für Schüler:innen erzeugen"
-                aria-label="QR und Link für Schülerinnen und Schüler"
+                title={
+                  shareToolbarAction.title ??
+                  'QR-Code und Link für Schüler:innen erzeugen'
+                }
+                aria-label={
+                  shareToolbarAction.ariaLabel ?? 'QR und Link für Schülerinnen und Schüler'
+                }
                 leftIcon={<QrCode size={14} aria-hidden />}
                 loading={shareToolbarAction.loading}
                 disabled={shareToolbarAction.disabled}
@@ -466,7 +475,6 @@ export function BoardFullscreenPreview({
                 <span className="hidden sm:inline">QR &amp; Link</span>
               </Button>
             ) : null}
-            {!reloadPlacedEarly ? reloadIconButton : null}
             {toolbarCollapsible ? (
               <IconButton
                 type="button"

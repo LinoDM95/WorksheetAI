@@ -1,6 +1,9 @@
-import type { BoardDetail } from '../types';
-
-type StudentShareGate = Pick<BoardDetail, 'share_token' | 'student_link_enabled' | 'student_link_expires_at'> | null | undefined;
+/** Wie `BoardDetail` / `BoardLibraryItem` für Schüler-Link-Entscheidungen. */
+type StudentShareGate = {
+  share_token?: string | null;
+  student_link_enabled?: boolean;
+  student_link_expires_at?: string | null;
+} | null | undefined;
 
 /** true: Dauer wählen (Prep-Modal). false: aktiver Link mit gültigem Ablaufdatum. */
 export function needsStudentSharePrep(board: StudentShareGate): boolean {

@@ -412,6 +412,8 @@ export type BoardLibraryItem = {
   share_token?: string | null;
   /** Nur für Owner sinnvoll; für andere Nutzer immer `false`. */
   student_link_enabled?: boolean;
+  /** Nur für `viewer_is_owner`; sonst nicht gesendet. */
+  student_link_expires_at?: string | null;
   /** Aus `generation_input.duration_minutes` bei freier Smartboard-Generierung; sonst `null`. */
   planned_duration_minutes?: number | null;
 };

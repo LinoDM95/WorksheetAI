@@ -22,6 +22,7 @@ class LibraryCommentsApiTests(TestCase):
             status='generated',
             html='<div>x</div>',
             library_public=True,
+            library_moderation_status=Board.LibraryModerationStatus.APPROVED,
         )
 
     def test_comments_get_post_anonymous_author_label(self) -> None:
@@ -72,12 +73,14 @@ class LibraryCommentsApiTests(TestCase):
         self.assertEqual(r_other.status_code, 200)
         self.assertIsNone(r_other.data.get('share_token'))
         self.assertFalse(r_other.data.get('student_link_enabled'))
+        self.assertIsNone(r_other.data.get('student_link_expires_at'))
 
         self.client.force_authenticate(user=self.owner)
         r_owner = self.client.get(f'/api/boards/{self.board.id}/library-entry/')
         self.assertEqual(r_owner.status_code, 200)
         self.assertEqual(r_owner.data.get('share_token'), 'owneronlytoken')
         self.assertTrue(r_owner.data.get('student_link_enabled'))
+        self.assertIsNone(r_owner.data.get('student_link_expires_at'))
 
     def test_mine_scope_excludes_foreign_board(self) -> None:
         self.client.force_authenticate(user=self.other)

@@ -1,4 +1,4 @@
-import type { BadgeTone } from '../components/ui/Badge';
+import type { BadgeTone } from '../components/ui';
 
 /**
  * Eine einzige Quelle der Wahrheit für Worksheet-Status.

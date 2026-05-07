@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BoardFullscreenPreview } from '../BoardFullscreenPreview';
+import { BoardFullscreenPreview, type BoardFullscreenPreviewProps } from '../BoardFullscreenPreview';
 import type { DatasetId, LibraryId } from '../../types';
 
 export type BoardLibraryLivePreviewProps = {
@@ -10,6 +10,8 @@ export type BoardLibraryLivePreviewProps = {
   javascript: string;
   usedLibraries: LibraryId[];
   usedDatasets?: DatasetId[];
+  shareToolbarAction?: BoardFullscreenPreviewProps['shareToolbarAction'];
+  toolbarExtras?: BoardFullscreenPreviewProps['toolbarExtras'];
 };
 
 export function BoardLibraryLivePreview({
@@ -20,6 +22,8 @@ export function BoardLibraryLivePreview({
   javascript,
   usedLibraries,
   usedDatasets,
+  shareToolbarAction,
+  toolbarExtras,
 }: BoardLibraryLivePreviewProps) {
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -36,6 +40,8 @@ export function BoardLibraryLivePreview({
       usedLibraries={usedLibraries}
       usedDatasets={usedDatasets}
       scriptsEnabled
+      shareToolbarAction={shareToolbarAction}
+      toolbarExtras={toolbarExtras}
     />
   );
 }

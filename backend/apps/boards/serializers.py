@@ -146,6 +146,7 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     viewer_is_owner = serializers.SerializerMethodField()
     share_token = serializers.SerializerMethodField()
     student_link_enabled = serializers.SerializerMethodField()
+    student_link_expires_at = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
     description = serializers.SerializerMethodField()
     topic = serializers.SerializerMethodField()
@@ -171,7 +172,7 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
             'library_published_at',
             'avg_rating', 'rating_count', 'comment_count', 'my_stars',
             'owner_label', 'viewer_is_owner',
-            'share_token', 'student_link_enabled',
+            'share_token', 'student_link_enabled', 'student_link_expires_at',
         )
         read_only_fields = fields
 
@@ -253,6 +254,15 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
         if obj.owner_id != request.user.id:
             return False
         return bool(obj.student_link_enabled)
+
+    def get_student_link_expires_at(self, obj: Board):
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return None
+        if obj.owner_id != request.user.id:
+            return None
+        exp = obj.student_link_expires_at
+        return exp.isoformat() if exp else None
 
 
 class BoardLibraryCommentSerializer(serializers.ModelSerializer):

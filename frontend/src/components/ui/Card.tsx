@@ -43,10 +43,6 @@ export const CardHeader = ({
   </div>
 );
 
-export const CardBody = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn('px-5 py-4', className)}>{children}</div>
-);
-
 /**
  * Karte mit eingebautem Header — der häufigste Anwendungsfall.
  * Inhalts-Padding ist hier 0, damit Listen mit `divide-y` durchgehen können.

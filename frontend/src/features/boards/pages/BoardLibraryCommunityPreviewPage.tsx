@@ -1,6 +1,7 @@
+import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MessageCircle, ShieldAlert, Star } from 'lucide-react';
+import { ArrowLeft, FolderPlus, MessageCircle, ShieldAlert, Star } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -11,6 +12,7 @@ import {
 import {
   boardLibraryEntryQueryKey,
   boardsLibraryQueryKey,
+  BOARDS_DETAIL_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
 import {
@@ -19,13 +21,19 @@ import {
   backofficeUnpublishBoard,
   fetchBoardLibraryEntry,
   rateBoardInLibrary,
+  updateBoardCode,
 } from '../boardsApi';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_TECH_LABELS } from '../lib/boardLibraryLabels';
+import { BoardShareQrModal } from '../components/BoardShareQrModal';
+import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import { BoardLibraryCommentsSection } from '../components/library/BoardLibraryCommentsSection';
 import { BoardLibraryInteractiveRating } from '../components/library/BoardLibraryInteractiveRating';
 import { BoardLibraryLivePreview } from '../components/library/BoardLibraryLivePreview';
 import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
+import { needsStudentSharePrep } from '../lib/studentShareFlow';
+import { buildStudentBoardUrl } from '../publicBoardApi';
+import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
 import { useAuth } from '../../../lib/authContext';
 import type { BoardLibraryItem } from '../types';
 
@@ -101,7 +109,89 @@ export function BoardLibraryCommunityPreviewPage() {
     },
   });
 
+  const [shareQrOpen, setShareQrOpen] = useState(false);
+  const [sharePrepOpen, setSharePrepOpen] = useState(false);
+  const [shareQrPayload, setShareQrPayload] = useState<{
+    url: string;
+    expiresAt: string | null;
+    title: string;
+  } | null>(null);
+
   const board = itemQuery.data;
+
+  const sharePatchMutation = useMutation({
+    mutationFn: (body: { student_link_enabled?: boolean; student_link_valid_minutes?: number | null }) =>
+      updateBoardCode(libraryBoardId, body),
+    onSuccess: (data) => {
+      queryClient.setQueryData<BoardLibraryItem | undefined>(
+        boardLibraryEntryQueryKey(libraryBoardId),
+        (old) =>
+          old
+            ? {
+                ...old,
+                share_token: data.share_token ?? old.share_token,
+                student_link_enabled: data.student_link_enabled,
+                student_link_expires_at: data.student_link_expires_at ?? null,
+              }
+            : old,
+      );
+      void queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(libraryBoardId) });
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('all') });
+      void queryClient.invalidateQueries({ queryKey: boardsLibraryQueryKey('mine') });
+    },
+  });
+
+  const showShareQrModalWithPayload = useCallback((payload: { url: string; expiresAt: string | null; title: string }) => {
+    void (async () => {
+      await exitElementFullscreen();
+      setShareQrPayload(payload);
+      setShareQrOpen(true);
+    })();
+  }, []);
+
+  const openExistingShareQr = useCallback(() => {
+    if (!board?.share_token || !board.student_link_enabled) return;
+    showShareQrModalWithPayload({
+      url: buildStudentBoardUrl(board.share_token),
+      expiresAt: board.student_link_expires_at ?? null,
+      title: board.title || '',
+    });
+  }, [board, showShareQrModalWithPayload]);
+
+  const handleLibraryShareClick = useCallback(() => {
+    void (async () => {
+      await exitElementFullscreen();
+      if (!board || needsStudentSharePrep(board)) {
+        setSharePrepOpen(true);
+        return;
+      }
+      openExistingShareQr();
+    })();
+  }, [board, openExistingShareQr]);
+
+  const handleConfirmStudentShare = useCallback(
+    (validMinutes: number) => {
+      sharePatchMutation.mutate(
+        { student_link_enabled: true, student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: async (data) => {
+            await exitElementFullscreen();
+            setSharePrepOpen(false);
+            const token = data.share_token ?? board?.share_token ?? null;
+            if (token) {
+              setShareQrPayload({
+                url: buildStudentBoardUrl(token),
+                expiresAt: data.student_link_expires_at ?? null,
+                title: data.title || board?.title || '',
+              });
+              setShareQrOpen(true);
+            }
+          },
+        },
+      );
+    },
+    [sharePatchMutation, board?.share_token, board?.title],
+  );
   const isOwner = Boolean(board?.viewer_is_owner);
   const errStatus = (itemQuery.error as { response?: { status?: number } })?.response?.status;
 
@@ -227,6 +317,34 @@ export function BoardLibraryCommunityPreviewPage() {
               javascript={board.javascript}
               usedLibraries={board.used_libraries ?? []}
               usedDatasets={board.used_datasets}
+              toolbarExtras={
+                !isOwner
+                  ? () => (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        className="!px-2"
+                        loading={adoptMutation.isPending && adoptMutation.variables === board.id}
+                        disabled={adoptMutation.isPending}
+                        title="Eine eigene Kopie unter Smartboard anlegen und bearbeiten"
+                        aria-label="In meine Sammlung übernehmen"
+                        leftIcon={<FolderPlus size={14} aria-hidden />}
+                        onClick={() => adoptMutation.mutate(board.id)}
+                      >
+                        <span className="hidden sm:inline">In Sammlung übernehmen</span>
+                      </Button>
+                    )
+                  : undefined
+              }
+              shareToolbarAction={
+                isOwner
+                  ? {
+                      onClick: handleLibraryShareClick,
+                      loading: sharePatchMutation.isPending && sharePrepOpen,
+                    }
+                  : undefined
+              }
             />
           </Card>
         </section>
@@ -379,21 +497,11 @@ export function BoardLibraryCommunityPreviewPage() {
             />
           </Card>
 
-          {!isOwner ? (
-            <Button
-              type="button"
-              className="w-full"
-              loading={adoptMutation.isPending && adoptMutation.variables === board.id}
-              disabled={adoptMutation.isPending}
-              onClick={() => adoptMutation.mutate(board.id)}
-            >
-              In meine Sammlung übernehmen
-            </Button>
-          ) : (
+          {isOwner ? (
             <p className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-bg-muted)]/50 px-3 py-2 text-center text-xs text-[var(--color-ink-600)]">
               Eigenes Board — Bearbeitung unter <span className="font-medium">Smartboard</span>.
             </p>
-          )}
+          ) : null}
 
           <div className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
             <BoardLibraryCommentsSection
@@ -405,6 +513,23 @@ export function BoardLibraryCommunityPreviewPage() {
           </div>
         </aside>
       </div>
+
+      <BoardStudentSharePrepModal
+        open={sharePrepOpen}
+        onClose={() => setSharePrepOpen(false)}
+        onConfirm={handleConfirmStudentShare}
+        busy={sharePatchMutation.isPending}
+      />
+      <BoardShareQrModal
+        open={shareQrOpen && Boolean(shareQrPayload?.url)}
+        onClose={() => {
+          setShareQrOpen(false);
+          setShareQrPayload(null);
+        }}
+        studentUrl={shareQrPayload?.url ?? ''}
+        title={shareQrPayload?.title ?? ''}
+        expiresAt={shareQrPayload?.expiresAt}
+      />
     </div>
   );
 }

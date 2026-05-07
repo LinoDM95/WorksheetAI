@@ -1,6 +1,8 @@
 """API-Tests für Board-Versionierung (Kopf, Wiederherstellen, Löschen)."""
 from __future__ import annotations
 
+import time
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -57,6 +59,7 @@ class BoardRevisionVersionApiTests(TestCase):
             validation_warnings=[],
             created_by=self.user,
         )
+        time.sleep(0.02)
         self.board.html = '<div class="free-board">head</div>'
         self.board.save(update_fields=['html', 'updated_at'])
         self.r2 = BoardRevision.objects.create(
@@ -79,6 +82,7 @@ class BoardRevisionVersionApiTests(TestCase):
             validation_warnings=[],
             created_by=self.user,
         )
+        time.sleep(0.02)
         self.board.html = '<div class="free-board">off-head</div>'
         self.board.save(update_fields=['html', 'updated_at'])
 

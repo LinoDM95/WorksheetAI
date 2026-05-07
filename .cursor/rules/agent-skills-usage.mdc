@@ -1,0 +1,22 @@
+---
+description: Verfügbare Agent Skills aktiv prüfen und bei passender Aufgabe sofort anwenden
+alwaysApply: true
+---
+
+# Nutzung von Agent Skills
+
+Wenn Cursor dir **Skills** bereitstellt (Liste mit absoluten Pfaden zu `SKILL.md`), gilt das für jede **inhaltliche** Agenten-Aufgabe (Code, Konfig, Debugging, Setup, Review), nicht für reine Smalltalk-Fragen.
+
+## Pflicht
+
+1. **Vor der Bearbeitung** die Liste der verfügbaren Skills kurz gegen die Nutzeraufgabe abgleichen (Thema, Stack, Werkzeuge, Artefakte wie „PR“, „Hook“, „Skill“, „Terraform“, …).
+2. **Trifft ein Skill zu** (auch nur teilweise): Die zugehörige **`SKILL.md` sofort mit dem Read-Tool lesen** und die Anweisungen **konsequent befolgen** — nicht nur erwähnen.
+3. **Mehrere passende Skills:** Alle relevanten `SKILL.md` lesen; bei Konflikt gilt die **spezifischere** Anleitung, sonst die Reihenfolge: zuerst domänenspezifisch, dann allgemein.
+4. **Kein Skill passt:** normal nach Projekt-Rules und Best Practices arbeiten; nichts erfinden nur um einen Skill zu „aktivieren“.
+
+## Verboten
+
+- Skill nur **nennen**, ohne Datei gelesen zu haben.
+- Standardpfad ignorieren, wenn ein Skill die Aufgabe **klar abdeckt** (z. B. dedizierte Workflows für CI, Hooks, Skills-Autor).
+
+Skills ergänzen **keine** Sicherheits- oder Projektregeln — sie überschreiben diese **nicht**.

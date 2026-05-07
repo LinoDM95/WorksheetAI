@@ -26,7 +26,7 @@ alwaysApply: true
 
 | Ort | Inhalt |
 |-----|--------|
-| `frontend/src/components/ui/` | **UI-Primitives**: `Button`, `IconButton`, `Card`, `Badge`, `Field`, `EmptyState`, `PageHeader`, `Alert`, `Stat`, `SearchInput`, `MiniThumbnail` |
+| `frontend/src/components/ui/` | **UI-Primitives**: `Button`, `IconButton`, `Card`, `Badge`, `Field`, `EmptyState`, `PageHeader`, `Alert`, `SearchInput` |
 | `frontend/src/components/` | App-spezifische, seitenübergreifende Bausteine (Shell, MockBadge, A4Preview, LatexText) |
 | `frontend/src/components/shell/` | Layout (`AppShell`, `Sidebar`, `Topbar`) |
 | `frontend/src/features/<bereich>/` | Feature-Screens, Wizard-Steps, größere zusammenhängende Blöcke |

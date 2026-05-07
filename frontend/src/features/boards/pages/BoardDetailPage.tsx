@@ -1,17 +1,14 @@
-import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Globe2, Sparkles, Trash2, Undo2, X } from 'lucide-react';
-import { Alert, Button, IconButton, TextInput } from '../../../components/ui';
 import {
   BOARDS_DETAIL_QUERY_KEY,
   BOARDS_FOLDERS_QUERY_KEY,
   BOARDS_LIST_QUERY_KEY,
 } from '../../../lib/listQueries';
-import { formatDate, formatDateTime } from '../../../lib/formatDate';
+import { formatDateTime } from '../../../lib/formatDate';
+import { Alert, Button } from '../../../components/ui';
 import { useAuth } from '../../../lib/authContext';
-import { cn } from '../../../lib/cn';
 import {
   applyBoardRevision,
   deleteBoardRevision,
@@ -25,71 +22,17 @@ import {
 import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
 import { BoardAiGenerationOverlay } from '../components/BoardAiGenerationOverlay';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
-import { RevisionModeSelect } from '../components/quality/RevisionModeSelect';
-import { RevisionQuickActions } from '../components/quality/RevisionQuickActions';
+import { BoardShareQrModal } from '../components/BoardShareQrModal';
+import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import type { BoardCodeUpdate, BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
-import { LIBRARY_GRADE_STEPS } from '../lib/libraryCatalogFilters';
-
-/** Liste neueste zuerst (API): v1 = älteste Revision, höhere Nummer = neuer. */
-const revisionVLabel = (indexNewestFirst: number, total: number) => {
-  const n = total > 0 ? total - indexNewestFirst : 1;
-  return `v${n}`;
-};
-
-function BoardShellModal({
-  open,
-  title,
-  onClose,
-  children,
-  wide,
-  footer,
-}: {
-  open: boolean;
-  title: string;
-  onClose: () => void;
-  children: ReactNode;
-  wide?: boolean;
-  footer?: ReactNode;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const handle = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handle);
-    return () => window.removeEventListener('keydown', handle);
-  }, [open, onClose]);
-
-  if (!open || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        className="absolute inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-        aria-label="Schließen"
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          'relative z-10 flex max-h-[min(92dvh,920px)] w-full flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl',
-          wide ? 'max-w-5xl' : 'max-w-lg',
-        )}
-      >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-          <h2 className="min-w-0 truncate text-sm font-semibold text-slate-900">{title}</h2>
-          <IconButton type="button" variant="ghost" size="sm" aria-label="Schließen" onClick={onClose}>
-            <X size={18} aria-hidden />
-          </IconButton>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
-        {footer ? <div className="shrink-0 border-t border-slate-100 px-4 py-3">{footer}</div> : null}
-      </div>
-    </div>,
-    document.body,
-  );
-}
+import { needsStudentSharePrep } from '../lib/studentShareFlow';
+import { buildStudentBoardUrl } from '../publicBoardApi';
+import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
+import { BoardDetailMetaPanel } from './boardDetail/BoardDetailMetaPanel';
+import { BoardDetailPageHeader } from './boardDetail/BoardDetailPageHeader';
+import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
+import { BoardShellModal } from './boardDetail/BoardShellModal';
 
 export function BoardDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
@@ -117,6 +60,14 @@ export function BoardDetailPage() {
   const [metaGradeTo, setMetaGradeTo] = useState('');
   const [metaDuration, setMetaDuration] = useState('');
   const [metaFormError, setMetaFormError] = useState<string | null>(null);
+
+  const [shareQrOpen, setShareQrOpen] = useState(false);
+  const [sharePrepOpen, setSharePrepOpen] = useState(false);
+  const [shareQrPayload, setShareQrPayload] = useState<{
+    url: string;
+    expiresAt: string | null;
+    title: string;
+  } | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -310,6 +261,61 @@ export function BoardDetailPage() {
     },
   });
 
+  const showShareQrModalWithPayload = useCallback(
+    (payload: { url: string; expiresAt: string | null; title: string }) => {
+      void (async () => {
+        await exitElementFullscreen();
+        setShareQrPayload(payload);
+        setShareQrOpen(true);
+      })();
+    },
+    [],
+  );
+
+  const openExistingShareQr = useCallback(() => {
+    if (!board?.share_token || !board.student_link_enabled) return;
+    showShareQrModalWithPayload({
+      url: buildStudentBoardUrl(board.share_token),
+      expiresAt: board.student_link_expires_at ?? null,
+      title: board.title || '',
+    });
+  }, [board, showShareQrModalWithPayload]);
+
+  const handleDetailShareClick = useCallback(() => {
+    void (async () => {
+      await exitElementFullscreen();
+      if (!board || needsStudentSharePrep(board)) {
+        setSharePrepOpen(true);
+        return;
+      }
+      openExistingShareQr();
+    })();
+  }, [board, openExistingShareQr]);
+
+  const handleConfirmStudentShare = useCallback(
+    (validMinutes: number) => {
+      patchMutation.mutate(
+        { student_link_enabled: true, student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: async (data) => {
+            await exitElementFullscreen();
+            setSharePrepOpen(false);
+            const token = data.share_token ?? board?.share_token ?? null;
+            if (token) {
+              setShareQrPayload({
+                url: buildStudentBoardUrl(token),
+                expiresAt: data.student_link_expires_at ?? null,
+                title: data.title || board?.title || '',
+              });
+              setShareQrOpen(true);
+            }
+          },
+        },
+      );
+    },
+    [patchMutation, board?.share_token, board?.title],
+  );
+
   const handleSyncPublicLibrarySnapshot = useCallback(() => {
     setLibraryShareMessage(null);
     patchMutation.mutate(
@@ -456,6 +462,30 @@ export function BoardDetailPage() {
       : 'Änderungen speichern, bis der Stand wieder der neuesten Version entspricht.'
     : undefined;
 
+  const reviseButtonTitle: string | undefined = canReviseWithAi
+    ? 'In eigenen Worten beschreiben, was sich am Board ändern soll — die KI liefert eine neue Fassung aus HTML, CSS und JavaScript.'
+    : reviseBlockedTitle;
+
+  const handleWithdrawFromLibrary = useCallback(() => {
+    const ok = window.confirm(
+      'Dieses Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
+    );
+    if (!ok) return;
+    setLibraryShareMessage(null);
+    patchMutation.mutate(
+      { library_public: false },
+      {
+        onError: (err: unknown) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+            (err as Error)?.message ||
+            'Konnte nicht entfernt werden.';
+          setLibraryShareMessage({ tone: 'error', text: detail });
+        },
+      },
+    );
+  }, [patchMutation]);
+
   if (isPending) {
     return (
       <div className="flex min-h-[12rem] flex-1 items-center justify-center text-sm text-slate-500 lg:min-h-0">
@@ -489,393 +519,53 @@ export function BoardDetailPage() {
       <BoardAiGenerationOverlay open={reviseMutation.isPending} variant="revise" />
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="relative z-20 flex shrink-0 flex-col gap-1 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top,0px))] shadow-sm backdrop-blur-sm sm:px-3">
-        {showFatalErrors && (
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-red-50 px-2 py-1 text-xs text-red-900 ring-1 ring-red-200">
-            <span className="font-medium">Validierungsfehler im Board</span>
-            <Button type="button" variant="danger" size="sm" onClick={() => setFatalOpen(true)}>
-              Details
-            </Button>
-          </div>
-        )}
-
-        <div className="flex min-h-10 flex-wrap items-center gap-x-1 gap-y-1">
-          <div className="min-w-0 max-w-[min(100%,11rem)] sm:max-w-xs">
-            <p className="truncate text-xs font-semibold text-slate-900 sm:text-sm">{board.title || 'Board'}</p>
-            {board.description ? (
-              <p className="truncate text-[10px] text-slate-500 sm:text-xs">{board.description}</p>
-            ) : null}
-          </div>
-
-          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
-
-          <select
-            className="max-w-[140px] rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-1 text-[11px] text-slate-800 sm:max-w-[200px] sm:text-xs"
-            value={board.folder?.id ?? ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              patchMutation.mutate({ folder_id: v === '' ? null : v });
-            }}
-            disabled={patchMutation.isPending}
-            aria-label="Galerie-Ordner"
-            title="Ordner"
-          >
-            <option value="">Ohne Ordner</option>
-            {foldersSorted.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.path}
-              </option>
-            ))}
-          </select>
-
-          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
-
-          <select
-            className="max-w-[7.5rem] rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-1 text-[11px] text-slate-800 sm:max-w-[14rem] sm:text-xs"
-            value={previewRevisionId ?? ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPreviewRevisionId(v === '' ? null : v);
-            }}
-            disabled={revisions.length === 0 || applyRevisionMutation.isPending}
-            aria-label="Board-Version"
-            title="Versionen durchblättern"
-          >
-            <option value="">Aktueller Stand</option>
-            {revisions.map((r, idx) => (
-              <option key={r.id} value={r.id}>
-                {revisionVLabel(idx, revisions.length)} · {formatDate(r.created_at)}
-              </option>
-            ))}
-          </select>
-
-          {previewRevision ? (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="!px-2"
-                loading={applyRevisionMutation.isPending}
-                onClick={() => applyRevisionMutation.mutate(previewRevision.id)}
-              >
-                Übernehmen
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="danger"
-                className="!px-2"
-                loading={deleteRevisionMutation.isPending}
-                aria-label="Versionseintrag löschen"
-                onClick={() => handleConfirmDeleteRevision(previewRevision.id)}
-              >
-                <Trash2 size={14} aria-hidden />
-              </Button>
-            </>
-          ) : null}
-
-          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
-
-          <Button
-            type="button"
-            size="sm"
-            className="!px-2"
-            disabled={!canReviseWithAi}
-            title={reviseBlockedTitle}
-            onClick={() => setReviseOpen(true)}
-          >
-            <Sparkles size={14} className="sm:mr-1" aria-hidden />
-            <span className="hidden sm:inline">Nachprompten</span>
-          </Button>
-        </div>
-
-        {libraryShareMessage ? (
-          <div className="pt-1">
-            <Alert tone={libraryShareMessage.tone === 'error' ? 'error' : 'info'}>{libraryShareMessage.text}</Alert>
-          </div>
-        ) : null}
-
-        {board.library_public ? (
-          <div className="mt-1 rounded-xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50 to-teal-50/90 px-3 py-2.5 ring-1 ring-emerald-200/70">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
-              <div className="flex min-w-0 flex-1 gap-2">
-                <Globe2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
-                <div className="min-w-0">
-                  <p className="text-xs font-bold tracking-wide text-emerald-950">Öffentlich in der Bibliothek</p>
-                  <p className="mt-0.5 text-sm font-semibold text-emerald-900">
-                    Online-Version: <span className="tabular-nums text-emerald-950">{publicOnlineVersionLabel}</span>
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-emerald-800/90">
-                    <span className="font-medium">Karte:</span>{' '}
-                    {board.library_listing_title?.trim() || board.title || '—'}
-                  </p>
-                  {board.library_public_live_differs ? (
-                    <p className="mt-2 text-[11px] font-semibold text-amber-900">
-                      Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-[11px] text-emerald-800/80">
-                      Gespeicherter Stand und öffentliche Fassung stimmen überein.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-col gap-2 lg:items-end">
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:pt-0.5">
-                  {user?.is_staff ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      loading={patchMutation.isPending}
-                      disabled={patchMutation.isPending}
-                      onClick={handleSyncPublicLibrarySnapshot}
-                    >
-                      Öffentliche Fassung aktualisieren
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      loading={patchMutation.isPending}
-                      disabled={
-                        patchMutation.isPending ||
-                        !board.library_public_live_differs ||
-                        board.library_moderation_status !== 'approved'
-                      }
-                      title={
-                        board.library_moderation_status !== 'approved'
-                          ? 'Nur bei freigegebenem Bibliothekseintrag sinnvoll.'
-                          : undefined
-                      }
-                      onClick={handleSubmitLibraryUpdate}
-                    >
-                      Update zur Freigabe einreichen
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={patchMutation.isPending}
-                    onClick={() => {
-                      setLibraryModalError(null);
-                      setLibraryModalMode('edit_listing');
-                    }}
-                  >
-                    Bibliotheks-Texte
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-800 hover:bg-red-50"
-                    disabled={patchMutation.isPending}
-                    onClick={() => {
-                      const ok = window.confirm(
-                        'Dieses Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
-                      );
-                      if (!ok) return;
-                      setLibraryShareMessage(null);
-                      patchMutation.mutate(
-                        { library_public: false },
-                        {
-                          onError: (err: unknown) => {
-                            const detail =
-                              (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-                              (err as Error)?.message ||
-                              'Konnte nicht entfernt werden.';
-                            setLibraryShareMessage({ tone: 'error', text: detail });
-                          },
-                        },
-                      );
-                    }}
-                  >
-                    Aus Bibliothek nehmen
-                  </Button>
-                </div>
-                {board.avg_rating != null || (board.rating_count ?? 0) > 0 ? (
-                  <p className="text-[11px] text-emerald-900/80 lg:text-right">
-                    Bewertung:{' '}
-                    {board.avg_rating != null ? `Ø ${board.avg_rating.toFixed(1)}` : 'noch keine'}
-                    {board.rating_count
-                      ? ` · ${board.rating_count} Bewertung${board.rating_count === 1 ? '' : 'en'}`
-                      : ''}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
-            <span>Dieses Board ist nur für dich sichtbar.</span>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={patchMutation.isPending}
-              onClick={() => {
-                setLibraryModalError(null);
-                setLibraryModalMode('publish');
-              }}
-            >
-              In Bibliothek veröffentlichen
-            </Button>
-          </div>
-        )}
-      </header>
-
-      <details className="bd-meta-panel group/meta shrink-0 border-b border-slate-200/80 bg-white/90 open:bg-slate-50/50">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 sm:px-3 [&::-webkit-details-marker]:hidden">
-          <ChevronDown
-            size={14}
-            className="shrink-0 text-slate-400 transition-transform duration-200 ease-out group-open/meta:rotate-180"
-            aria-hidden
-          />
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Unterrichtsdaten &amp; Titel
-          </span>
-          <span
-            className="min-w-0 flex-1 truncate text-[11px] text-slate-500"
-            title={
-              [
-                (metaTitle || board.title || '').trim(),
-                metaSubject.trim(),
-                metaGradeFrom && metaGradeTo ? `Kl. ${metaGradeFrom}–${metaGradeTo}` : '',
-                metaDuration ? `${metaDuration} Min` : '',
-              ]
-                .filter(Boolean)
-                .join(' · ') || undefined
-            }
-          >
-            {[
-              (metaTitle || board.title || '').trim(),
-              metaSubject.trim(),
-              metaGradeFrom && metaGradeTo ? `Kl. ${metaGradeFrom}–${metaGradeTo}` : '',
-              metaDuration ? `${metaDuration} Min` : '',
-            ]
-              .filter(Boolean)
-              .join(' · ') || 'Zum Bearbeiten aufklappen'}
-          </span>
-        </summary>
-        <div className="border-t border-slate-100 px-2 pb-2 pt-1.5 sm:px-3">
-          <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
-            <div className="min-w-[min(100%,12rem)] flex-1 basis-[10rem]">
-              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-title">
-                Titel
-              </label>
-              <TextInput
-                id="bd-title"
-                value={metaTitle}
-                onChange={(e) => setMetaTitle(e.target.value)}
-                maxLength={255}
-                placeholder="Board-Titel"
-                autoComplete="off"
-                className="!h-8 !min-h-0 !py-1 text-xs"
-              />
-            </div>
-            <div className="w-full min-w-[6.5rem] max-w-[10rem] sm:w-[8.5rem]">
-              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-subject">
-                Fach
-              </label>
-              <TextInput
-                id="bd-subject"
-                value={metaSubject}
-                onChange={(e) => setMetaSubject(e.target.value)}
-                placeholder="Fach"
-                autoComplete="off"
-                className="!h-8 !min-h-0 !py-1 text-xs"
-              />
-            </div>
-            <div className="min-w-[7rem] flex-1 basis-[7rem]">
-              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-topic">
-                Thema
-              </label>
-              <TextInput
-                id="bd-topic"
-                value={metaTopic}
-                onChange={(e) => setMetaTopic(e.target.value)}
-                placeholder="Kurz"
-                autoComplete="off"
-                className="!h-8 !min-h-0 !py-1 text-xs"
-              />
-            </div>
-            <div className="flex items-end gap-1">
-              <div>
-                <span className="mb-0.5 block text-[10px] font-medium text-slate-500">Stufe</span>
-                <div className="flex gap-1">
-                  <select
-                    id="bd-grade-from"
-                    className="h-8 max-w-[3.25rem] rounded-lg border border-slate-200 bg-white px-1.5 py-0 text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30"
-                    value={metaGradeFrom}
-                    onChange={(e) => setMetaGradeFrom(e.target.value)}
-                    aria-label="Klassenstufe von"
-                  >
-                    <option value="">—</option>
-                    {LIBRARY_GRADE_STEPS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    id="bd-grade-to"
-                    className="h-8 max-w-[3.25rem] rounded-lg border border-slate-200 bg-white px-1.5 py-0 text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30"
-                    value={metaGradeTo}
-                    onChange={(e) => setMetaGradeTo(e.target.value)}
-                    aria-label="Klassenstufe bis"
-                  >
-                    <option value="">—</option>
-                    {LIBRARY_GRADE_STEPS.map((s) => (
-                      <option key={`t-${s}`} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div className="w-[4rem]">
-              <label className="mb-0.5 block text-[10px] font-medium text-slate-500" htmlFor="bd-duration">
-                Min.
-              </label>
-              <TextInput
-                id="bd-duration"
-                type="number"
-                min={5}
-                max={90}
-                value={metaDuration}
-                onChange={(e) => setMetaDuration(e.target.value)}
-                className="!h-8 !min-h-0 !py-1 text-xs"
-              />
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="!h-8 shrink-0"
-              loading={patchMutation.isPending}
-              disabled={patchMutation.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                handleSaveBoardMeta();
-              }}
-            >
-              Speichern
-            </Button>
-          </div>
-          {metaFormError ? (
-            <p className="mt-1.5 text-[11px] text-red-700" role="alert">
-              {metaFormError}
-            </p>
-          ) : (
-            <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
-              Öffentliche Bibliothekskarte erst nach Freigabe; privater Titel hier.
-            </p>
-          )}
-        </div>
-      </details>
+        <BoardDetailPageHeader
+          board={board}
+          showFatalErrors={showFatalErrors}
+          onOpenFatalDetails={() => setFatalOpen(true)}
+          foldersSorted={foldersSorted}
+          revisions={revisions}
+          previewRevisionId={previewRevisionId}
+          onPreviewRevisionChange={setPreviewRevisionId}
+          previewRevision={previewRevision}
+          applyRevisionPending={applyRevisionMutation.isPending}
+          onApplyRevision={(rid) => applyRevisionMutation.mutate(rid)}
+          deleteRevisionPending={deleteRevisionMutation.isPending}
+          onDeleteRevisionEntry={handleConfirmDeleteRevision}
+          canReviseWithAi={canReviseWithAi}
+          reviseButtonTitle={reviseButtonTitle}
+          reviseBlockedTitle={reviseBlockedTitle}
+          onOpenRevise={() => setReviseOpen(true)}
+          libraryShareMessage={libraryShareMessage}
+          userIsStaff={Boolean(user?.is_staff)}
+          publicOnlineVersionLabel={publicOnlineVersionLabel}
+          onSyncPublicLibrarySnapshot={handleSyncPublicLibrarySnapshot}
+          onSubmitLibraryUpdate={handleSubmitLibraryUpdate}
+          onOpenLibraryModal={(mode) => {
+            setLibraryModalError(null);
+            setLibraryModalMode(mode);
+          }}
+          onWithdrawFromLibrary={handleWithdrawFromLibrary}
+          patchMutation={patchMutation}
+        />
+        <BoardDetailMetaPanel
+          board={board}
+          metaTitle={metaTitle}
+          setMetaTitle={setMetaTitle}
+          metaSubject={metaSubject}
+          setMetaSubject={setMetaSubject}
+          metaTopic={metaTopic}
+          setMetaTopic={setMetaTopic}
+          metaGradeFrom={metaGradeFrom}
+          setMetaGradeFrom={setMetaGradeFrom}
+          metaGradeTo={metaGradeTo}
+          setMetaGradeTo={setMetaGradeTo}
+          metaDuration={metaDuration}
+          setMetaDuration={setMetaDuration}
+          metaFormError={metaFormError}
+          onSaveMeta={handleSaveBoardMeta}
+          savePending={patchMutation.isPending}
+        />
 
       <BoardFullscreenPreview
         className="min-h-0 flex-1"
@@ -890,16 +580,23 @@ export function BoardDetailPage() {
         usedLibraries={iframeBundle.used_libraries ?? []}
         usedDatasets={iframeBundle.used_datasets}
         scriptsEnabled={scriptsEnabled}
+        shareToolbarAction={{
+          onClick: handleDetailShareClick,
+          disabled: !isHeadView,
+          loading: patchMutation.isPending && sharePrepOpen,
+          title: isHeadView ? undefined : aiBlockedHint,
+          ariaLabel: isHeadView ? undefined : aiBlockedHint,
+        }}
       />
-    </div>
+      </div>
 
       <BoardShellModal
         open={reviseOpen}
-        title="Board nachprompten (KI)"
+        title="Board per KI überarbeiten"
         onClose={() => !reviseMutation.isPending && setReviseOpen(false)}
         wide
       >
-        <ReviseTab
+        <BoardDetailReviseTab
           value={reviseInput}
           onChange={setReviseInput}
           mode={revisionMode}
@@ -925,6 +622,23 @@ export function BoardDetailPage() {
           </ul>
         </Alert>
       </BoardShellModal>
+
+      <BoardStudentSharePrepModal
+        open={sharePrepOpen}
+        onClose={() => setSharePrepOpen(false)}
+        onConfirm={handleConfirmStudentShare}
+        busy={patchMutation.isPending}
+      />
+      <BoardShareQrModal
+        open={shareQrOpen && Boolean(shareQrPayload?.url)}
+        onClose={() => {
+          setShareQrOpen(false);
+          setShareQrPayload(null);
+        }}
+        studentUrl={shareQrPayload?.url ?? ''}
+        title={shareQrPayload?.title ?? ''}
+        expiresAt={shareQrPayload?.expiresAt}
+      />
 
       {board ? (
         <BoardLibraryPublishModal
@@ -992,93 +706,3 @@ export function BoardDetailPage() {
     </div>
   );
 }
-
-const ReviseTab = ({
-  value,
-  onChange,
-  mode,
-  onModeChange,
-  error,
-  revertError,
-  busy,
-  revertBusy,
-  canRevert,
-  onRevert,
-  onSubmit,
-  board,
-  autoFocus = false,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  mode: RevisionMode;
-  onModeChange: (m: RevisionMode) => void;
-  error: string | null;
-  revertError: string | null;
-  busy: boolean;
-  revertBusy: boolean;
-  canRevert: boolean;
-  onRevert: () => void;
-  onSubmit: () => void;
-  board: BoardDetail;
-  autoFocus?: boolean;
-}) => {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (!autoFocus) return;
-    ref.current?.focus();
-  }, [autoFocus]);
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-slate-600">
-        Beschreibe in eigenen Worten, was am Board verändert werden soll. Die KI liefert eine überarbeitete
-        Komplettfassung von HTML, CSS und JavaScript zurück.
-      </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
-        <RevisionModeSelect value={mode} onChange={onModeChange} disabled={busy} />
-        <div>
-          <label className="mb-1 block text-[12px] font-semibold text-slate-600">Schnellauswahl</label>
-          <RevisionQuickActions
-            disabled={busy}
-            onPick={(action) => {
-              onModeChange(action.mode);
-              if (!value.trim()) onChange(action.prompt);
-            }}
-          />
-        </div>
-      </div>
-      <textarea
-        ref={ref}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={6}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-        placeholder="z. B. Mache es grundschulgerechter und füge eine Wortspeicher-Box hinzu."
-      />
-      {error && <Alert tone="error">{error}</Alert>}
-      {revertError && <Alert tone="error">{revertError}</Alert>}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-slate-500">
-          Status:{' '}
-          {board.status === 'generated' ? 'Erzeugt' : board.status === 'draft' ? 'Entwurf' : board.status}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {canRevert && (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onRevert}
-              loading={revertBusy}
-              disabled={busy}
-              leftIcon={<Undo2 size={14} aria-hidden />}
-            >
-              Letzte Überarbeitung rückgängig
-            </Button>
-          )}
-          <Button onClick={onSubmit} loading={busy} disabled={revertBusy}>
-            Board überarbeiten
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-};

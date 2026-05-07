@@ -4,9 +4,7 @@ import type {
   QualitySection,
   QualitySectionStatus,
 } from '../../types';
-import { Badge } from '../../../../components/ui/Badge';
-import { SectionCard } from '../../../../components/ui/Card';
-import { Button } from '../../../../components/ui/Button';
+import { Badge, Button, SectionCard } from '../../../../components/ui';
 import { cn } from '../../../../lib/cn';
 
 const STATUS_LABEL: Record<QualitySectionStatus, string> = {

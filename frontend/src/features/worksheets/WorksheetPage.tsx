@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PanelRight } from 'lucide-react';
@@ -16,100 +16,10 @@ import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
 import { WORKSHEET_LIST_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
 import { useAuth } from '../../lib/authContext';
 import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boards/boardsApi';
+import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
+import { WorksheetStringList } from './WorksheetStringList';
 
 const MAX_DRAFT_UNDO = 10;
-
-const StringList = ({ label, items }: { label: string; items?: unknown }) => {
-  if (!Array.isArray(items) || items.length === 0) return null;
-  const strings = items.filter((x): x is string => typeof x === 'string');
-  if (strings.length === 0) return null;
-  return (
-    <div>
-      <p className="text-xs font-semibold text-slate-700">{label}</p>
-      <ul className="mt-1 list-inside list-disc text-xs text-slate-600">
-        {strings.map((s, i) => (
-          <li key={`${i}-${s.slice(0, 48)}`}>{s}</li>
-        ))}
-      </ul>
-    </div>
-  );
-};
-
-function useDominantA4PageInScroll(
-  scrollRef: RefObject<HTMLDivElement | null>,
-  pageCount: number,
-  /** Wechsel triggert Neu-Anbindung, sobald die Vorschau im DOM hängt (ref war zuvor null). */
-  mountKey: string,
-) {
-  const [dominantIndex0, setDominantIndex0] = useState(0);
-
-  const recompute = useCallback(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const els = root.querySelectorAll<HTMLElement>('.a4-page[data-a4-page-index]');
-    if (els.length === 0) return;
-
-    const rr = root.getBoundingClientRect();
-    const centerY = (rr.top + rr.bottom) / 2;
-    let bestIdx = 0;
-    let bestVis = -1;
-    let bestDist = Number.POSITIVE_INFINITY;
-
-    els.forEach((el) => {
-      const pr = el.getBoundingClientRect();
-      const visTop = Math.max(rr.top, pr.top);
-      const visBottom = Math.min(rr.bottom, pr.bottom);
-      const visibleH = Math.max(0, visBottom - visTop);
-      const raw = el.dataset.a4PageIndex;
-      const idx = raw != null && raw !== '' ? Number(raw) : 0;
-      const i = Number.isFinite(idx) ? idx : 0;
-      const elCenterY = (pr.top + pr.bottom) / 2;
-      const dist = Math.abs(elCenterY - centerY);
-
-      if (visibleH > bestVis + 0.5) {
-        bestVis = visibleH;
-        bestIdx = i;
-        bestDist = dist;
-      } else if (Math.abs(visibleH - bestVis) <= 0.5 && visibleH > 0 && dist < bestDist) {
-        bestIdx = i;
-        bestDist = dist;
-      }
-    });
-
-    setDominantIndex0((prev) => (prev === bestIdx ? prev : bestIdx));
-  }, []);
-
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-
-    let raf = 0;
-    const schedule = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => recompute());
-    };
-
-    schedule();
-    root.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    const ro = new ResizeObserver(schedule);
-    ro.observe(root);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      root.removeEventListener('scroll', schedule);
-      window.removeEventListener('resize', schedule);
-      ro.disconnect();
-    };
-  }, [recompute, pageCount, mountKey]);
-
-  useEffect(() => {
-    if (pageCount <= 0) return;
-    setDominantIndex0((d) => Math.min(Math.max(0, d), pageCount - 1));
-  }, [pageCount]);
-
-  return dominantIndex0;
-}
 
 export function WorksheetPage() {
   const { id } = useParams();
@@ -821,11 +731,11 @@ export function WorksheetPage() {
                       {curriculumPanel.usage.short_description ? (
                         <p className="text-xs leading-snug text-slate-600">{curriculumPanel.usage.short_description}</p>
                       ) : null}
-                      <StringList label="Trefferbegründungen" items={curriculumPanel.usage.match_reasons} />
-                      <StringList label="Teilbereiche / Unterthemen" items={curriculumPanel.usage.subtopics} />
-                      <StringList label="Kompetenzen / Ziele" items={curriculumPanel.usage.competency_goals} />
-                      <StringList label="Erlaubte Aufgabentypen" items={curriculumPanel.usage.allowed_task_types} />
-                      <StringList label="Validierungsregeln" items={curriculumPanel.usage.validation_rules} />
+                      <WorksheetStringList label="Trefferbegründungen" items={curriculumPanel.usage.match_reasons} />
+                      <WorksheetStringList label="Teilbereiche / Unterthemen" items={curriculumPanel.usage.subtopics} />
+                      <WorksheetStringList label="Kompetenzen / Ziele" items={curriculumPanel.usage.competency_goals} />
+                      <WorksheetStringList label="Erlaubte Aufgabentypen" items={curriculumPanel.usage.allowed_task_types} />
+                      <WorksheetStringList label="Validierungsregeln" items={curriculumPanel.usage.validation_rules} />
                       {curriculumPanel.usage.ai_usage_note ? (
                         <p className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-xs text-slate-700">
                           {curriculumPanel.usage.ai_usage_note}
