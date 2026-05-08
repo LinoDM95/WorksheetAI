@@ -13,7 +13,11 @@ import type {
   AiGenerationJob,
   AiGenerationJobStartInput,
 } from './aiGenerationTypes';
+import { refreshAuthCookies } from '../../lib/api';
 import { AiGenerationQueueAbortedError } from './generationQueue';
+
+/** Während langer KI-Läufe Access-Cookie vor Ablauf erneuern (Access default 120 min, Jobs bis 60 min+). */
+const PROACTIVE_AUTH_REFRESH_MS = 10 * 60 * 1000;
 
 const MAX_JOBS = 6;
 
@@ -71,6 +75,21 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
 
   const queueTailRef = useRef<Promise<unknown>>(Promise.resolve());
   const abortedQueuedIdsRef = useRef(new Set<string>());
+  const hasActiveGenerationRef = useRef(false);
+
+  useEffect(() => {
+    hasActiveGenerationRef.current = state.jobs.some(
+      (j) => j.status === 'queued' || j.status === 'running',
+    );
+  }, [state.jobs]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!hasActiveGenerationRef.current) return;
+      void refreshAuthCookies().catch(() => undefined);
+    }, PROACTIVE_AUTH_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const runSerialized = useCallback(async <T,>(jobId: string, fn: () => Promise<T>): Promise<T> => {
     const run = queueTailRef.current.then(async (): Promise<T> => {
@@ -78,6 +97,7 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
         abortedQueuedIdsRef.current.delete(jobId);
         throw new AiGenerationQueueAbortedError();
       }
+      await refreshAuthCookies().catch(() => undefined);
       dispatch({ type: 'patch', id: jobId, patch: { status: 'running' } });
       return fn();
     });

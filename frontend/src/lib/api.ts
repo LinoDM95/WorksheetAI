@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { notifyAuthSessionExpired } from './authSessionBridge';
 import { getApiBaseUrl } from './apiBaseUrl';
 
 /** Viele sequentielle KI-Schritte (Smartboard-Pipeline + Asset Engine + QA), nicht nur ein Modellaufruf. */
@@ -51,6 +52,13 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const status = error.response?.status;
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const url = original?.url ?? '';
+
+    if (status === 401 && url.includes('/auth/token/refresh/')) {
+      notifyAuthSessionExpired();
+      return Promise.reject(error);
+    }
+
     if (
       status !== 401 ||
       !original ||
@@ -64,6 +72,7 @@ api.interceptors.response.use(
       await runRefresh();
       return api.request(original);
     } catch {
+      notifyAuthSessionExpired();
       return Promise.reject(error);
     }
   },

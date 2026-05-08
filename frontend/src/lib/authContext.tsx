@@ -7,7 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import {
+  registerAuthSessionExpiredHandler,
+  resetAuthSessionExpiredFlag,
+} from './authSessionBridge';
 
 export type AuthUser = {
   id: number;
@@ -29,6 +35,9 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
 
@@ -36,12 +45,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const r = await api.get<AuthUser>('/auth/me/');
       setUser(r.data);
+      resetAuthSessionExpiredFlag();
     } catch {
       setUser(null);
     } finally {
       setBootstrapped(true);
     }
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      queryClient.clear();
+      void api.post('/auth/logout/').catch(() => undefined);
+      setUser(null);
+      setBootstrapped(true);
+      const params = new URLSearchParams();
+      params.set('reason', 'session_expired');
+      const path = `${location.pathname}${location.search}`;
+      if (path.startsWith('/app') && !path.startsWith('/login')) {
+        params.set('next', path);
+      }
+      navigate(`/login?${params.toString()}`, { replace: true });
+    };
+    registerAuthSessionExpiredHandler(handler);
+    return () => registerAuthSessionExpiredHandler(null);
+  }, [navigate, queryClient, location.pathname, location.search]);
 
   useEffect(() => {
     void refreshAuth();

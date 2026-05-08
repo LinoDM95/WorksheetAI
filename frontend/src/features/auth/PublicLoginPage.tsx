@@ -46,6 +46,8 @@ export const PublicLoginPage = () => {
     return sanitizeAuthRedirectNext(raw) ?? DEFAULT_AUTH_REDIRECT;
   }, [searchParams]);
 
+  const sessionExpiredNotice = searchParams.get('reason') === 'session_expired';
+
   useEffect(() => {
     document.title = 'Anmelden — WorksheetAI';
     return () => {
@@ -151,6 +153,12 @@ export const PublicLoginPage = () => {
             verwalten.
           </p>
 
+          {sessionExpiredNotice ? (
+            <Alert tone="warn" className="mb-4">
+              Deine Sitzung ist abgelaufen. Bitte melde dich erneut an — laufende Aufträge wurden
+              beendet.
+            </Alert>
+          ) : null}
           <form className="space-y-3" onSubmit={(ev) => void handleLoginSubmit(ev)} noValidate>
             <Field
               label="E-Mail"
