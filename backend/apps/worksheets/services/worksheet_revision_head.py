@@ -76,24 +76,6 @@ def require_worksheet_at_revision_head(ws: Worksheet) -> None:
     )
 
 
-def revision_revert_restore_bundle(
-    rev: WorksheetRevision,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Zielzustand für API-Revert (letzte Revision zurücknehmen).
-
-    Alte Initial-Snapshots hatten previous_* leer und new_* = Ist-Stand — Revert darf das Blatt nicht leeren.
-    """
-    pc = rev.previous_content if isinstance(rev.previous_content, dict) else {}
-    prm = rev.previous_render_model if isinstance(rev.previous_render_model, dict) else {}
-    pm = rev.previous_metadata if isinstance(rev.previous_metadata, dict) else {}
-    nc = rev.new_content if isinstance(rev.new_content, dict) else {}
-    nrm = rev.new_render_model if isinstance(rev.new_render_model, dict) else {}
-    nm = rev.new_metadata if isinstance(rev.new_metadata, dict) else {}
-    if pc == {} and prm == {} and (nc or nrm):
-        return copy.deepcopy(nc), copy.deepcopy(nrm), copy.deepcopy(nm)
-    return copy.deepcopy(pc), copy.deepcopy(prm), copy.deepcopy(pm)
-
-
 def create_initial_revision_if_absent(
     ws: Worksheet,
     *,

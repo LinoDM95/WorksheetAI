@@ -1,7 +1,6 @@
 from rest_framework import viewsets, decorators, response, status
 import copy
 
-from django.db import transaction
 from django.db.models import Q
 
 from apps.ai.error_mapper import AIErrorMapper
@@ -31,7 +30,6 @@ from .services.worksheet_revision_head import (
     create_initial_revision_if_absent,
     persist_worksheet_after_ai_regenerate,
     require_worksheet_at_revision_head,
-    revision_revert_restore_bundle,
     worksheet_metadata_snapshot,
 )
 from .owner import resolve_worksheet_owner
@@ -243,46 +241,6 @@ class WorksheetViewSet(viewsets.ModelViewSet):
         ws = self.get_object()
         qs = ws.revisions.order_by('-created_at')
         return response.Response(WorksheetRevisionSerializer(qs, many=True).data)
-
-    @decorators.action(detail=True, methods=['post'], url_path='revert-revision')
-    def revert_revision(self, request, pk=None):
-        ws = self.get_object()
-        rev = ws.revisions.order_by('-created_at').first()
-        if not rev:
-            return response.Response(
-                {'detail': 'Keine Revision zum Zurücksetzen.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        body = request.data if isinstance(request.data, dict) else {}
-        rid = body.get('revision_id')
-        if rid is not None and str(rev.id) != str(rid):
-            return response.Response(
-                {
-                    'detail': (
-                        'Es kann nur die zuletzt erzeugte Revision zurückgenommen werden. '
-                        'Bitte Seite aktualisieren, falls zwischenzeitlich eine neuere Revision existiert.'
-                    ),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        pc, prm, pm = revision_revert_restore_bundle(rev)
-        with transaction.atomic():
-            ws.content = copy.deepcopy(pc)
-            ws.render_model = copy.deepcopy(prm)
-            if 'title' in pm:
-                ws.title = str(pm.get('title') or '')[:255]
-            elif isinstance(pc, dict) and pc.get('title'):
-                ws.title = str(pc.get('title') or '')[:255]
-            if 'subject' in pm:
-                ws.subject = str(pm.get('subject') or '')[:120]
-            if 'topic' in pm:
-                ws.topic = str(pm.get('topic') or '')[:255]
-            if 'grade' in pm:
-                ws.grade = pm.get('grade')
-            ws.save()
-            rev.delete()
-        ws.refresh_from_db()
-        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
 
     @decorators.action(detail=True, methods=['post'], url_path='apply-revision')
     def apply_revision(self, request, pk=None):
