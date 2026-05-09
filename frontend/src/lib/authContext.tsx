@@ -72,8 +72,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [navigate, queryClient, location.pathname, location.search]);
 
   useEffect(() => {
+    if (location.pathname.startsWith('/s/')) {
+      setBootstrapped(true);
+      return;
+    }
     void refreshAuth();
-  }, [refreshAuth]);
+  }, [refreshAuth, location.pathname]);
 
   const logout = useCallback(async () => {
     try {
