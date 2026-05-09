@@ -1,8 +1,17 @@
-"""Heuristischer Umbruch für Kreativ-HTML: strukturierte Abschnitte oder Fallback-Blöcke über mehrere ``pages[n]``.
+"""Heuristischer Umbruch für Kreativ-HTML — bewusst einfach gehalten.
 
-Die KI hält das A4-Maß oft nicht zuverlässig ein; Überlauf wird serverseitig gemindert durch Aufteilen
-von Inhalt entlang ``section.ws-flow-item``, Block-Level-Markup, Tabellenzeilen, Absatzenden oder –
-als letzte Stufe – im Absatzinneren vorhandenen Fließtext. Basis: ``content_line_budget``.
+Kerngedanke
+-----------
+Eine ``<section class="ws-flow-item">`` ist eine **atomare** didaktische Einheit
+(Aufgabenkasten, Infoblock, Tabelle). Diese Einheiten werden über A4-Seiten verteilt,
+aber **niemals zerschnitten** — Bilder, Listen und Aufgabentexte bleiben zusammen.
+
+Wenn die KI keine ``ws-flow-item``-Sektionen liefert, bleibt der Inhalt **als Ganzes**
+auf einer Seite (kein Fallback-Splitting an `<svg>` / `<p>`-Grenzen, das fragmentiert
+nur Aufgaben in unleserliche Stücke).
+
+Größenschätzung pro Sektion: hauptsächlich textbasiert. SVG/Bild-Illustrationen werden
+nur leicht gewichtet — sie gehören zur Aufgabe, sind nicht "Layout-Volumen".
 """
 from __future__ import annotations
 
@@ -19,18 +28,6 @@ _SECTION_CLOSE_MARKER = '</section>'
 _HTML_TAG_STRIP_RE = re.compile(r'<[^>]+>')
 _WS_COLLAPSE_RE = re.compile(r'\s+')
 
-_BLOCK_SEGMENT_START_RE = re.compile(
-    r'(?=<(?:p\b|h[1-6]\b|ul\b|ol\b|table\b|figure\b|blockquote\b|svg\b|dl\b|div\b)[^a-z0-9-])',
-    re.IGNORECASE,
-)
-
-_WS_FLOW_WRAP_RE = re.compile(
-    r'^\s*<section\b[^>]*ws-flow-item[^>]*>([\s\S]*)</section>\s*$',
-    re.IGNORECASE,
-)
-
-_SPLIT_MAX_DEPTH = 56
-
 
 def _strip_tags_estimate_text(s: str) -> str:
     t = _HTML_TAG_STRIP_RE.sub(' ', s)
@@ -38,23 +35,32 @@ def _strip_tags_estimate_text(s: str) -> str:
 
 
 def _estimate_flow_item_units(html_chunk: str) -> int:
+    """Grobe Einheiten-Schätzung: vorrangig Textmenge + Tabellenzeilen + Listenpunkte.
+
+    SVG/Bild-Illustrationen werden bewusst **niedrig** gewichtet — sie gehören zur Aufgabe.
+    Verhindert, dass Aufgaben mit kleinen Themen-Icons künstlich aufgebläht werden.
+    """
     plain = _strip_tags_estimate_text(html_chunk)
     chars = len(plain)
-    u = max(3, int(math.ceil(chars / 76)))
+    u = max(2, int(math.ceil(chars / 80)))
     u += html_chunk.lower().count('<tr')
-    svg_n = len(re.findall(r'<svg\b', html_chunk, re.I))
-    path_n = len(re.findall(r'<path\b', html_chunk, re.I))
-    u += svg_n * 4 + max(0, int(math.ceil(path_n / 6)))
-    div_n = len(re.findall(r'<div\b', html_chunk, re.I))
-    u += max(0, (div_n - 3) // 6)
     li_n = len(re.findall(r'<li\b', html_chunk, re.I))
-    u += max(0, int(math.ceil((li_n - 3) / 2)))
+    u += max(0, int(math.ceil((li_n - 2) / 2)))
     img_n = len(re.findall(r'<img\b', html_chunk, re.I))
-    u += img_n * 3
-    return min(155, max(3, u))
+    u += img_n
+    if re.search(r'<svg\b[^>]*\b(width|height)\s*=\s*["\']?(\d+)', html_chunk, re.I):
+        u += 2
+    return max(2, u)
 
 
 def _capacity_units(page_setup: dict) -> int:
+    """Kapazität pro Druckseite in „Einheiten".
+
+    Faktor 0.55 × ``max_line_units_per_page``: ws-flow-Sektionen mit Überschriften,
+    Schreiblinien, Tabellen und Illustrationen sind in der echten Render-Höhe oft
+    dichter als die reine Heuristik annimmt. Lieber eine Sektion früher splitten,
+    als am Footer überzulaufen.
+    """
     ps = page_setup if isinstance(page_setup, dict) else {}
     b = ps.get('content_line_budget') if isinstance(ps.get('content_line_budget'), dict) else {}
     try:
@@ -63,36 +69,8 @@ def _capacity_units(page_setup: dict) -> int:
         base = 0
     if base <= 0:
         base = 40
-    factor = 0.36
-    return max(15, int(math.floor(base * factor)))
-
-
-def _wrap_ws_flow(inner_html: str) -> str:
-    stripped = inner_html.strip()
-    if not stripped:
-        return ''
-    if stripped.lower().startswith('<section') and 'ws-flow-item' in stripped[:240].lower():
-        return stripped
-    return f'<section class="ws-flow-item">{stripped}</section>'
-
-
-def _fallback_block_segments(inner: str) -> list[str]:
-    s = inner.strip()
-    if not s:
-        return []
-    spans: list[str] = []
-    last = 0
-    for m in _BLOCK_SEGMENT_START_RE.finditer(s):
-        if m.start() > last:
-            prefix = s[last : m.start()].strip()
-            if prefix:
-                spans.append(prefix)
-        last = m.start()
-    if last < len(s):
-        tail = s[last:].strip()
-        if tail:
-            spans.append(tail)
-    return spans if spans else [s]
+    factor = 0.55
+    return max(18, int(math.floor(base * factor)))
 
 
 def _find_matching_section_end(html: str, content_start: int) -> int:
@@ -115,6 +93,7 @@ def _find_matching_section_end(html: str, content_start: int) -> int:
 
 
 def _iter_ws_flow_sections(html: str):
+    """Yield (start, end) ranges für jede ``<section class="...ws-flow-item...">`` Top-Level."""
     pos = 0
     lower = html.lower()
     while pos < len(html):
@@ -166,210 +145,49 @@ def _build_page_html(open_tag: str, inner: str) -> str:
     return f'{open_tag}{inner}</div>'
 
 
-def _binary_split_html_core(core: str) -> tuple[str, str]:
-    n = len(core)
-    mid = n // 2
-    pivot = core.rfind('>', max(0, mid // 2 - 1), mid + max(260, mid // 2))
-    if pivot < mid // 2:
-        pivot = core.find('>', mid)
-    if pivot < 0:
-        pivot = mid
-    lo = core[: pivot + 1].strip()
-    hi = core[pivot + 1 :].strip()
-    return lo, hi
+def _collect_atomic_sections(inner: str) -> list[str]:
+    """Zerlege den Seiteninhalt in **atomare** ``ws-flow-item``-Sektionen plus optionalen Prelude.
 
-
-def _segments_fit_single_cap(inner_plain: str, cap: int) -> bool:
-    s = inner_plain.strip()
+    Ohne ws-flow-item: gib den ganzen Inhalt als **eine** Sektion zurück — niemals
+    an `<svg>` / `<p>` / `<div>` zerstückeln.
+    """
+    s = inner.strip()
     if not s:
-        return True
-    return _estimate_flow_item_units(_wrap_ws_flow(s)) <= cap
-
-
-def _paragraph_fragments(trimmed: str) -> list[str] | None:
-    low = trimmed.lower()
-    if '</p>' not in low:
-        return None
+        return []
+    spans = list(_iter_ws_flow_sections(s))
+    if not spans:
+        return [s]
     parts: list[str] = []
-    start = 0
-    for m in re.finditer(r'(?is)</p\s*>', trimmed):
-        frag = trimmed[start : m.end()].strip()
-        if frag:
-            parts.append(frag)
-        start = m.end()
-    remn = trimmed[start:].strip()
-    if remn:
-        parts.append(remn)
-    return parts if len(parts) >= 2 else None
-
-
-def _split_oversized_flow_core(core: str, cap: int, *, depth: int = 0) -> list[str]:
-    stripped = core.strip()
-    if not stripped:
-        return []
-    wrapped = _wrap_ws_flow(stripped)
-    estimate = min(999, _estimate_flow_item_units(wrapped))
-    if estimate <= cap or depth >= _SPLIT_MAX_DEPTH or len(stripped) < 32:
-        return [stripped]
-    tbl = stripped.lower().count('<tr')
-    close_tr = stripped.lower().count('</tr')
-    parts = None
-    if tbl >= 2 and close_tr >= 2:
-        split_tr = _split_preserving_between_tags(stripped, r'(?is)(</tr\s*>)')
-        if len(split_tr) >= 2:
-            parts = split_tr
-    if parts is None:
-        parts = _paragraph_fragments(stripped)
-    if parts is None:
-        low = stripped.lower()
-        inner_split = '</li>' if '</li>' in low else '</p>' if '</p>' not in low and '<br' in low else None
-        if inner_split == '</li>':
-            li_parts = _split_preserving_between_tags(stripped, r'(?is)(</li\s*>)')
-            if len(li_parts) >= 2:
-                parts = li_parts
-    if parts:
-        flattened: list[str] = []
-        for p in parts:
-            flattened.extend(_split_oversized_flow_core(p, cap, depth=depth + 1))
-        return flattened if flattened else [stripped]
-
-    lp = stripped.lower()
-    if lp.startswith('<p') and stripped.rstrip().lower().endswith('</p>'):
-        inner_m = re.search(r'^[ \t]*<p\b[^>]*>([\s\S]*)</p\s*>$', stripped, re.I)
-        body = inner_m.group(1) if inner_m else stripped
-        char_budget = max(90, cap * 54)
-        sub = _chunk_body_plain_by_budget(body, char_budget)
-        if len(sub) >= 2:
-            return [_reopen_closed_p(s) for s in sub]
-
-    lo, hi = _binary_split_html_core(stripped)
-    if not hi.strip():
-        tiny = stripped[: max(320, len(stripped) // 2)]
-        rest = stripped[len(tiny) :].strip()
-        if not rest:
-            return [stripped]
-        return _split_oversized_flow_core(tiny, cap, depth=depth + 1) + _split_oversized_flow_core(
-            rest,
-            cap,
-            depth=depth + 1,
-        )
-    return _split_oversized_flow_core(lo, cap, depth=depth + 1) + _split_oversized_flow_core(
-        hi,
-        cap,
-        depth=depth + 1,
-    )
-
-
-def _reopen_closed_p(fragment: str) -> str:
-    t = fragment.strip()
-    low = t.lower()
-    if low.startswith('<p') and '</p' in low:
-        return t
-    return f'<p>{t}</p>'
-
-
-def _split_preserving_between_tags(html: str, pattern: str) -> list[str]:
-    out: list[str] = []
-    start = 0
-    rx = re.compile(pattern)
-    for m in rx.finditer(html):
-        block = html[start : m.end()].strip()
-        if block:
-            out.append(block)
-        start = m.end()
-    tail = html[start:].strip()
-    if tail:
-        out.append(tail)
-    return out
-
-
-def _chunk_body_plain_by_budget(plain_inside: str, max_plain_chars: int) -> list[str]:
-    txt = plain_inside
-    lim = max(80, max_plain_chars)
-    if len(_strip_tags_estimate_text(txt)) <= lim:
-        return [txt if txt.strip() else plain_inside]
-    cuts: list[str] = []
-    bare = txt
-    n = len(bare)
-    acc = ''
-    anchor = 0
-    last_space = None
-    i = 0
-    while i < n:
-        c = bare[i]
-        acc += c
-        if c.isspace():
-            last_space = i
-        if len(acc) >= lim and last_space is not None and last_space > anchor:
-            cuts.append(bare[anchor:last_space].strip())
-            anchor = last_space + 1
-            i = anchor
-            acc = ''
-            last_space = None
-            continue
-        i += 1
-    if anchor < n:
-        cuts.append(bare[anchor:n].strip())
-    return [c for c in cuts if c]
-
-
-def _expand_sections_to_budget(sections: list[str], cap: int) -> list[str]:
-    out: list[str] = []
-    for sec in sections:
-        stripped = sec.strip()
-        if not stripped:
-            continue
-        inner = stripped
-        m = _WS_FLOW_WRAP_RE.match(stripped)
-        if m:
-            inner = m.group(1).strip()
-        cores = _split_oversized_flow_core(inner, cap)
-        out.extend([_wrap_ws_flow(c) for c in cores if c.strip()])
-    return out
-
-
-def _collect_segments(inner: str, cap: int) -> list[str]:
-    spans = list(_iter_ws_flow_sections(inner))
-    if spans:
-        first_start = spans[0][0]
-        prelude = inner[:first_start].strip()
-        sections = [inner[s:e] for s, e in spans]
-        prelude_bits: list[str] = []
-        if prelude.strip():
-            if _segments_fit_single_cap(prelude, cap):
-                prelude_bits = [prelude.strip()]
-            else:
-                prelude_bits.extend(_expand_sections_to_budget([_wrap_ws_flow(prelude.strip())], cap))
-        normalized = prelude_bits + _expand_sections_to_budget(sections, cap)
-        return [s for s in normalized if s.strip()]
-
-    tentative = inner.strip()
-    if not tentative:
-        return []
-    if _segments_fit_single_cap(tentative, cap):
-        return [tentative]
-    raw_parts = _fallback_block_segments(tentative)
-    sections_wrapped = [_wrap_ws_flow(p) for p in raw_parts]
-    normalized = _expand_sections_to_budget(sections_wrapped, cap)
-    return [s for s in normalized if s.strip()]
+    first_start = spans[0][0]
+    prelude = s[:first_start].strip()
+    if prelude:
+        parts.append(prelude)
+    for a, b in spans:
+        chunk = s[a:b].strip()
+        if chunk:
+            parts.append(chunk)
+    last_end = spans[-1][1]
+    postlude = s[last_end:].strip()
+    if postlude:
+        parts.append(postlude)
+    return parts
 
 
 def reflow_creative_html_pages(
     pages: list[dict[str, Any]],
     page_setup: dict,
     *,
-    max_output_pages: int = 36,
+    max_output_pages: int = 24,
 ) -> tuple[list[dict[str, Any]], list[str], bool]:
-    """Seiten zerlegen oder überlange Einzelblöcke innerhalb eines Blatts aufteilen.
+    """Verteile atomare Sektionen über A4-Seiten — niemals zerschnitten.
 
-    Boolesches Tupelteil: gesetzt sobald Ausgaben sich vom Ausgangs-HTML unterscheiden.
+    Rückgabe-Tupel: ``(neue_pages, notizen, mutated)``.
     """
-
     notes: list[str] = []
     if not pages:
         return pages, notes, False
     cap = _capacity_units(page_setup)
-    usable_cap = max(13, int(round(cap * 0.97)) - max(1, cap // 22))
+    usable_cap = max(16, cap)
     out: list[dict[str, Any]] = []
     mutated = False
 
@@ -385,16 +203,19 @@ def reflow_creative_html_pages(
             out.append(dict(p))
             continue
 
-        segments = _collect_segments(inner.strip(), usable_cap)
-        if not segments:
+        sections = _collect_atomic_sections(inner)
+        if len(sections) <= 1:
             out.append(dict(p))
             continue
 
+        # Greedy-Pack: jede Sektion bleibt als Ganzes erhalten.
+        weighted: list[tuple[str, int]] = [
+            (s, _estimate_flow_item_units(s)) for s in sections
+        ]
         chunks: list[list[str]] = []
         cur: list[str] = []
         used = 0
-        for sec in segments:
-            w = max(4, _estimate_flow_item_units(sec))
+        for sec, w in weighted:
             if cur and used + w > usable_cap:
                 chunks.append(cur)
                 cur = []
@@ -405,18 +226,7 @@ def reflow_creative_html_pages(
             chunks.append(cur)
 
         if len(chunks) <= 1:
-            rebuilt_inner = ''.join(segments).strip()
-            if rebuilt_inner and rebuilt_inner != inner.strip():
-                out.append(
-                    {
-                        'page_label': label,
-                        'page_css': css,
-                        'html': _build_page_html(open_tag, rebuilt_inner),
-                    }
-                )
-                mutated = True
-            else:
-                out.append(dict(p))
+            out.append(dict(p))
             continue
 
         projected = len(out) + len(chunks)
@@ -445,7 +255,10 @@ def reflow_creative_html_pages(
     return out, notes, mutated
 
 
-def apply_creative_reflow_if_needed(content: dict[str, Any], page_setup: dict) -> tuple[dict[str, Any], list[str]]:
+def apply_creative_reflow_if_needed(
+    content: dict[str, Any],
+    page_setup: dict,
+) -> tuple[dict[str, Any], list[str]]:
     pages = content.get('pages')
     if not isinstance(pages, list) or len(pages) == 0:
         return content, []
@@ -460,7 +273,7 @@ def apply_creative_reflow_if_needed(content: dict[str, Any], page_setup: dict) -
     cur: list[dict[str, Any]] = [dict(p) for p in pages if isinstance(p, dict)]
     did_apply = False
 
-    for _ in range(24):
+    for _ in range(8):
         nxt, chunk_notes, did_mutate = reflow_creative_html_pages(cur, normalized_setup)
         merged_notes.extend(chunk_notes)
         cur = nxt

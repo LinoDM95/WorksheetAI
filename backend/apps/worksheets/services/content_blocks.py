@@ -431,48 +431,105 @@ def _block_types(blocks: list) -> set:
     return {b.get('type') for b in blocks if isinstance(b, dict)}
 
 
+def _can_merge_consecutive(
+    blocks_a: list,
+    blocks_b: list,
+    *,
+    overhead: float,
+    ceiling: float,
+    pair_index: int,
+) -> bool:
+    """Heuristik: zwei aufeinanderfolgende Seiten zusammenführen, wenn beide eher dünn sind
+    und das Gesamtbudget erlaubt.
+
+    - Erste Doppelseite (Einführung + Aufgaben): wie bisher — Seite 1 ohne Aufgaben, Seite 2 mit.
+    - Spätere Doppelseiten: zwei sparse Seiten (jeweils ≲ 60 % Budget) auf eine ziehen, wenn das
+      zusammengeführte Paket innerhalb von ~92 % Ceiling bleibt (kein knappes Vollpacken).
+    """
+    if not blocks_a or not blocks_b:
+        return False
+    units_a = page_total_units(blocks_a, overhead=overhead)
+    units_b = page_total_units(blocks_b, overhead=overhead)
+    merged_units = overhead + sum(estimate_block_units(b) for b in blocks_a + blocks_b if isinstance(b, dict))
+    safe_ceiling = ceiling * 0.92
+
+    if pair_index == 0:
+        t0 = _block_types(blocks_a)
+        t1 = _block_types(blocks_b)
+        if t0 & _TASK_BLOCK_TYPES:
+            pass
+        elif t1 & _TASK_BLOCK_TYPES and len(blocks_a) <= 10:
+            non_task_second = [b for b in blocks_b if isinstance(b, dict) and b.get('type') not in _TASK_BLOCK_TYPES]
+            if len(non_task_second) <= 4 and merged_units <= ceiling:
+                return True
+
+    half = ceiling * 0.55
+    if units_a <= half and units_b <= half and merged_units <= safe_ceiling:
+        return True
+    return False
+
+
 def coalesce_trivial_multi_page_split(
     pages: list[dict],
     page_setup: dict | None = None,
 ) -> tuple[list[dict], list[str]]:
-    """
-    Viele Modelle liefern pages[0] nur mit Einführung und pages[1] mit Aufgaben — im PDF erzwingt
-    jede HTML-A4-Seite einen Seitenumbruch, obwohl alles auf ein Blatt passt.
+    """Mehrere sparsame Seiten zusammenführen.
+
+    Adressiert zwei typische Fehlerbilder:
+    1. KI liefert Seite 1 nur mit Einführung und Seite 2 mit Aufgaben — passt zusammen auf eines.
+    2. Mehrere späte Seiten sind je nur halb gefüllt — sollten zusammengezogen werden, statt
+       als „halb-leere Blätter“ ausgespielt zu werden.
     """
     notes: list[str] = []
     overhead, ceiling = resolve_worksheet_pack_budget(page_setup)
     if len(pages) < 2:
         return pages, notes
-    first_blocks = pages[0].get('blocks') or []
-    second_blocks = pages[1].get('blocks') or []
-    if not first_blocks or not second_blocks:
-        return pages, notes
-    t0 = _block_types(first_blocks)
-    t1 = _block_types(second_blocks)
-    if t0 & _TASK_BLOCK_TYPES:
-        return pages, notes
-    if not (t1 & _TASK_BLOCK_TYPES):
-        return pages, notes
-    if len(first_blocks) > 10:
-        return pages, notes
-    non_task_second = [b for b in second_blocks if isinstance(b, dict) and b.get('type') not in _TASK_BLOCK_TYPES]
-    if len(non_task_second) > 4:
-        return pages, notes
-    merged_blocks = list(first_blocks) + list(second_blocks)
-    if page_total_units(merged_blocks, overhead=overhead) > ceiling:
-        return pages, notes
-    label0 = (pages[0].get('page_label') or '').strip()
-    label1 = (pages[1].get('page_label') or '').strip()
-    merged_label = label0 or label1
-    merged = [
-        {'page_label': merged_label, 'blocks': merged_blocks},
-        *pages[2:],
+
+    cur_pages = [
+        {
+            'page_label': p.get('page_label') or '',
+            'blocks': list(p.get('blocks') or []),
+        }
+        for p in pages
+        if isinstance(p, dict)
     ]
-    merged = _normalize_page_labels(merged)
-    notes.append(
-        'layout: Erste und zweite Seite zusammengeführt (Einführung + Aufgaben auf einem Blatt).'
-    )
-    return merged, notes
+    if len(cur_pages) < 2:
+        return pages, notes
+
+    pair_index = 0
+    while pair_index < len(cur_pages) - 1:
+        a = cur_pages[pair_index]
+        b = cur_pages[pair_index + 1]
+        if _can_merge_consecutive(
+            a.get('blocks') or [],
+            b.get('blocks') or [],
+            overhead=overhead,
+            ceiling=ceiling,
+            pair_index=pair_index,
+        ):
+            label_a = (a.get('page_label') or '').strip()
+            label_b = (b.get('page_label') or '').strip()
+            merged_label = label_a or label_b
+            merged_blocks = list(a.get('blocks') or []) + list(b.get('blocks') or [])
+            cur_pages[pair_index] = {'page_label': merged_label, 'blocks': merged_blocks}
+            del cur_pages[pair_index + 1]
+            if pair_index == 0:
+                notes.append(
+                    'layout: Erste und zweite Seite zusammengeführt (Einführung + Aufgaben auf einem Blatt).'
+                )
+            else:
+                notes.append(
+                    f'layout: Seiten {pair_index + 1} und {pair_index + 2} zusammengeführt '
+                    '(beide nur dünn gefüllt — vermeidet halb-leere Blätter).'
+                )
+            continue
+        pair_index += 1
+
+    if len(cur_pages) == len(pages):
+        return pages, notes
+
+    cur_pages = _normalize_page_labels(cur_pages)
+    return cur_pages, notes
 
 
 def apply_page_coalesce_to_content(

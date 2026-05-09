@@ -76,7 +76,7 @@ export type WizardState = {
 
 export const INITIAL_WIZARD_STATE: WizardState = {
   worksheetMode: 'standard',
-  creativeShowSheetHeader: true,
+  creativeShowSheetHeader: false,
   topic: '',
   subject: '',
   gradeFrom: '',

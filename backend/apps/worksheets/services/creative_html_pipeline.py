@@ -1,6 +1,7 @@
 """Kreativ-Modus: KI liefert pro A4-Seite HTML/CSS-Fragmente (kein Block-JSON, kein LaTeX)."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from apps.boards.services.free_html_sanitize import sanitize_css, sanitize_html_fragment
@@ -11,10 +12,84 @@ from .page import normalize_page_setup
 RENDER_KIND_CREATIVE_HTML = 'html-a4-creative-v1'
 
 
+# Selektoren, bei denen ein Hintergrund die ganze Druckseite einfärben würde.
+# Wir wollen, dass das Arbeitsblatt **papierweiß** bleibt — Akzente nur in einzelnen
+# Aufgabenkästen / Infoboxen, nicht auf der Wurzel.
+_PAGE_ROOT_BG_SELECTOR_RE = re.compile(
+    r'^\s*(?:'
+    r'\.ws-creative-page-inner'
+    r'|html'
+    r'|body'
+    r'|:root'
+    r'|\*'
+    r'|html\s*,\s*body'
+    r'|body\s*,\s*html'
+    r')\s*$',
+    re.IGNORECASE,
+)
+# Properties, die wir aus dem Output entfernen: Schatten und Wurzel-Hintergrund.
+_BG_PROP_RE = re.compile(
+    r'(?:^|;)\s*background(?:-color|-image|-attachment|-size|-position|-repeat|-clip|-origin)?\s*:[^;}]*',
+    re.IGNORECASE,
+)
+_SHADOW_PROP_RE = re.compile(
+    r'(?:^|;)\s*(?:box|text)-shadow\s*:[^;}]*',
+    re.IGNORECASE,
+)
+# Eine sehr grobe CSS-Regel: ``selector { body }``. Reicht für die flachen page_css-Snippets.
+_CSS_RULE_RE = re.compile(r'([^{}]+)\{([^{}]*)\}', re.DOTALL)
+
+
+def _strip_creative_css_decorations(css: str) -> tuple[str, list[str]]:
+    """Entfernt Seiten-Hintergründe und Schatten aus dem KI-CSS.
+
+    Behebt typische Web-UI-Anmutungen, die die Druckseite verfälschen:
+    - ``.ws-creative-page-inner { background: … }`` (oder ``body``/``html``/``:root``):
+      würde die ganze A4-Fläche einfärben.
+    - ``box-shadow`` / ``text-shadow``: lassen das Blatt wie ein Webdesign wirken.
+
+    Akzentflächen auf einzelnen Aufgabenkästen (z. B. ``.ws-creative-page-inner .info { background: … }``)
+    bleiben **erlaubt** — nur die Wurzel wird gesäubert.
+    """
+    if not css or not css.strip():
+        return css, []
+    notes: list[str] = []
+    bg_root_strips = 0
+    shadow_strips = 0
+
+    def _process_rule(match: re.Match[str]) -> str:
+        nonlocal bg_root_strips, shadow_strips
+        selector = match.group(1)
+        body = match.group(2)
+        cleaned = body
+        # Schatten immer raus
+        cleaned, n_shadow = _SHADOW_PROP_RE.subn('', cleaned)
+        shadow_strips += n_shadow
+        # Wurzel-Hintergrund raus
+        if _PAGE_ROOT_BG_SELECTOR_RE.match(selector or ''):
+            cleaned, n_bg = _BG_PROP_RE.subn('', cleaned)
+            bg_root_strips += n_bg
+        return f'{selector}{{{cleaned}}}'
+
+    new_css = _CSS_RULE_RE.sub(_process_rule, css)
+    if bg_root_strips:
+        notes.append(
+            f'Hintergrundfarbe auf der Seitenwurzel entfernt ({bg_root_strips} Eigenschaft(en)) '
+            '— Arbeitsblatt soll papierweiß bleiben.'
+        )
+    if shadow_strips:
+        notes.append(f'{shadow_strips} Schatten-Eigenschaft(en) entfernt (Arbeitsblatt, kein Webdesign).')
+    return new_css, notes
+
+
 def _coerce_header_flag(req: dict[str, Any] | None) -> bool:
-    """App-Kopfzeile (Titel/Untertitel) im Renderer; Standard an."""
+    """App-Kopfzeile (Titel/Untertitel) im Renderer.
+
+    Standard im Kreativ-Modus: **aus** — die Seite endet logisch am Footer (mit Seitenzahl),
+    der KI-Inhalt nutzt die volle Höhe darüber. Frontend-Toggle kann das überschreiben.
+    """
     if not isinstance(req, dict):
-        return True
+        return False
     for key in ('show_sheet_header', 'creative_show_sheet_header'):
         if key not in req:
             continue
@@ -28,8 +103,8 @@ def _coerce_header_flag(req: dict[str, Any] | None) -> bool:
             return False
         if s in ('1', 'true', 'yes', 'on'):
             return True
-        return True
-    return True
+        return False
+    return False
 
 
 def repair_creative_html_worksheet(content: dict[str, Any], page_setup: dict) -> tuple[dict[str, Any], list[str]]:
@@ -56,8 +131,10 @@ def repair_creative_html_worksheet(content: dict[str, Any], page_setup: dict) ->
             continue
         html, nh = sanitize_html_fragment(str(p.get('html') or ''))
         css, nc = sanitize_css(str(p.get('page_css') or ''))
+        css, nd = _strip_creative_css_decorations(css)
         notes.extend(nh)
         notes.extend(nc)
+        notes.extend(nd)
         if not html.strip():
             html = '<div class="ws-creative-page-inner"><p>Leere Seite.</p></div>'
         sanitized_pages.append(

@@ -888,8 +888,16 @@ function A4PageShell({
   const footerRef = useRef<HTMLElement>(null);
   const pageSetup = rm.page_setup || worksheet.page_setup;
   const isLandscape = pageSetup.orientation === 'landscape';
-  const footerPageLabel =
-    (page.page_label || '').trim() || `Seite ${pageIndex + 1} von ${totalPages}`;
+  // Footer rechts: garantiert immer mit Seitenzahl. Wenn page_label bereits
+  // "Seite k von N — Thema" enthält (Backend-Default mehrseitig), übernehmen wir es;
+  // andernfalls wird "Seite k von N" davorgesetzt — auch bei einer einzelnen Seite.
+  const footerPageLabel = (() => {
+    const seitenSuffix = `Seite ${pageIndex + 1} von ${totalPages}`;
+    const labelTopic = (page.page_label || '').trim();
+    if (!labelTopic) return seitenSuffix;
+    if (/^seite\s+\d+\s+von\s+\d+/i.test(labelTopic)) return labelTopic;
+    return `${seitenSuffix} — ${labelTopic}`;
+  })();
   const footerLeft = (rm.title || worksheet.title || '').trim();
 
   const metaTitle = String(editCtx?.draft.title ?? rm.title ?? worksheet.title ?? '');
@@ -1084,7 +1092,9 @@ function A4PageShell({
         style={{
           paddingTop: mm(pageSetup.margins_mm.top),
           paddingRight: mm(pageSetup.margins_mm.right),
-          paddingBottom: '0.75rem',
+          // Hartes physisches Sicherheits-Polster zwischen Inhalt und Footer.
+          // Verhindert, dass Schreiblinien/SVG-Boden eines Aufgabenblocks am Footer kratzt.
+          paddingBottom: '1.5rem',
           paddingLeft: mm(pageSetup.margins_mm.left),
           boxSizing: 'border-box',
         }}

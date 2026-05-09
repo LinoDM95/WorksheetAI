@@ -105,13 +105,21 @@ class WorksheetPipeline:
         pattern: WorksheetPattern | None,
         *,
         run_reflow: bool,
+        run_coalesce: bool = True,
         page_setup: dict | None = None,
     ) -> tuple[dict, list[str]]:
-        """Idempotente Validierungs- und Reparaturkette."""
+        """Idempotente Validierungs- und Reparaturkette.
+
+        ``run_coalesce``: Standard True — schlecht ausgelastete Doppel-/Dreifachseiten werden
+        zusammengeführt. Beim Single-Page-Regenerate auf False setzen, damit eine bewusst
+        gewählte Seitenzahl der Lehrkraft erhalten bleibt.
+        """
         content, errors = validate_and_repair(content, pattern)
         content, repair_notes = repair_incomplete_ai_blocks(content)
-        content, coalesce_notes = apply_page_coalesce_to_content(content, page_setup=page_setup)
-        notes = list(errors) + repair_notes + coalesce_notes
+        notes = list(errors) + repair_notes
+        if run_coalesce:
+            content, coalesce_notes = apply_page_coalesce_to_content(content, page_setup=page_setup)
+            notes.extend(coalesce_notes)
         if run_reflow:
             content, reflow_notes = apply_page_overflow_reflow(content, page_setup=page_setup)
             notes.extend(reflow_notes)
@@ -155,10 +163,12 @@ class WorksheetGenerator(WorksheetPipeline):
         creative_mode = (self.payload.get('worksheet_mode') or '').strip().lower() == 'creative'
         raw_ps: dict[str, Any] = dict(self.payload.get('page_setup') or {})
         if creative_mode:
+            # Standard Kreativ-Modus: kein App-Header — die Seite endet am Footer (mit Seitenzahl),
+            # der Inhalt nutzt die volle Höhe darüber. Frontend-Toggle kann das überschreiben.
             raw_ps['line_budget_include_app_header'] = _payload_bool(
                 self.payload,
                 'creative_show_sheet_header',
-                default=True,
+                default=False,
             )
         self.page_setup = self.normalize_setup(raw_ps)
         self._resolve_curriculum_match()
@@ -460,6 +470,7 @@ class PageRegenerator(WorksheetPipeline):
                     src,
                     self.worksheet.pattern,
                     run_reflow=False,
+                    run_coalesce=False,
                     page_setup=self.worksheet.page_setup,
                 )
             self.attach_validation_errors(src, notes)
