@@ -246,28 +246,104 @@ CREATIVE_WORKSHEET_SCHEMA = {
     'required': ['title', 'pages', 'solutions'],
 }
 
-CREATIVE_PAGE_REGEN_SCHEMA = {
+_STRUCT_NEW_PAGE_SCHEMA = {
     'type': 'OBJECT',
-    'description': 'One creative worksheet page: html + optional page_css and page_label.',
+    'description': (
+        'Für insert_page_after: bei Kreativ-HTML page_label + html (+ page_css); '
+        'bei Baustein-Seiten page_label + blocks.'
+    ),
     'properties': {
         'page_label': {'type': 'STRING'},
         'html': {'type': 'STRING'},
         'page_css': {'type': 'STRING'},
+        'blocks': SCHEMA['properties']['pages']['items']['properties']['blocks'],
     },
-    'required': ['html'],
+}
+
+_DOC_OP_CREATIVE_SCHEMA = {
+    'type': 'OBJECT',
+    'properties': {
+        'op': {'type': 'STRING', 'enum': ['insert_page_after', 'move_flow_item']},
+        'after_index': {
+            'type': 'INTEGER',
+            'description': 'insert_page_after: neue Seite wird an Position after_index+1 eingefügt (-1 = vor erster Seite).',
+        },
+        'new_page': _STRUCT_NEW_PAGE_SCHEMA,
+        'from_page': {'type': 'INTEGER'},
+        'from_section_index': {'type': 'INTEGER'},
+        'to_page': {'type': 'INTEGER'},
+        'to_section_index': {'type': 'INTEGER', 'description': 'Einfügen vor diesem Index; >= Anzahl = ans Ende.'},
+    },
+    'required': ['op'],
+}
+
+_DOC_OP_BLOCK_SCHEMA = {
+    'type': 'OBJECT',
+    'properties': {
+        'op': {'type': 'STRING', 'enum': ['insert_page_after', 'move_block']},
+        'after_index': {
+            'type': 'INTEGER',
+            'description': 'insert_page_after: neue Seite wird an Position after_index+1 eingefügt (-1 = vor erster Seite).',
+        },
+        'new_page': _STRUCT_NEW_PAGE_SCHEMA,
+        'from_page': {'type': 'INTEGER'},
+        'from_block_index': {'type': 'INTEGER'},
+        'to_page': {'type': 'INTEGER'},
+        'to_block_index': {'type': 'INTEGER'},
+    },
+    'required': ['op'],
+}
+
+CREATIVE_PAGE_REGEN_SCHEMA = {
+    'type': 'OBJECT',
+    'description': (
+        'Kreativ-Seite: optional Dokument-Operationen nur wenn die Lehrer-Anweisung das ausdrücklich verlangt '
+        '(z. B. neue Druckseite, Sektion verschieben). replace_focus_page=false wenn nur Struktur geändert werden soll.'
+    ),
+    'properties': {
+        'replace_focus_page': {
+            'type': 'BOOLEAN',
+            'description': (
+                'true: html/page_css/page_label für die Fokusseite übernehmen (Bearbeitung). '
+                'false: Fokusseite nach Operationen unverändert lassen (nur document_operations).'
+            ),
+        },
+        'document_operations': {
+            'type': 'ARRAY',
+            'items': _DOC_OP_CREATIVE_SCHEMA,
+            'description': 'Leer [], wenn keine strukturelle Änderung am Gesamtdokument nötig ist.',
+        },
+        'page_label': {'type': 'STRING'},
+        'html': {
+            'type': 'STRING',
+            'description': 'Bei replace_focus_page=false leer lassen oder Platzhalter.',
+        },
+        'page_css': {'type': 'STRING'},
+    },
+    'required': ['replace_focus_page', 'document_operations', 'html', 'page_label', 'page_css'],
 }
 
 PAGE_REGEN_SCHEMA = {
     'type': 'OBJECT',
     'description': (
-        'One worksheet page only: new blocks and optional page_label. '
-        'Full redesign of this page while staying on topic.'
+        'Eine Baustein-Seite: Blöcke + optional page_label; optional document_operations nur auf ausdrückliche Anweisung.'
     ),
     'properties': {
+        'replace_focus_page': {
+            'type': 'BOOLEAN',
+            'description': (
+                'true: blocks/page_label der Fokusseite ersetzen. false: nur document_operations, Fokusseite inhaltlich unverändert.'
+            ),
+        },
+        'document_operations': {
+            'type': 'ARRAY',
+            'items': _DOC_OP_BLOCK_SCHEMA,
+            'description': 'Leer [], wenn keine strukturelle Änderung nötig ist.',
+        },
         'page_label': SCHEMA['properties']['pages']['items']['properties']['page_label'],
         'blocks': SCHEMA['properties']['pages']['items']['properties']['blocks'],
     },
-    'required': ['blocks'],
+    'required': ['replace_focus_page', 'document_operations', 'page_label', 'blocks'],
 }
 
 

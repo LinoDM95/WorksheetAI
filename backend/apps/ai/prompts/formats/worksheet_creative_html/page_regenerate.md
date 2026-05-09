@@ -33,9 +33,37 @@ Der folgende Block ist **verbindlich zum Abgleich** von CSS und Illustrations-/L
 ```
 
 - Feld **`show_sheet_header`**: wenn **`false`**, zeigt die App **keinen** festen Kopf über diesem HTML — **keinen** kopflosen Auftritt schaffen (eigener Titel/Meta bereits im bestehenden `html` oder sinnvoll ergänzt). Wenn **`true`**, gilt die Normalvariante wie bei der ersten Generierung.
-- Seite **{{PAGE_INDEX}}** von **{{PAGE_TOTAL}}** (0-basierter Index: {{PAGE_INDEX}}).
+- Seite **{{PAGE_INDEX}}** von **{{PAGE_TOTAL}}** (0-basierter Index: {{PAGE_INDEX}}) = **Fokusseite** der Bearbeitung.
 - Kurzüberblick andere Seiten:
 {{OTHER_PAGES_SUMMARY}}
+
+## Gesamtdokument (alle Seiten, Indizes für Strukturänderungen)
+
+{{DOCUMENT_OUTLINE}}
+
+### Struktur **nur** auf ausdrückliche Lehrer-Anweisung
+
+- **`document_operations`**: standardmäßig **`[]`** (leer).
+- Fülle Operationen **nur**, wenn die Lehrer-Anweisung **explizit** verlangt:
+  - eine **weitere Druckseite** anzulegen / einzufügen, **oder**
+  - eine **`section.ws-flow-item`** (ein Aufgaben-/Inhaltsblock) **zwischen Seiten zu verschieben**.
+- **Nicht** aus eigenem Ermessen Seiten einfügen oder Sektionen verschieben — nie „proaktiv“ aufräumen.
+- **`replace_focus_page`**: `false`, wenn die Anweisung **ausschließlich** strukturelle Änderungen am Dokument verlangt (neue Seite / Verschieben) **und** die **Fokusseite** inhaltlich **unverändert** bleiben soll. In dem Fall `html` leer lassen oder unkritischen Platzhalter, `page_css`/`page_label` dürfen leer bzw. unverändert gedacht werden — der Server **ignoriert** die Fokus-Felder bei `false`.
+- **`replace_focus_page`**: `true`, wenn die Fokusseite **inhaltlich** überarbeitet werden soll (wie bisher) — mit oder ohne zusätzliche `document_operations`.
+- Reihenfolge: `document_operations` werden **zuerst** angewendet (in der gegebenen Reihenfolge), **danach** ggf. die Fokusseite ersetzt (`replace_focus_page`).
+
+#### Operation `insert_page_after`
+
+- `op`: `"insert_page_after"`
+- `after_index`: ganze Zahl ≥ **-1**; neue Seite steckt bei Index `after_index + 1` (**-1** = vor der ersten Seite).
+- `new_page`: Objekt mit **`page_label`**, **`html`** (Wurzel `<div class="ws-creative-page-inner">…</div>`, direkte Kinder `section.ws-flow-item`), **`page_css`** (nur unter `.ws-creative-page-inner`).
+
+#### Operation `move_flow_item`
+
+- `op`: `"move_flow_item"`
+- `from_page`, `from_section_index` (0-basiert, siehe Dokument-Übersicht), `to_page`, `to_section_index` (Einfügen **vor** dieser Sektion; **≥** Anzahl = ans **Ende** der Zielseite).
+- **Keine** leeren oder ungültigen Indizes; Ziel- und Quellseite müssen existieren.
+
 
 ## Aktuelle Seite (JSON)
 
@@ -57,8 +85,10 @@ Der folgende Block ist **verbindlich zum Abgleich** von CSS und Illustrations-/L
 
 Antworte **nur** mit JSON:
 
-- **`page_label`**: optional angepasst (nur falls sinnvoll).
-- **`html`**: Fragment mit Wurzel **`<div class="ws-creative-page-inner">…</div>`**; direkte Kinder weiterhin **`section.ws-flow-item`** pro Block (sofern schon in der Vorlage vorhanden — **gleiche Anzahl** beibehalten, wenn die Anweisung nichts anderes verlangt).
-- **`page_css`**: nur Selektoren unter `.ws-creative-page-inner`; unverändert lassen, wenn die Anweisung kein Layout/CSS betrifft. Wenn du CSS anpasst: Stil **weiterhin** mit den Schwesterseiten im Block „Stil-Referenz“ und mit „Einheitliches Design …“ abstimmen — **kein** eigenes Premium- oder Comic-Subset nur auf dieser Seite.
+- **`replace_focus_page`**: boolean (siehe „Struktur nur auf ausdrückliche Lehrer-Anweisung“).
+- **`document_operations`**: Array (oft `[]`).
+- **`page_label`**: optional angepasst (nur falls `replace_focus_page` true und sinnvoll).
+- **`html`**: Fragment mit Wurzel **`<div class="ws-creative-page-inner">…</div>`** … (bei `replace_focus_page` false leer lassen).
+- **`page_css`**: nur Selektoren unter `.ws-creative-page-inner` … (bei rein strukturellem Job oft leer).
 
 Keine `$…$`, kein KaTeX, keine `<script>`.

@@ -158,7 +158,8 @@ class ClaudeWorksheetProvider:
                 system=None,
                 user=prompt
                 + '\n\n---\n\n**Wichtig:** Antworte ausschließlich mit einem einzigen JSON-Objekt '
-                'mit den Feldern page_label (optional), html (Pflicht), page_css (optional). '
+                'mit den Feldern replace_focus_page (boolean), document_operations (Array, oft []), '
+                'page_label, html (kann leer sein wenn replace_focus_page=false), page_css. '
                 'Kein Markdown außerhalb des JSON.',
                 temperature=temp,
                 trace_step='worksheet_page_regenerate_creative_html',
@@ -167,7 +168,15 @@ class ClaudeWorksheetProvider:
 
         prompt = build_page_regeneration_prompt(payload)
         temp = float(getattr(settings, 'CLAUDE_WORKSHEET_TEMPERATURE', settings.GEMINI_TEMPERATURE))
-        text = self._complete(system=None, user=prompt, temperature=temp, trace_step='worksheet_page_regenerate')
+        text = self._complete(
+            system=None,
+            user=prompt
+            + '\n\n---\n\n**Wichtig:** Antworte ausschließlich mit einem einzigen JSON-Objekt '
+            'mit replace_focus_page (boolean), document_operations (Array), page_label, blocks. '
+            'Kein Markdown außerhalb des JSON.',
+            temperature=temp,
+            trace_step='worksheet_page_regenerate',
+        )
         return _extract_json_object(text)
 
     def generate_free_html_board(self, payload: dict) -> dict[str, Any]:

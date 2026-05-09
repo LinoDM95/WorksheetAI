@@ -45,6 +45,7 @@ from .creative_html_pipeline import (
 from .page import normalize_page_setup
 from .render_model import build_render_model
 from .validators import validate_and_repair
+from .worksheet_document_ops import apply_document_operations, build_document_outline
 
 logger = logging.getLogger(__name__)
 
@@ -440,32 +441,64 @@ class PageRegenerator(WorksheetPipeline):
             creative = is_creative_html_content(src) or worksheet_pages_are_creative_html_shape(src)
             payload = self._build_payload(src, old_page, creative=creative)
             new_page = self.provider.regenerate_page(payload)
+            focus_idx = int(self.page_index)
+            structure_notes: list[str] = []
+            raw_ops = new_page.get('document_operations')
+            clean_ops: list[dict] = [o for o in raw_ops if isinstance(o, dict)] if isinstance(raw_ops, list) else []
+            if clean_ops:
+                structure_notes, focus_idx = apply_document_operations(
+                    src,
+                    clean_ops,
+                    creative=creative,
+                    focus_page_index=focus_idx,
+                )
+            replace_focus = new_page.get('replace_focus_page')
+            if replace_focus is None:
+                replace_focus = True
+            elif not isinstance(replace_focus, bool):
+                replace_focus = str(replace_focus).strip().lower() in ('1', 'true', 'yes', 'on')
+            if not replace_focus and not clean_ops:
+                replace_focus = True
+
+            if focus_idx < 0 or focus_idx >= len(src['pages']):
+                raise ValueError('Ungültige Fokusseite nach Strukturänderung')
+
             if creative:
-                html = new_page.get('html')
-                if not isinstance(html, str) or not html.strip():
-                    raise ValueError('Die KI hat kein gültiges HTML für diese Seite geliefert')
-                src['pages'][self.page_index] = {
-                    'page_label': str(
-                        new_page.get('page_label')
-                        if new_page.get('page_label') is not None
-                        else old_page.get('page_label') or ''
-                    ),
-                    'html': html,
-                    'page_css': str(new_page.get('page_css') if new_page.get('page_css') is not None else old_page.get('page_css') or ''),
-                }
+                if replace_focus:
+                    html = new_page.get('html')
+                    if not isinstance(html, str) or not html.strip():
+                        raise ValueError('Die KI hat kein gültiges HTML für diese Seite geliefert')
+                    fp = src['pages'][focus_idx]
+                    old_pl = fp.get('page_label') if isinstance(fp, dict) else ''
+                    src['pages'][focus_idx] = {
+                        'page_label': str(
+                            new_page.get('page_label')
+                            if new_page.get('page_label') is not None
+                            else old_pl or ''
+                        ),
+                        'html': html,
+                        'page_css': str(
+                            new_page.get('page_css')
+                            if new_page.get('page_css') is not None
+                            else (fp.get('page_css') if isinstance(fp, dict) else '') or ''
+                        ),
+                    }
                 src, notes = repair_creative_html_worksheet(src, self.normalize_setup(self.worksheet.page_setup))
             else:
-                blocks = new_page.get('blocks')
-                if not isinstance(blocks, list) or len(blocks) == 0:
-                    raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
-                src['pages'][self.page_index] = {
-                    'page_label': str(
-                        new_page.get('page_label')
-                        if new_page.get('page_label') is not None
-                        else old_page.get('page_label') or ''
-                    ),
-                    'blocks': blocks,
-                }
+                if replace_focus:
+                    blocks = new_page.get('blocks')
+                    if not isinstance(blocks, list) or len(blocks) == 0:
+                        raise ValueError('Die KI hat keine gültigen Blöcke für diese Seite geliefert')
+                    fp = src['pages'][focus_idx]
+                    old_pl = fp.get('page_label') if isinstance(fp, dict) else ''
+                    src['pages'][focus_idx] = {
+                        'page_label': str(
+                            new_page.get('page_label')
+                            if new_page.get('page_label') is not None
+                            else old_pl or ''
+                        ),
+                        'blocks': blocks,
+                    }
                 src, notes = self.repair(
                     src,
                     self.worksheet.pattern,
@@ -473,6 +506,7 @@ class PageRegenerator(WorksheetPipeline):
                     run_coalesce=False,
                     page_setup=self.worksheet.page_setup,
                 )
+            notes = list(structure_notes) + list(notes)
             self.attach_validation_errors(src, notes)
             if creative:
                 render_model = build_creative_html_render_model(
@@ -528,6 +562,7 @@ class PageRegenerator(WorksheetPipeline):
             },
             'page_index': self.page_index,
             'page_total': len(src['pages']),
+            'document_outline': build_document_outline(src['pages'], creative=creative),
             'current_page': old_page,
             'other_pages_summary': self._other_pages_summary(src['pages'], creative=creative),
             'teacher_instruction': self.teacher_instruction,

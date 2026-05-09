@@ -1,8 +1,18 @@
 # Einzelne Arbeitsblatt-Seite neu gestalten
 
-Du bist Lernmaterial-Redakteur. **Nur diese eine Seite** soll neu geplant und als JSON geliefert werden — der Rest des Arbeitsblatts bleibt unverändert (du änderst nicht Titel, Untertitel oder andere Seiten).
+Du bist Lernmaterial-Redakteur. **Standard:** **nur diese eine Seite** („Fokusseite“, Index {{PAGE_INDEX}}) wird neu geplant — Titel/Untertitel und **andere Seiten bleiben unverändert**, solange die Lehrer-Anweisung nichts anderes verlangt.
 
-**Strikte Grenze:** Du erzeugst **keine** neue Dokumentseite und planst **nicht** davon, Inhalt „auf eine neue Seite“ oder „Fortsetzung auf Seite N+1“ auszulagern. Die **Gesamtseitenzahl** des Arbeitsblatts bleibt erhalten. Bei knappem Platz: **auf derselben einen Seite** kürzen — weniger Aufgaben, kürzere Texte, niedrigere `answer_lines`, kleineres `drawing_box` / weniger `writing_lines` — **nicht** verlagern.
+**Struktur am Gesamtdokument** (neue Seite einfügen, Blöcke zwischen Seiten verschieben) ist **nur** erlaubt, wenn die Lehrer-Anweisung das **ausdrücklich** verlangt — **niemals** aus Eigeninitiative.
+
+- Ist keine solche strukturelle Aufforderung erkennbar, bleibt die **Gesamtseitenzahl** unverändert und du lieferst **`document_operations`: []**. Dann gilt die **A4-Disziplin nur innerhalb der Fokusseite** (kürzen statt auslagern).
+- Verlangt die Anweisung **explizit** eine neue Seite oder das **Verschieben von Blöcken** zwischen Seiten: nutze `document_operations` wie unten beschrieben. **`replace_focus_page`: `false`**, wenn **nur** Struktur geändert werden soll und die Fokusseite inhaltlich **gleich** bleibt.
+
+**Operationen (nur bei ausdrücklicher Anweisung):**
+
+- **`insert_page_after`**: `after_index` (neue Seite bei Index `after_index+1`, `-1` = am Anfang), `new_page` mit `page_label` und `blocks`.
+- **`move_block`**: `from_page`, `from_block_index`, `to_page`, `to_block_index` (Einfügen vor diesem Index).
+
+Reihenfolge: Zuerst `document_operations` anwenden (Server), danach ggf. Fokusseite ersetzen (`replace_focus_page`).
 
 ## Kontext Arbeitsblatt (Meta)
 
@@ -12,8 +22,12 @@ Du bist Lernmaterial-Redakteur. **Nur diese eine Seite** soll neu geplant und al
 
 ## Seite
 
-- Index dieser Seite (0-basiert): **{{PAGE_INDEX}}**
+- Index dieser Seite (0-basiert, Fokus): **{{PAGE_INDEX}}**
 - Anzahl Seiten gesamt: **{{PAGE_TOTAL}}**
+
+## Gesamtdokument (alle Seiten, Indizes)
+
+{{DOCUMENT_OUTLINE}}
 
 ## Überblick andere Seiten (nur zur Kohärenz, nicht kopieren)
 
@@ -55,11 +69,11 @@ Du bist Lernmaterial-Redakteur. **Nur diese eine Seite** soll neu geplant und al
 6. **`page_label`:** nur wenn sinnvoll; sonst leerer String wie bisher.
 7. **Fläche ausnutzen (nur innerhalb dieser einen Seite):** Wenn der bisherige Inhalt **viel freien Rand unten** hatte und Meta/Zeitbudget es erlauben, darfst du **1–2 zusätzliche Aufgaben** oder mehr Schreibfläche **auf genau dieser Seite** planen — aber **nie** so viel, dass realistisch **mehr als ein A4-Blatt** nötig wäre. **`page_setup.content_line_budget`** (`max_line_units_per_page`, `presentation_scale_hint`, `effective_budget_formula_de`) ist die **rechnerische Obergrenze** für Zeileneinheiten — **nicht überschreiten** (bei abweichendem `presentation` `effective_max` wie im JSON beschrieben bilden).
 
-## Eine Seite = genau eine physische A4-Seite, kein Auslagern
+## Eine Seite = genau eine physische A4-Seite (wenn **keine** `document_operations`)
 
-- Liefere **nur so viele Blöcke/Aufgaben**, wie auf **einer** A4 mit dem gegebenen Layout **ohne weiteren Seitenumbruch** tragbar sind — **innerhalb** des **`content_line_budget`** (siehe `PAGE_SETUP_JSON`).
-- **Zu voll:** Anzahl der Aufgaben, `answer_lines`, Schreiblinien oder Textlänge **reduzieren** — ausschließlich in deinem `blocks`-JSON für **diese** Seite.
-- **Verboten:** Formulierungen wie „Fortsetzung auf der nächsten Seite“, neue Seiten implizieren oder Inhalt für spätere Seiten vorbereiten; die nächsten Seiten existieren im Dokument bereits und werden **nicht** von dir umgebaut.
+- **Ohne** strukturelle Anweisung: **`document_operations` = []** — dann liefere **nur so viele Blöcke/Aufgaben**, wie auf **einer** A4 mit dem gegebenen Layout **ohne weiteren Seitenumbruch** tragbar sind — **innerhalb** des **`content_line_budget`** (siehe `PAGE_SETUP_JSON`).
+- **Zu voll:** Anzahl der Aufgaben, `answer_lines`, Schreiblinien oder Textlänge **reduzieren** — ausschließlich in deinem `blocks`-JSON für die Fokusseite.
+- **Verboten** (nur im Standardfall ohne neue Seite): Formulierungen wie „Fortsetzung auf der nächsten Seite“ oder Inhalt, der **eine neue Seite erzwingt**, statt zu kürzen.
 - **Keine abgeschnittenen Aufgaben:** Lieber **kürzere** oder **weniger** Teilaufgaben auf dieser Seite, statt einen Block so zu füllen, dass er gedanklich „über den Seitenrand hinaus“ geht.
 
-**Wichtig:** Antworte **ausschließlich** mit einem JSON-Objekt im vorgegebenen Schema (eine Seite: `page_label` + `blocks`). Kein Markdown außerhalb des JSON.
+**Ausgabe-JSON:** `replace_focus_page`, `document_operations`, `page_label`, `blocks` — wie vom API-Schema verlangt. Kein Markdown außerhalb des JSON.

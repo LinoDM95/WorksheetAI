@@ -167,14 +167,52 @@ class MockWorksheetProvider:
     def regenerate_page(self, payload):
         from apps.worksheets.services.creative_html_pipeline import RENDER_KIND_CREATIVE_HTML
 
+        instr = (payload.get('teacher_instruction') or '').lower()
+        wants_extra = any(
+            k in instr
+            for k in (
+                'weitere seite',
+                'neue seite',
+                'zusätzliche seite',
+                'extra seite',
+                'noch eine seite',
+            )
+        )
+        wants_struct_only = wants_extra and not any(
+            k in instr for k in ('inhalt', 'überarbeit', 'formulier', 'anpass', 'korrigier', 'verbess')
+        )
+
         if (payload.get('worksheet_render_kind') or '').strip() == RENDER_KIND_CREATIVE_HTML:
             old = payload.get('current_page') or {}
             html = str(old.get('html') or '')
             suffix = '<p class="ws-mock-regen"><em>Mock: Seite ergänzt.</em></p>'
             merged = html.replace('</div>', suffix + '</div>', 1) if '</div>' in html else html + suffix
+            doc_ops: list[dict] = []
+            if wants_extra:
+                try:
+                    pt = max(1, int(payload.get('page_total') or 1))
+                except (TypeError, ValueError):
+                    pt = 1
+                doc_ops.append(
+                    {
+                        'op': 'insert_page_after',
+                        'after_index': pt - 1,
+                        'new_page': {
+                            'page_label': 'Mock Zusatzseite',
+                            'html': (
+                                '<div class="ws-creative-page-inner">'
+                                '<section class="ws-flow-item"><p><em>Mock: zusätzliche Druckseite.</em></p>'
+                                '</section></div>'
+                            ),
+                            'page_css': '',
+                        },
+                    }
+                )
             result = {
+                'replace_focus_page': not wants_struct_only,
+                'document_operations': doc_ops,
                 'page_label': old.get('page_label', '') or '',
-                'html': merged,
+                'html': merged if not wants_struct_only else '',
                 'page_css': str(old.get('page_css') or ''),
             }
             self._stamp_usage(
@@ -195,7 +233,35 @@ class MockWorksheetProvider:
                 'Mit echtem Gemini wird die Seite vollständig neu strukturiert.'
             ),
         })
-        result = {'page_label': old.get('page_label', '') or '', 'blocks': blocks}
+        doc_ops_nb: list[dict] = []
+        if wants_extra:
+            try:
+                pt = max(1, int(payload.get('page_total') or 1))
+            except (TypeError, ValueError):
+                pt = 1
+            doc_ops_nb.append(
+                {
+                    'op': 'insert_page_after',
+                    'after_index': pt - 1,
+                    'new_page': {
+                        'page_label': 'Mock Zusatzseite',
+                        'blocks': [
+                            {
+                                'id': 'mock-new-page',
+                                'type': 'text',
+                                'title': 'Zusatzseite',
+                                'content': 'Mock: zusätzliche Seite.',
+                            },
+                        ],
+                    },
+                }
+            )
+        result = {
+            'replace_focus_page': not wants_struct_only,
+            'document_operations': doc_ops_nb,
+            'page_label': old.get('page_label', '') or '',
+            'blocks': blocks if not wants_struct_only else list(old.get('blocks') or []),
+        }
         self._stamp_usage(
             'worksheet_page_regenerate',
             input_approx=max(8, int(len(json.dumps(payload, default=str)) / 4)),
