@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
 import axios from 'axios';
-import { api } from '../../lib/api';
+import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import type { Worksheet } from '../../types';
 import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetRenderer';
@@ -20,6 +20,30 @@ import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
 import { clearPendingFirstOpenWorksheet } from './lib/worksheetFirstOpenHighlight';
 
 const MAX_DRAFT_UNDO = 10;
+
+function formatWorksheetKiApiError(e: unknown, fallback: string): string {
+  if (!axios.isAxiosError(e)) return fallback;
+  if (!e.response) {
+    const m = (e.message || '').toLowerCase();
+    if (e.code === 'ECONNABORTED' || m.includes('timeout')) {
+      return 'Zeitüberschreitung beim KI-Aufruf. Bitte erneut versuchen oder weniger Seiten gleichzeitig überarbeiten.';
+    }
+    return 'Netzwerkfehler beim KI-Aufruf. Bitte Verbindung prüfen und erneut versuchen.';
+  }
+  const data = e.response.data;
+  if (data && typeof data === 'object') {
+    const rec = data as Record<string, unknown>;
+    if (typeof rec.detail === 'string') return rec.detail;
+    if (Array.isArray(rec.detail)) return rec.detail.map(String).join(' ');
+    const firstVal = Object.values(rec).find((v) => v != null);
+    if (typeof firstVal === 'string') return firstVal;
+    if (Array.isArray(firstVal)) return firstVal.map(String).join(' ');
+  }
+  if (typeof e.response.data === 'string' && e.response.data.trim()) {
+    return e.response.data.trim().slice(0, 600);
+  }
+  return fallback;
+}
 
 function formatWorksheetApiError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
@@ -78,6 +102,15 @@ export function WorksheetPage() {
       });
     }
     return (pageIdx: number): { blocking: boolean; queued: boolean } => {
+      const bulk = jobs.find(
+        (j) =>
+          j.kind === 'worksheet-pages' &&
+          j.resourceId === id &&
+          (j.status === 'queued' || j.status === 'running'),
+      );
+      if (bulk) {
+        return { blocking: true, queued: bulk.status === 'queued' };
+      }
       const hit = jobs.find(
         (j) =>
           j.kind === 'worksheet-page' &&
@@ -85,9 +118,34 @@ export function WorksheetPage() {
           j.pageIndex === pageIdx &&
           (j.status === 'queued' || j.status === 'running'),
       );
-      if (!hit) return { blocking: false, queued: false };
-      return { blocking: true, queued: hit.status === 'queued' };
+      if (hit) {
+        return { blocking: true, queued: hit.status === 'queued' };
+      }
+      const anyOther = jobs.find(
+        (j) =>
+          j.kind === 'worksheet-page' &&
+          j.resourceId === id &&
+          (j.status === 'queued' || j.status === 'running'),
+      );
+      if (anyOther) {
+        return { blocking: true, queued: true };
+      }
+      return { blocking: false, queued: false };
     };
+  }, [id, jobs]);
+
+  const worksheetKiQueueUi = useMemo(() => {
+    if (!id) return { blocking: false, queued: false };
+    const active = jobs.filter(
+      (j) =>
+        (j.kind === 'worksheet-page' || j.kind === 'worksheet-pages') &&
+        j.resourceId === id &&
+        (j.status === 'queued' || j.status === 'running'),
+    );
+    if (active.length === 0) return { blocking: false, queued: false };
+    const running = active.some((j) => j.status === 'running');
+    const queued = active.some((j) => j.status === 'queued');
+    return { blocking: true, queued: queued && !running };
   }, [id, jobs]);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
@@ -360,17 +418,17 @@ export function WorksheetPage() {
 
         let r;
         try {
-          r = await api.post(`/worksheets/${targetWorksheetId}/regenerate-page/`, {
-            page_index: pageIndex,
-            teacher_instruction: instruction,
-            content: contentSnapshot,
-          });
+          r = await api.post(
+            `/worksheets/${targetWorksheetId}/regenerate-page/`,
+            {
+              page_index: pageIndex,
+              teacher_instruction: instruction,
+              content: contentSnapshot,
+            },
+            { timeout: LONG_RUNNING_BOARD_TIMEOUT_MS },
+          );
         } catch (e: unknown) {
-          let msg = 'Seite konnte nicht überarbeitet werden.';
-          if (axios.isAxiosError(e)) {
-            const d = e.response?.data as { detail?: string } | undefined;
-            if (typeof d?.detail === 'string') msg = d.detail;
-          }
+          const msg = formatWorksheetKiApiError(e, 'Seite konnte nicht überarbeitet werden.');
           failJob(jid, msg);
           if (worksheetIdRef.current === targetWorksheetId) {
             setErr(msg);
@@ -430,6 +488,181 @@ export function WorksheetPage() {
       ws,
       id,
       draft,
+      startJob,
+      runSerialized,
+      updateJob,
+      completeJob,
+      failJob,
+      queryClient,
+      clearDraftUndoStack,
+    ],
+  );
+
+  const handleGlobalKiRevise = useCallback(
+    async (teacherInstruction: string, scope: 'current_visible_page' | 'all_pages') => {
+      if (!id || !draft || !ws || ws.viewer_is_owner === false) return;
+      const instruction = teacherInstruction.trim();
+      if (!instruction) {
+        setErr('Bitte beschreibe, was die KI ändern soll.');
+        return;
+      }
+
+      const pagesRaw = draft.pages as unknown[] | undefined;
+      const pageCount = Array.isArray(pagesRaw) ? pagesRaw.length : 0;
+      if (pageCount === 0) {
+        setErr('Keine Seiten zum Überarbeiten gefunden.');
+        return;
+      }
+
+      const clampedPreview = Math.max(0, Math.min(dominantPreviewPageIndex0, pageCount - 1));
+      const indices =
+        scope === 'all_pages' ? Array.from({ length: pageCount }, (_, i) => i) : [clampedPreview];
+
+      const targetWorksheetId = id;
+      const titleSnippet = (ws.title || '').trim() || 'Arbeitsblatt';
+      const jid = startJob({
+        kind: indices.length > 1 ? 'worksheet-pages' : 'worksheet-page',
+        title: indices.length > 1 ? 'Arbeitsblatt wird überarbeitet' : 'Seite wird überarbeitet',
+        subtitle:
+          indices.length > 1
+            ? `${titleSnippet} · ${indices.length} Seiten`
+            : `${titleSnippet} · Seite ${indices[0] + 1}`,
+        resourceId: targetWorksheetId,
+        ...(indices.length === 1 ? { pageIndex: indices[0] } : {}),
+      });
+
+      await runSerialized(jid, async () => {
+        const phase =
+          indices.length > 1
+            ? `KI überarbeitet ${indices.length} Seiten …`
+            : 'KI überarbeitet die Seite …';
+        updateJob(jid, { phaseLabel: phase, progressPercent: indices.length > 1 ? 4 : 8 });
+        setErr('');
+
+        const cur = draftRef.current;
+        if (!cur || typeof cur !== 'object') {
+          const msg = 'Inhalt konnte nicht für die Überarbeitung gelesen werden.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+          throw new Error(msg);
+        }
+
+        let contentSnapshot: Record<string, unknown>;
+        try {
+          contentSnapshot = JSON.parse(JSON.stringify(cur)) as Record<string, unknown>;
+        } catch {
+          const msg = 'Inhalt konnte nicht für die Überarbeitung kopiert werden.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+          throw new Error(msg);
+        }
+
+        let r: { data: { content?: unknown; render_model?: unknown } };
+        try {
+          if (indices.length === 1) {
+            r = await api.post(
+              `/worksheets/${targetWorksheetId}/regenerate-page/`,
+              {
+                page_index: indices[0],
+                teacher_instruction: instruction,
+                content: contentSnapshot,
+              },
+              { timeout: LONG_RUNNING_BOARD_TIMEOUT_MS },
+            );
+          } else {
+            let cumulative: Record<string, unknown> = contentSnapshot;
+            let lastRm: unknown = null;
+            for (let step = 0; step < indices.length; step++) {
+              const pidx = indices[step];
+              updateJob(jid, {
+                phaseLabel: `KI überarbeitet Seite ${step + 1} von ${indices.length} …`,
+                progressPercent: Math.min(78, 8 + Math.round(((step + 0.5) / indices.length) * 70)),
+              });
+              const resp = await api.post(
+                `/worksheets/${targetWorksheetId}/regenerate-page/`,
+                {
+                  page_index: pidx,
+                  teacher_instruction: instruction,
+                  content: cumulative,
+                },
+                { timeout: LONG_RUNNING_BOARD_TIMEOUT_MS },
+              );
+              cumulative = resp.data.content as Record<string, unknown>;
+              lastRm = resp.data.render_model;
+            }
+            r = { data: { content: cumulative, render_model: lastRm } };
+          }
+        } catch (e: unknown) {
+          const msg = formatWorksheetKiApiError(
+            e,
+            indices.length > 1
+              ? 'Arbeitsblatt-Seiten konnten nicht überarbeitet werden.'
+              : 'Seite konnte nicht überarbeitet werden.',
+          );
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setErr(msg);
+          }
+          throw e;
+        }
+
+        updateJob(jid, { progressPercent: 85 });
+        const nextContent = normalizeContentForEdit(r.data.content as Record<string, unknown>);
+
+        try {
+          const patchResp = await api.patch<Worksheet>(`/worksheets/${targetWorksheetId}/`, {
+            content: nextContent,
+          });
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setWs(patchResp.data);
+            setDraft(normalizeContentForEdit(patchResp.data.content as Record<string, unknown>));
+            setPreviewRm((patchResp.data.render_model || null) as Record<string, unknown> | null);
+            setPageLayoutOverflow({});
+            clearDraftUndoStack();
+          } else {
+            void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+          }
+        } catch (e: unknown) {
+          const msg =
+            'Überarbeitung war erfolgreich, Speichern fehlgeschlagen. Bitte Seite neu laden und erneut speichern.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setDraft(nextContent);
+            if (r.data.render_model && typeof r.data.render_model === 'object') {
+              setPreviewRm(r.data.render_model as Record<string, unknown>);
+            }
+            setErr(msg);
+          }
+          throw e;
+        }
+
+        const stillHere = worksheetIdRef.current === targetWorksheetId;
+        completeJob(jid, {
+          successMessage: stillHere
+            ? indices.length > 1
+              ? 'Alle gewählten Seiten überarbeitet und gespeichert.'
+              : 'Seite überarbeitet und gespeichert.'
+            : indices.length > 1
+              ? 'Seiten überarbeitet und gespeichert. Das Arbeitsblatt liegt im Aktivitätsbereich unter „Öffnen“.'
+              : 'Seite überarbeitet und gespeichert. Das Arbeitsblatt liegt im Aktivitätsbereich unter „Öffnen“.',
+          ...(!stillHere
+            ? {
+                primaryAction: {
+                  label: 'Arbeitsblatt öffnen',
+                  to: `/app/worksheets/${targetWorksheetId}`,
+                },
+              }
+            : {}),
+        });
+
+        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      });
+    },
+    [
+      ws,
+      id,
+      draft,
+      dominantPreviewPageIndex0,
       startJob,
       runSerialized,
       updateJob,
@@ -773,6 +1006,9 @@ export function WorksheetPage() {
                 setDraft={handleDraftFromSheet}
                 displayTitle={String(draft.title ?? ws.title)}
                 err={err}
+                dominantPreviewPageIndex0={dominantPreviewPageIndex0}
+                onGlobalKiRevise={handleGlobalKiRevise}
+                worksheetKiQueueUi={worksheetKiQueueUi}
                 pageLayoutOverflow={pageLayoutOverflow}
                 onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
                 worksheetPageKiUi={worksheetPageKiUi}
@@ -795,6 +1031,9 @@ export function WorksheetPage() {
               setDraft={handleDraftFromSheet}
               displayTitle={String(draft.title ?? ws.title)}
               err={err}
+              dominantPreviewPageIndex0={dominantPreviewPageIndex0}
+              onGlobalKiRevise={handleGlobalKiRevise}
+              worksheetKiQueueUi={worksheetKiQueueUi}
               pageLayoutOverflow={pageLayoutOverflow}
               rootElement="div"
               onRegenerateWorksheetPage={handleRegenerateWorksheetPage}

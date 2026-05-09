@@ -154,11 +154,16 @@ def build_worksheet_creative_html_page_regeneration_prompt(payload: dict) -> str
     instr = (payload.get('teacher_instruction') or '').strip()
     if not instr:
         instr = '*(Keine zusätzliche Lehrer-Anweisung. Bitte Seite inhaltlich und strukturell sinnvoll neu gestalten.)*'
+    style_ref = str(
+        payload.get('other_pages_style_reference')
+        or '(Keine weiteren Seiten mit HTML — kein zusätzlicher Stilabgleich nötig.)'
+    ).strip()
     base = (
         md.replace('{{WORKSHEET_META_JSON}}', _json_block(meta))
         .replace('{{PAGE_INDEX}}', str(payload.get('page_index', 0)))
         .replace('{{PAGE_TOTAL}}', str(payload.get('page_total', 1)))
         .replace('{{OTHER_PAGES_SUMMARY}}', str(payload.get('other_pages_summary') or '(keine weiteren Seiten)'))
+        .replace('{{OTHER_PAGES_STYLE_REFERENCE}}', style_ref)
         .replace('{{CURRENT_PAGE_JSON}}', _json_block(payload.get('current_page') or {}))
         .replace('{{PAGE_SETUP_JSON}}', _json_block(payload.get('page_setup') or {}))
         .replace('{{TEACHER_INSTRUCTION}}', instr)

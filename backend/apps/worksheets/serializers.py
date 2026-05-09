@@ -219,8 +219,8 @@ class WorksheetSerializer(serializers.ModelSerializer):
             if _worksheet_content_is_creative_html(c):
                 c, _ = repair_creative_html_worksheet(c, instance.page_setup)
             else:
-                c, _ = apply_page_coalesce_to_content(c)
-                c, _ = apply_page_overflow_reflow(c)
+                c, _ = apply_page_coalesce_to_content(c, page_setup=instance.page_setup)
+                c, _ = apply_page_overflow_reflow(c, page_setup=instance.page_setup)
             validated_data['content'] = c
         instance = super().update(instance, validated_data)
         if 'library_public' in validated_data:

@@ -100,14 +100,20 @@ class WorksheetPipeline:
         return normalize_page_setup(raw_setup or {})
 
     @staticmethod
-    def repair(content: dict, pattern: WorksheetPattern | None, *, run_reflow: bool) -> tuple[dict, list[str]]:
+    def repair(
+        content: dict,
+        pattern: WorksheetPattern | None,
+        *,
+        run_reflow: bool,
+        page_setup: dict | None = None,
+    ) -> tuple[dict, list[str]]:
         """Idempotente Validierungs- und Reparaturkette."""
         content, errors = validate_and_repair(content, pattern)
         content, repair_notes = repair_incomplete_ai_blocks(content)
-        content, coalesce_notes = apply_page_coalesce_to_content(content)
+        content, coalesce_notes = apply_page_coalesce_to_content(content, page_setup=page_setup)
         notes = list(errors) + repair_notes + coalesce_notes
         if run_reflow:
-            content, reflow_notes = apply_page_overflow_reflow(content)
+            content, reflow_notes = apply_page_overflow_reflow(content, page_setup=page_setup)
             notes.extend(reflow_notes)
         return content, notes
 
@@ -173,7 +179,7 @@ class WorksheetGenerator(WorksheetPipeline):
                 content = self._maybe_review(content)
                 if isinstance(content, dict):
                     content.pop('curriculum_alignment', None)
-                content, notes = self.repair(content, self.pattern, run_reflow=True)
+                content, notes = self.repair(content, self.pattern, run_reflow=True, page_setup=self.page_setup)
             self.apply_inbox_listing_defaults(content, self.payload)
             if creative:
                 render_model = build_creative_html_render_model(content, self.page_setup, self.payload)
@@ -450,7 +456,12 @@ class PageRegenerator(WorksheetPipeline):
                     ),
                     'blocks': blocks,
                 }
-                src, notes = self.repair(src, self.worksheet.pattern, run_reflow=False)
+                src, notes = self.repair(
+                    src,
+                    self.worksheet.pattern,
+                    run_reflow=False,
+                    page_setup=self.worksheet.page_setup,
+                )
             self.attach_validation_errors(src, notes)
             if creative:
                 render_model = build_creative_html_render_model(
@@ -514,7 +525,58 @@ class PageRegenerator(WorksheetPipeline):
         }
         if creative:
             payload['worksheet_render_kind'] = RENDER_KIND_CREATIVE_HTML
+            payload['other_pages_style_reference'] = self._other_pages_style_reference(
+                pages=src['pages'],
+            )
         return payload
+
+    @staticmethod
+    def _creative_sibling_html_excerpt(html: str, *, max_chars: int) -> str:
+        """Kompakte Vorschau: Anfang + Ende, damit Motive (z. B. Grafiken) nicht nur im Mittelteil fehlen."""
+        collapsed = ' '.join((html or '').replace('\n', ' ').split())
+        if len(collapsed) <= max_chars:
+            return collapsed or '(leer)'
+        half = (max_chars - 3) // 2
+        return f'{collapsed[:half]} … {collapsed[-half:]}'
+
+    def _other_pages_style_reference(self, pages: list[dict]) -> str:
+        """Volles page_css je Schwesterseite + HTML-Auszug — für konsistenten Illustrations-/UI-Stil beim Regenerieren."""
+        parts: list[str] = []
+        budget_left = 28_000
+        per_css_cap = 7_500
+        per_html_cap = 2_600
+        for i, page in enumerate(pages):
+            if i == self.page_index:
+                continue
+            if not isinstance(page, dict):
+                continue
+            if not (page.get('html') and not page.get('blocks')):
+                continue
+            label = str(page.get('page_label') or '').strip()
+            css = str(page.get('page_css') or '').strip()
+            if len(css) > per_css_cap:
+                css = f'{css[:per_css_cap]}\n/* … gekürzt … */'
+            raw_html = str(page.get('html') or '')
+            ex = self._creative_sibling_html_excerpt(raw_html, max_chars=per_html_cap)
+            block = (
+                f'### Schwesterseite {i + 1}' + (f' — „{label}“' if label else '')
+                + '\n\n**page_css (verbindliche Stil-Cues: Variablen, Farben, Typo — nicht ignorieren):**\n'
+                + f'```css\n{(css if css.strip() else "(kein page_css)")}\n```\n\n'
+                + '**HTML-Auszug (nur Stil-/Illustrations-Sprache ableiten — Inhalt dieser Seite nicht übernehmen):**\n'
+                + f'```html\n{ex}\n```'
+            )
+            if len(block) > budget_left:
+                block = (
+                    block[: max(120, budget_left - 48)].rstrip()
+                    + '\n…\n**(Abschnitt wegen Kontextgrenze gekürzt.)**'
+                )
+            parts.append(block)
+            budget_left -= len(block) + 2
+            if budget_left < 600:
+                if i < len(pages) - 1:
+                    parts.append('*(Weitere Schwesterseiten ausgelassen — Kontextbudget.)*')
+                break
+        return '\n\n'.join(parts) if parts else ''
 
     def _other_pages_summary(self, pages: list[dict], *, creative: bool = False) -> str:
         lines: list[str] = []
@@ -526,9 +588,11 @@ class PageRegenerator(WorksheetPipeline):
             if creative or ('html' in page and not page.get('blocks')):
                 label = str(page.get('page_label') or '').strip()
                 raw = str(page.get('html') or '')
-                snippet = ' '.join(raw.replace('\n', ' ').split())[:180]
-                if len(raw) > 180:
-                    snippet = snippet + '…'
+                if creative:
+                    snippet = self._creative_sibling_html_excerpt(raw, max_chars=900)
+                else:
+                    collapsed = ' '.join(raw.replace('\n', ' ').split())
+                    snippet = collapsed[:180] + ('…' if len(collapsed) > 180 else '')
                 lines.append(
                     f'Seite {i + 1}: {label + " — " if label else ""}{snippet or "(leer)"}'
                 )

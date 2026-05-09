@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import re
 
+from .page import normalize_page_setup
+
 _PAGE_LABEL_PREFIX_RE = re.compile(
     r'^\s*[Ss]eite\s+\d+\s*(?:(?:von|of)\s*\d+)?\s*(?:[—–\-:]\s*)?',
     re.UNICODE,
@@ -230,9 +232,34 @@ def iter_content_blocks(content: dict):
             yield b
 
 
-# Konservatives Platzbudget ≈ eine A4-Inhaltsfläche (Vorschau nutzt fixe Seitenhöhe; Überlauf clippt sonst).
-PAGE_UNIT_BUDGET = 64.0
-PER_PAGE_OVERHEAD = 12.0
+# Fallback, wenn kein ``page_setup`` vorliegt (entspricht typischem Legacy-A4-Pack).
+_LEGACY_PAGE_UNIT_CEILING = 64.0
+_LEGACY_PER_PAGE_OVERHEAD = 12.0
+PAGE_UNIT_BUDGET = _LEGACY_PAGE_UNIT_CEILING
+PER_PAGE_OVERHEAD = _LEGACY_PER_PAGE_OVERHEAD
+
+
+def resolve_worksheet_pack_budget(page_setup: dict | None) -> tuple[float, float]:
+    """(``per_page_overhead``, ``page_unit_ceiling``) — abgestimmt auf ``content_line_budget``.
+
+    Höhere ``max_line_units_per_page`` → höheres Pack-Ceiling und etwas höherer Overhead-Kopf,
+    damit Reflow/Koalesce mit derselben Logik wie die spätere Html-Ausgabe entscheiden.
+    """
+    normalized = normalize_page_setup(page_setup) if isinstance(page_setup, dict) else normalize_page_setup({})
+    b = normalized.get('content_line_budget')
+    mx = 0
+    try:
+        if isinstance(b, dict):
+            mx = int(float(b.get('max_line_units_per_page') or 0))
+    except (TypeError, ValueError):
+        mx = 0
+    if mx <= 0:
+        mx = 34
+
+    ceiling = mx * 1.95 + 19.0
+    ceiling = min(98.0, max(70.0, ceiling))
+    overhead = min(13.8, max(8.6, ceiling * 0.115))
+    return overhead, ceiling
 
 
 def _estimate_task_item_units(it: dict | str) -> float:
@@ -307,11 +334,11 @@ def estimate_block_units(b: dict) -> float:
     return 4.5
 
 
-def page_total_units(blocks: list) -> float:
-    return PER_PAGE_OVERHEAD + sum(estimate_block_units(b) for b in blocks if isinstance(b, dict))
+def page_total_units(blocks: list, *, overhead: float) -> float:
+    return overhead + sum(estimate_block_units(b) for b in blocks if isinstance(b, dict))
 
 
-def _split_blocks_into_a4_chunks(blocks: list) -> list[list]:
+def _split_blocks_into_a4_chunks(blocks: list, *, overhead: float, ceiling: float) -> list[list]:
     """Reihenfolge beibehalten; task_list bei Bedarf nur nach items splitten (Text 1:1)."""
     remaining = [copy.deepcopy(b) for b in blocks if isinstance(b, dict)]
     out: list[list] = []
@@ -319,7 +346,7 @@ def _split_blocks_into_a4_chunks(blocks: list) -> list[list]:
         chunk: list = []
         while remaining:
             b = remaining[0]
-            if page_total_units(chunk + [b]) <= PAGE_UNIT_BUDGET:
+            if page_total_units(chunk + [b], overhead=overhead) <= ceiling:
                 chunk.append(remaining.pop(0))
                 continue
             if not chunk:
@@ -329,7 +356,7 @@ def _split_blocks_into_a4_chunks(blocks: list) -> list[list]:
                         best = 0
                         for mid in range(len(items) - 1, 0, -1):
                             trial = {**b, 'items': items[:mid]}
-                            if page_total_units([trial]) <= PAGE_UNIT_BUDGET:
+                            if page_total_units([trial], overhead=overhead) <= ceiling:
                                 best = mid
                                 break
                         if best > 0:
@@ -349,11 +376,15 @@ def _split_blocks_into_a4_chunks(blocks: list) -> list[list]:
     return out
 
 
-def reflow_pages_for_a4_budget(pages: list[dict]) -> tuple[list[dict], list[str]]:
+def reflow_pages_for_a4_budget(
+    pages: list[dict],
+    page_setup: dict | None = None,
+) -> tuple[list[dict], list[str]]:
     """
     Jede logische ``pages[]``-Zeile wird in eine oder mehrere A4-taugliche Seiten zerlegt.
     Inhalte (insb. Aufgabentexte) bleiben unverändert; es wird nur umgebrochen.
     """
+    overhead, ceiling = resolve_worksheet_pack_budget(page_setup)
     notes: list[str] = []
     copies = []
     for p in pages:
@@ -368,7 +399,7 @@ def reflow_pages_for_a4_budget(pages: list[dict]) -> tuple[list[dict], list[str]
     out: list[dict] = []
     for pi, page in enumerate(copies):
         label = page['page_label']
-        chunks = _split_blocks_into_a4_chunks(page['blocks'])
+        chunks = _split_blocks_into_a4_chunks(page['blocks'], overhead=overhead, ceiling=ceiling)
         if len(chunks) > 1:
             notes.append(
                 f'layout: Ehemalige Logik-Seite {pi + 1} → {len(chunks)} A4-Seiten '
@@ -381,13 +412,13 @@ def reflow_pages_for_a4_budget(pages: list[dict]) -> tuple[list[dict], list[str]
     return out, notes
 
 
-def apply_page_overflow_reflow(content: dict) -> tuple[dict, list[str]]:
+def apply_page_overflow_reflow(content: dict, page_setup: dict | None = None) -> tuple[dict, list[str]]:
     if not isinstance(content, dict):
         return content, []
     raw = content.get('pages')
     if not isinstance(raw, list) or not raw:
         return content, []
-    new_pages, notes = reflow_pages_for_a4_budget(raw)
+    new_pages, notes = reflow_pages_for_a4_budget(raw, page_setup=page_setup)
     if not new_pages:
         return content, []
     return {**content, 'pages': new_pages}, notes
@@ -400,12 +431,16 @@ def _block_types(blocks: list) -> set:
     return {b.get('type') for b in blocks if isinstance(b, dict)}
 
 
-def coalesce_trivial_multi_page_split(pages: list[dict]) -> tuple[list[dict], list[str]]:
+def coalesce_trivial_multi_page_split(
+    pages: list[dict],
+    page_setup: dict | None = None,
+) -> tuple[list[dict], list[str]]:
     """
     Viele Modelle liefern pages[0] nur mit Einführung und pages[1] mit Aufgaben — im PDF erzwingt
     jede HTML-A4-Seite einen Seitenumbruch, obwohl alles auf ein Blatt passt.
     """
     notes: list[str] = []
+    overhead, ceiling = resolve_worksheet_pack_budget(page_setup)
     if len(pages) < 2:
         return pages, notes
     first_blocks = pages[0].get('blocks') or []
@@ -418,13 +453,13 @@ def coalesce_trivial_multi_page_split(pages: list[dict]) -> tuple[list[dict], li
         return pages, notes
     if not (t1 & _TASK_BLOCK_TYPES):
         return pages, notes
-    if len(first_blocks) > 6:
+    if len(first_blocks) > 10:
         return pages, notes
     non_task_second = [b for b in second_blocks if isinstance(b, dict) and b.get('type') not in _TASK_BLOCK_TYPES]
-    if len(non_task_second) > 2:
+    if len(non_task_second) > 4:
         return pages, notes
     merged_blocks = list(first_blocks) + list(second_blocks)
-    if page_total_units(merged_blocks) > PAGE_UNIT_BUDGET:
+    if page_total_units(merged_blocks, overhead=overhead) > ceiling:
         return pages, notes
     label0 = (pages[0].get('page_label') or '').strip()
     label1 = (pages[1].get('page_label') or '').strip()
@@ -440,7 +475,10 @@ def coalesce_trivial_multi_page_split(pages: list[dict]) -> tuple[list[dict], li
     return merged, notes
 
 
-def apply_page_coalesce_to_content(content: dict) -> tuple[dict, list[str]]:
+def apply_page_coalesce_to_content(
+    content: dict,
+    page_setup: dict | None = None,
+) -> tuple[dict, list[str]]:
     """Schreibt zusammengeführte pages zurück in content (JSON der Lehrkraft bleibt konsistent zur Vorschau)."""
     if not isinstance(content, dict):
         return content, []
@@ -448,19 +486,19 @@ def apply_page_coalesce_to_content(content: dict) -> tuple[dict, list[str]]:
     if not isinstance(raw, list) or len(raw) < 2:
         return content, []
     pages = [{'page_label': p.get('page_label') or '', 'blocks': list(p.get('blocks') or [])} for p in raw]
-    merged, notes = coalesce_trivial_multi_page_split(pages)
+    merged, notes = coalesce_trivial_multi_page_split(pages, page_setup=page_setup)
     if len(merged) == len(pages):
         return content, []
     out = {**content, 'pages': merged}
     return out, notes
 
 
-def normalize_pages(content: dict) -> list[dict]:
+def normalize_pages(content: dict, page_setup: dict | None = None) -> list[dict]:
     raw = content.get('pages')
     if raw:
         pages = [{'page_label': p.get('page_label') or '', 'blocks': list(p.get('blocks') or [])} for p in raw]
-        pages, _ = coalesce_trivial_multi_page_split(pages)
-        pages, _ = reflow_pages_for_a4_budget(pages)
+        pages, _ = coalesce_trivial_multi_page_split(pages, page_setup=page_setup)
+        pages, _ = reflow_pages_for_a4_budget(pages, page_setup=page_setup)
         pages = _normalize_page_labels(pages)
         return pages
     bl = content.get('blocks') or []

@@ -6,7 +6,7 @@ def build_render_model(content: dict, page_setup: dict, pattern=None, request=No
     req=request or {}; creativity=req.get('creativity','balanced')
     template_id=(pattern.blueprint.get('layout',{}) if pattern else {}).get('template_id','classic_linear_v1')
     theme=req.get('theme','neutral')
-    pages=normalize_pages(content)
+    pages=normalize_pages(content, page_setup=page)
     presentation=dict(content.get('presentation') or {})
     if not presentation:
         presentation={

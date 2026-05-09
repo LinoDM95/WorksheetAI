@@ -58,10 +58,13 @@ class PromptLoaderWorksheetTests(SimpleTestCase):
                 'current_page': {'html': '<div class="ws-creative-page-inner"></div>', 'page_css': ''},
                 'worksheet_meta': {'title': 'T'},
                 'other_pages_summary': '',
+                'other_pages_style_reference': 'STYLE_REF_UNIQUE',
                 'teacher_instruction': '',
             },
         )
         self.assertIn('html', out.lower())
+        self.assertIn('STYLE_REF_UNIQUE', out)
+        self.assertNotIn('{{OTHER_PAGES_STYLE_REFERENCE}}', out)
 
     @override_settings(GEMINI_PROMPT_SPLIT_SYSTEM_USER=True)
     def test_gemini_split_returns_system_and_user(self) -> None:

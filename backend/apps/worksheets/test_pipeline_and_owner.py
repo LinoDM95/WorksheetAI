@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.boards.owner import resolve_board_owner
 from apps.worksheets.owner import LOCAL_DEV_USERNAME, resolve_worksheet_owner
-from apps.worksheets.services.pipeline import WorksheetGenerator, WorksheetPipeline, _sanitize_curriculum_alignment
+from apps.worksheets.services.pipeline import (
+    PageRegenerator,
+    WorksheetGenerator,
+    WorksheetPipeline,
+    _sanitize_curriculum_alignment,
+)
 from apps.worksheets.services.page import normalize_page_setup
 
 
@@ -97,6 +104,42 @@ class ResolveWorksheetOwnerDevTests(TestCase):
         User = get_user_model()
         u = User.objects.create_user('real_user', password='x')
         self.assertEqual(resolve_worksheet_owner(u), u)
+
+
+class PageRegeneratorSiblingStyleTests(SimpleTestCase):
+    def test_style_reference_includes_sibling_page_css_and_label(self) -> None:
+        ws = MagicMock()
+        ws.subject = 'M'
+        ws.grade = '3'
+        ws.topic = 't'
+        ws.render_model = {}
+        ws.pattern = MagicMock()
+        pages = [
+            {'html': '<div class="ws-creative-page-inner">ZERO</div>', 'page_css': '.z{color:red}'},
+            {
+                'html': '<div class="ws-creative-page-inner"><svg></svg></div>',
+                'page_css': '.sock-stroke{width:2px}',
+                'page_label': 'Aufgaben',
+            },
+        ]
+        gen = PageRegenerator(ws, page_index=0, teacher_instruction='x')
+        ref = gen._other_pages_style_reference(pages)
+        self.assertIn('Schwesterseite 2', ref)
+        self.assertIn('.sock-stroke', ref)
+
+    def test_style_reference_skips_blocks_only_pages(self) -> None:
+        ws = MagicMock()
+        ws.subject = ws.grade = ws.topic = ''
+        ws.render_model = {}
+        ws.pattern = MagicMock()
+        pages = [
+            {'blocks': [{'type': 't'}]},
+            {'html': '<div>a</div>', 'page_css': 'x{y:1}'},
+        ]
+        gen = PageRegenerator(ws, page_index=0, teacher_instruction='x')
+        ref = gen._other_pages_style_reference(pages)
+        self.assertIn('y:1', ref)
+        self.assertNotIn('Blöcke', ref)
 
 
 @override_settings(API_REQUIRE_AUTH=False)

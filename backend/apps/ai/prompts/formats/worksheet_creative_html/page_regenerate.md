@@ -14,9 +14,17 @@ Du änderst **nur diese eine** Druckseite. **HTML und CSS**, **kein LaTeX**, **k
 
 ## Einheitliches Design mit den übrigen Seiten
 
-- Diese Seite ist Teil **eines** Arbeitsblatts; **Typografie, Farben, Abstände, Kastenstile und Tabellenmuster** sollen mit den **anderen Seiten** **zusammenpassen** — **nicht** ein isoliertes neues „Theme“ erfinden.
-- Nutze die **Kurzüberblick-Zeilen** der anderen Seiten und die **bestehende `page_css`** dieser Seite: bei **kleinen** inhaltlichen Änderungen **`page_css` unverändert lassen**, wenn möglich; bei Layout-Anpassungen nur so viel ändern, dass es **weiterhin** zum Rest des Hefts passt.
-- **Abweichen** nur, wenn die **Lehrer-Anweisung** ausdrücklich ein abweichendes Layout für genau diese Seite verlangt **oder** die Anweisung klar erkennen lässt, dass diese Seite **bewusst** anders gestaltet sein soll (z. B. separates Deckblatt, Lösungsseite im Reduktionsstil).
+- Diese Seite ist Teil **eines** Arbeitsblatts; **Typografie, Farben, Abstände, Kastenstile, Illustrationen und Tabellenmuster** sollen mit den **anderen Seiten** **dieselbe visuelle Handschrift** haben — **nicht** ein isoliertes neues „Theme“ oder optisch höherwertigere Grafiken „nur hier“ erfinden.
+- **Illustrationen** (Socken, Symbole, kleine SVGs, Figuren): **Linienstärke**, **Kanten (eckig/weich)**, **Flächenfüllung vs. nur Outline**, **Detailgrad** — an den **Schwesterseiten** orientieren (siehe Abschnitt „Stil-Referenz“ unten). **Keine** Seite soll wie aus einem anderen Clip-Art-Set wirken.
+- Nutze den **Kurzüberblick**, die **`page_css` der Schwesterseiten** im Referenzblock und die **bestehende `page_css`** dieser Seite: bei **kleinen** inhaltlichen Änderungen **`page_css` möglichst unverändert lassen**; wenn du CSS anpasst: **gleiche Variablen/Selektoren-Logik** wie auf den anderen Seiten.
+- Wenn dieselbe Lehrer-Anweisung mehrere Seiten betrifft (überarbeitete Serie): **gleiche „Qualitäts-Stufe“** halten — **nicht** auf einer Seite plötzlich mehr Schatten, mehr 3D oder mehr Dekoration als auf den anderen, **außer** die Anweisung verlangt genau einen solchen Kontrast für eine bestimmte Seite.
+- **Abweichen** nur, wenn die **Lehrer-Anweisung** ausdrücklich ein abweichendes Layout **für diese Seite** verlangt **oder** ausdrücklich einen **andersartigen visuellen Stil** fordert.
+
+## Tiefe Stil-Referenz: Schwesterseiten (`page_css` + HTML-Auszüge)
+
+Der folgende Block ist **verbindlich zum Abgleich** von CSS und Illustrations-/Layout-Sprache. **HTML der Schwesterseiten nicht** wortgleich kopieren — nur den **gemeinsamen Gestalt-Stil** ableiten und auf **diese** Seite übertragen:
+
+{{OTHER_PAGES_STYLE_REFERENCE}}
 
 ## Meta
 
@@ -51,6 +59,6 @@ Antworte **nur** mit JSON:
 
 - **`page_label`**: optional angepasst (nur falls sinnvoll).
 - **`html`**: Fragment mit Wurzel **`<div class="ws-creative-page-inner">…</div>`**; direkte Kinder weiterhin **`section.ws-flow-item`** pro Block (sofern schon in der Vorlage vorhanden — **gleiche Anzahl** beibehalten, wenn die Anweisung nichts anderes verlangt).
-- **`page_css`**: nur Selektoren unter `.ws-creative-page-inner`; unverändert lassen, wenn die Anweisung kein Layout/CSS betrifft. Wenn du CSS anpasst: Stil **weiterhin** mit den anderen Seiten des Hefts abstimmen (Abschnitt „Einheitliches Design mit den übrigen Seiten“) — kein neues isoliertes Theme.
+- **`page_css`**: nur Selektoren unter `.ws-creative-page-inner`; unverändert lassen, wenn die Anweisung kein Layout/CSS betrifft. Wenn du CSS anpasst: Stil **weiterhin** mit den Schwesterseiten im Block „Stil-Referenz“ und mit „Einheitliches Design …“ abstimmen — **kein** eigenes Premium- oder Comic-Subset nur auf dieser Seite.
 
 Keine `$…$`, kein KaTeX, keine `<script>`.

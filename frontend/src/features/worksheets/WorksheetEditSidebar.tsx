@@ -542,11 +542,142 @@ function DraggableItemRows({
   );
 }
 
+function WorksheetSidebarGlobalKiSection({
+  pageCount,
+  dominantPreviewPageIndex0,
+  onGlobalKiRevise,
+  kiQueueUi,
+}: {
+  pageCount: number;
+  dominantPreviewPageIndex0: number;
+  onGlobalKiRevise?: (instruction: string, scope: 'current_visible_page' | 'all_pages') => Promise<void>;
+  kiQueueUi: { blocking: boolean; queued: boolean };
+}) {
+  const [scope, setScope] = useState<'current_visible_page' | 'all_pages'>('current_visible_page');
+  const [instructionDraft, setInstructionDraft] = useState('');
+  const [lastErr, setLastErr] = useState<string | null>(null);
+
+  if (!onGlobalKiRevise || pageCount === 0) return null;
+
+  const activePageIdx = Math.max(0, Math.min(dominantPreviewPageIndex0, Math.max(0, pageCount - 1)));
+  const activePageHuman = activePageIdx + 1;
+
+  const sendLabel =
+    kiQueueUi.blocking && kiQueueUi.queued
+      ? 'In Warteschlange …'
+      : kiQueueUi.blocking
+        ? 'KI arbeitet …'
+        : 'Überarbeiten';
+
+  const handleSend = () => {
+    if (kiQueueUi.blocking) return;
+    const text = instructionDraft.trim();
+    if (!text) return;
+    setInstructionDraft('');
+    setLastErr(null);
+    const effectiveScope = pageCount <= 1 ? 'all_pages' : scope;
+    void (async () => {
+      try {
+        await onGlobalKiRevise(text, effectiveScope);
+      } catch (e: unknown) {
+        if (isAiGenerationQueueAbortedError(e)) {
+          setLastErr('Aus der Warteschlange entfernt — es wurde nichts geändert.');
+          return;
+        }
+        setLastErr(
+          'Anfrage fehlgeschlagen — siehe Hinweis oben in der Seitenleiste, falls dort ein Fehler steht.',
+        );
+      }
+    })();
+  };
+
+  return (
+    <div
+      className="rounded-xl border border-indigo-200/90 bg-gradient-to-b from-indigo-50/80 to-[var(--color-bg-card)] px-3 py-3 shadow-sm"
+      role="region"
+      aria-label="KI-Überarbeitung für das Arbeitsblatt"
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-950">Mit KI überarbeiten</p>
+      <p className="mt-1 text-[10px] leading-snug text-indigo-950/85">
+        Eine Anweisung für die gleiche Überarbeitungs-Pipeline wie pro Seite unten — wahlweise nur die aktuell gut
+        sichtbare Vorschauseite oder das gesamte Blatt (alle Seiten nacheinander).
+      </p>
+      {pageCount > 1 ? (
+        <fieldset className="mt-2 space-y-1.5 border-0 p-0">
+          <legend className="sr-only">Umfang der KI-Überarbeitung</legend>
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] text-[var(--color-ink-800)]">
+            <input
+              type="radio"
+              name="ws-global-ki-scope"
+              className="mt-0.5"
+              checked={scope === 'current_visible_page'}
+              onChange={() => setScope('current_visible_page')}
+              disabled={kiQueueUi.blocking}
+            />
+            <span>
+              Nur Vorschauseite jetzt&nbsp;
+              <span className="font-semibold tabular-nums">
+                (Seite {activePageHuman} von {pageCount})
+              </span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] text-[var(--color-ink-800)]">
+            <input
+              type="radio"
+              name="ws-global-ki-scope"
+              className="mt-0.5"
+              checked={scope === 'all_pages'}
+              onChange={() => setScope('all_pages')}
+              disabled={kiQueueUi.blocking}
+            />
+            <span>
+              Alle <span className="font-semibold tabular-nums">{pageCount}</span> Seiten
+            </span>
+          </label>
+        </fieldset>
+      ) : (
+        <p className="mt-2 text-[10px] text-[var(--color-ink-500)]">Einzelnes Blatt — die eine Seite wird überarbeitet.</p>
+      )}
+      <label htmlFor="ws-global-ki-instruction" className="field-label sr-only">
+        Anweisung für die KI
+      </label>
+      <textarea
+        id="ws-global-ki-instruction"
+        className="input mt-2 min-h-[4.5rem] text-[12px]"
+        placeholder="z. B. „Alle Aufgaben kürzen“, „einheitlich freundlicher Ton“, „Beispiele anpassen“ …"
+        value={instructionDraft}
+        onChange={(e) => setInstructionDraft(e.target.value)}
+        disabled={kiQueueUi.blocking}
+      />
+      <button
+        type="button"
+        className="btn btn-primary mt-2 w-full gap-1.5 text-[12px] disabled:opacity-60"
+        disabled={kiQueueUi.blocking || !instructionDraft.trim()}
+        onClick={handleSend}
+      >
+        <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {sendLabel}
+      </button>
+      {lastErr ? (
+        <p className="mt-2 text-[10px] text-red-700" role="alert">
+          {lastErr}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 type SidebarProps = {
   draft: Record<string, unknown>;
   setDraft: (fn: SetStateAction<Record<string, unknown>>) => void;
   displayTitle: string;
   err: string;
+  /** 0-basiert: welche A4-Seite in der Vorschau gerade „oben“ liegt (für „nur diese Seite“). */
+  dominantPreviewPageIndex0: number;
+  /** Lehrkraft-Prompt: eine oder alle Seiten (oberer KI-Block). */
+  onGlobalKiRevise?: (instruction: string, scope: 'current_visible_page' | 'all_pages') => Promise<void>;
+  /** Globaler KI-Busy für den oberen Block (und abgestimmt mit der Job-Warteschlange). */
+  worksheetKiQueueUi: { blocking: boolean; queued: boolean };
   /** DOM-Messung A4: Seiten mit Inhaltsüberlauf (nur Bearbeiten). */
   pageLayoutOverflow?: Record<number, { vertical: boolean; horizontal: boolean; px: number }>;
   /** Im ResizableEditorDock kein verschachteltes <aside> */
@@ -562,6 +693,9 @@ export function WorksheetEditSidebar({
   setDraft,
   displayTitle,
   err,
+  dominantPreviewPageIndex0,
+  onGlobalKiRevise,
+  worksheetKiQueueUi,
   pageLayoutOverflow = {},
   rootElement = 'aside',
   onRegenerateWorksheetPage,
@@ -719,6 +853,14 @@ export function WorksheetEditSidebar({
                   .join('; ')}. Bitte kürzen, Zeilen reduzieren oder Inhalt auf die nächste Seite verschieben.`}
               </span>
             </div>
+          ) : null}
+          {onRegenerateWorksheetPage && onGlobalKiRevise ? (
+            <WorksheetSidebarGlobalKiSection
+              pageCount={cPages.length}
+              dominantPreviewPageIndex0={dominantPreviewPageIndex0}
+              onGlobalKiRevise={onGlobalKiRevise}
+              kiQueueUi={worksheetKiQueueUi}
+            />
           ) : null}
         </div>
 
@@ -978,6 +1120,14 @@ export function WorksheetEditSidebar({
                 .join('; ')}. Bitte kürzen, Zeilen reduzieren oder Inhalt auf die nächste Seite verschieben.`}
             </span>
           </div>
+        ) : null}
+        {onRegenerateWorksheetPage && onGlobalKiRevise ? (
+          <WorksheetSidebarGlobalKiSection
+            pageCount={pages.length}
+            dominantPreviewPageIndex0={dominantPreviewPageIndex0}
+            onGlobalKiRevise={onGlobalKiRevise}
+            kiQueueUi={worksheetKiQueueUi}
+          />
         ) : null}
       </div>
 

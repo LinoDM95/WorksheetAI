@@ -3,7 +3,8 @@ export type AiGenerationJobKind =
   | 'board-blocks'
   | 'board-revise'
   | 'worksheet-create'
-  | 'worksheet-page';
+  | 'worksheet-page'
+  | 'worksheet-pages';
 
 export type AiGenerationJobStatus = 'queued' | 'running' | 'success' | 'error';
 

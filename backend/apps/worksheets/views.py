@@ -17,7 +17,7 @@ from .services.creative_html_pipeline import (
     worksheet_pages_are_creative_html_shape,
 )
 from .services.generation import generate_worksheet
-from .services.page_regenerate import regenerate_worksheet_page
+from .services.page_regenerate import regenerate_worksheet_page, regenerate_worksheet_pages
 from .services.page import normalize_page_setup
 from .services.render_model import build_render_model
 from .owner import resolve_worksheet_owner
@@ -79,8 +79,8 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             rm = build_creative_html_render_model(content, ws.page_setup, req)
             return response.Response({'render_model': rm, 'content': content})
 
-        content, _ = apply_page_coalesce_to_content(content)
-        content, _ = apply_page_overflow_reflow(content)
+        content, _ = apply_page_coalesce_to_content(content, page_setup=ws.page_setup)
+        content, _ = apply_page_overflow_reflow(content, page_setup=ws.page_setup)
         rm = build_render_model(content, ws.page_setup, ws.pattern, req)
         return response.Response({'render_model': rm, 'content': content})
 
@@ -120,6 +120,42 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             content, render_model, notes = regenerate_worksheet_page(
                 ws,
                 page_index,
+                instruction,
+                body_content,
+            )
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=400)
+        except Exception as exc:
+            return AIErrorMapper.to_response(exc, detail_prefix='KI-Aufruf fehlgeschlagen')
+        out = {'content': content, 'render_model': render_model}
+        if notes:
+            out['validation_notes'] = notes
+        return response.Response(out)
+
+    @decorators.action(detail=True, methods=['post'], url_path='regenerate-pages')
+    def regenerate_pages_view(self, request, pk=None):
+        enforce_positive_ai_credits_balance(request.user)
+        ws = self.get_object()
+        instruction = request.data.get('teacher_instruction') or ''
+        body_content = request.data.get('content')
+        raw_indices = request.data.get('page_indices')
+        if raw_indices is None:
+            return response.Response({'detail': 'page_indices ist erforderlich.'}, status=400)
+        if not isinstance(raw_indices, list):
+            return response.Response({'detail': 'page_indices muss eine Liste von Zahlen sein.'}, status=400)
+        parsed: list[int] = []
+        for item in raw_indices:
+            try:
+                parsed.append(int(item))
+            except (TypeError, ValueError):
+                return response.Response(
+                    {'detail': 'page_indices enthält ungültige Einträge.'},
+                    status=400,
+                )
+        try:
+            content, render_model, notes = regenerate_worksheet_pages(
+                ws,
+                parsed,
                 instruction,
                 body_content,
             )
