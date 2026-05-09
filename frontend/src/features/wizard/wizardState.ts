@@ -1,9 +1,6 @@
 import type { GenerateWorksheetPayload, PageSetup } from '../../types';
 
 export type WizardOrientation = 'portrait' | 'landscape';
-export type WizardColorMode = 'sw' | 'print' | 'dezent' | 'bunt';
-export type WizardDecoLevel = 'keine' | 'leicht' | 'mittel' | 'kreativ';
-export type WizardDesignStyle = 'klassisch' | 'modern' | 'grundschule' | 'akademisch' | 'kreativ';
 export type WizardRenderer = 'auto' | 'html' | 'latex';
 
 export type WorksheetWizardMode = 'standard' | 'creative';
@@ -49,6 +46,8 @@ export const audienceDisplayLabel = (id: AudienceId): string => {
 export type WizardState = {
   /* Step 1 — Modus */
   worksheetMode: WorksheetWizardMode;
+  /** Nur Kreativ: fester Kopfbereich (Titel/Untertitel) oberhalb des KI‑HTML — Standard eingeschaltet. */
+  creativeShowSheetHeader: boolean;
 
   /* Step 2 — Inhalt */
   topic: string;
@@ -71,14 +70,13 @@ export type WizardState = {
   margins: { top: number; right: number; bottom: number; left: number };
   marginLinked: boolean;
   marginValue: number;
-  colorMode: WizardColorMode;
-  decoLevel: WizardDecoLevel;
-  designStyle: WizardDesignStyle;
+  /** Nur Standardmodus — Steuerung der späteren Darstellung; Kreativ immer HTML. */
   renderer: WizardRenderer;
 };
 
 export const INITIAL_WIZARD_STATE: WizardState = {
   worksheetMode: 'standard',
+  creativeShowSheetHeader: true,
   topic: '',
   subject: '',
   gradeFrom: '',
@@ -97,9 +95,6 @@ export const INITIAL_WIZARD_STATE: WizardState = {
   margins: { top: 12, right: 12, bottom: 12, left: 12 },
   marginLinked: true,
   marginValue: 12,
-  colorMode: 'dezent',
-  decoLevel: 'leicht',
-  designStyle: 'modern',
   renderer: 'auto',
 };
 
@@ -233,7 +228,7 @@ export const buildGeneratePayload = (state: WizardState): GenerateWorksheetPaylo
   const difficulty = state.difficulty.trim() || 'standard';
   const worksheetType = state.worksheetType.trim() || 'practice';
   const language = state.language.trim() || 'de';
-  return {
+  const payload: GenerateWorksheetPayload = {
     worksheet_mode: mode,
     topic: state.topic,
     subject_name: state.subject,
@@ -248,17 +243,14 @@ export const buildGeneratePayload = (state: WizardState): GenerateWorksheetPaylo
     time_budget_minutes,
     differentiation: state.differentiation,
     additional_constraints: state.additionalConstraints,
-    creativity:
-      state.decoLevel === 'kreativ'
-        ? 'balanced'
-        : state.decoLevel === 'mittel'
-          ? 'balanced'
-          : 'minimal_professional',
+    creativity: 'balanced',
     theme: 'minimal',
     page_setup: buildPageSetup(state),
     use_pattern_matching: mode === 'standard',
     ...(learningGoal ? { learning_goal: learningGoal } : {}),
     ...(schoolForm ? { school_form: schoolForm } : {}),
     ...(federalState ? { federal_state: federalState } : {}),
+    ...(mode === 'creative' ? { creative_show_sheet_header: state.creativeShowSheetHeader } : {}),
   };
+  return payload;
 };

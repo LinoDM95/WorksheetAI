@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { IconButton } from '../../components/ui/IconButton';
+import { isAiGenerationQueueAbortedError } from '../../components/ai-generation/generationQueue';
 import {
   appendDraftPage,
   createDefaultWorksheetBlock,
@@ -421,6 +422,7 @@ function WorksheetKiEditPanel({
   pageNumber1Based,
   open,
   busy,
+  busyQueued,
   input,
   onInputChange,
   messages,
@@ -429,12 +431,16 @@ function WorksheetKiEditPanel({
   pageNumber1Based: number;
   open: boolean;
   busy: boolean;
+  /** Wenn true und `busy`: Job noch in der globalen KI-Warteschlange (nicht aktiv am Netzwerk). */
+  busyQueued?: boolean;
   input: string;
   onInputChange: (v: string) => void;
   messages: { role: 'user' | 'assistant'; text: string }[];
   onSend: () => void;
 }) {
   if (!open) return null;
+  const sendLabel =
+    busy && busyQueued ? 'In Warteschlange …' : busy ? 'KI arbeitet …' : 'Anweisung senden';
   return (
     <div
       className="mt-2 rounded-xl border border-indigo-200/90 bg-indigo-50/50 px-3 py-3"
@@ -443,8 +449,9 @@ function WorksheetKiEditPanel({
     >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-900">KI-Chat · nur diese Seite</p>
       <p className="mt-1 text-[10px] leading-snug text-indigo-950/85">
-        Beschreib präzise, was geändert werden soll. Du kannst nacheinander mehrere Anweisungen senden — der Verlauf
-        bleibt hier sichtbar.
+        Beschreib präzise, was geändert werden soll. Pro Seite kannst du eigene Anweisungen losschicken; mehrere
+        Anfragen laufen automatisch nacheinander in der App-Warteschlange. Auf dieser Seite bleiben der Chat-Verlauf
+        und Hinweise sichtbar.
       </p>
       <div className="mt-2 max-h-36 space-y-2 overflow-y-auto rounded-lg border border-white/90 bg-white/80 px-2 py-2">
         {messages.length === 0 ? (
@@ -481,7 +488,7 @@ function WorksheetKiEditPanel({
         disabled={busy || !input.trim()}
         onClick={onSend}
       >
-        {busy ? 'KI arbeitet…' : 'Anweisung senden'}
+        {sendLabel}
       </button>
     </div>
   );
@@ -546,7 +553,8 @@ type SidebarProps = {
   rootElement?: 'aside' | 'div';
   /** Eine Seite (Standard oder Kreativ HTML) mit KI nachbearbeiten — Anweisung der Lehrkraft. */
   onRegenerateWorksheetPage?: (pageIndex: number, teacherInstruction: string) => Promise<void>;
-  regeneratePageBusy?: boolean;
+  /** KI-Busy nur für die jeweilige Seite (andere Seiten bleiben bedienbar; globale Warteschlange im Dock). */
+  worksheetPageKiUi?: (pageIndex: number) => { blocking: boolean; queued: boolean };
 };
 
 export function WorksheetEditSidebar({
@@ -557,7 +565,7 @@ export function WorksheetEditSidebar({
   pageLayoutOverflow = {},
   rootElement = 'aside',
   onRegenerateWorksheetPage,
-  regeneratePageBusy = false,
+  worksheetPageKiUi,
 }: SidebarProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -578,7 +586,8 @@ export function WorksheetEditSidebar({
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleKiSend = (pageIndex: number) => {
-    if (!onRegenerateWorksheetPage || regeneratePageBusy) return;
+    const ui = worksheetPageKiUi?.(pageIndex);
+    if (!onRegenerateWorksheetPage || ui?.blocking) return;
     const text = (kiDraft[pageIndex] ?? '').trim();
     if (!text) return;
     setKiChatLog((prev) => ({
@@ -593,7 +602,20 @@ export function WorksheetEditSidebar({
           ...prev,
           [pageIndex]: [...(prev[pageIndex] ?? []), { role: 'assistant', text: 'Änderungen wurden übernommen.' }],
         }));
-      } catch {
+      } catch (e: unknown) {
+        if (isAiGenerationQueueAbortedError(e)) {
+          setKiChatLog((prev) => ({
+            ...prev,
+            [pageIndex]: [
+              ...(prev[pageIndex] ?? []),
+              {
+                role: 'assistant',
+                text: 'Aus der Warteschlange entfernt — die Seite wurde nicht geändert.',
+              },
+            ],
+          }));
+          return;
+        }
         setKiChatLog((prev) => ({
           ...prev,
           [pageIndex]: [
@@ -848,7 +870,8 @@ export function WorksheetEditSidebar({
                 <WorksheetKiEditPanel
                   pageNumber1Based={pageIndex + 1}
                   open={Boolean(kiPanelOpen[pageIndex])}
-                  busy={regeneratePageBusy}
+                  busy={Boolean(worksheetPageKiUi?.(pageIndex)?.blocking)}
+                  busyQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
                   input={kiDraft[pageIndex] ?? ''}
                   onInputChange={(v) => setKiDraft((p) => ({ ...p, [pageIndex]: v }))}
                   messages={kiChatLog[pageIndex] ?? []}
@@ -1304,7 +1327,8 @@ export function WorksheetEditSidebar({
               <WorksheetKiEditPanel
                 pageNumber1Based={pageIndex + 1}
                 open={Boolean(kiPanelOpen[pageIndex])}
-                busy={regeneratePageBusy}
+                busy={Boolean(worksheetPageKiUi?.(pageIndex)?.blocking)}
+                busyQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
                 input={kiDraft[pageIndex] ?? ''}
                 onInputChange={(v) => setKiDraft((p) => ({ ...p, [pageIndex]: v }))}
                 messages={kiChatLog[pageIndex] ?? []}

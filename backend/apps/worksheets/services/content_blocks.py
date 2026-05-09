@@ -49,6 +49,12 @@ def _normalize_page_labels(pages: list[dict]) -> list[dict]:
         out.append(new_p)
     return out
 
+
+def normalize_multipage_page_labels(pages: list[dict]) -> list[dict]:
+    """Öffentliche Hilfe: konsistente „Seite k von N“ in ``page_label`` (Standard- + Kreativ-Reflow)."""
+    return _normalize_page_labels(pages)
+
+
 def repair_incomplete_ai_blocks(content: dict) -> tuple[dict, list[str]]:
     """Bereinigt Lücken nach der KI-Erzeugung.
 

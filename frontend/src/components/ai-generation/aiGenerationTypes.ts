@@ -12,6 +12,10 @@ export type AiGenerationJob = {
   kind: AiGenerationJobKind;
   title: string;
   subtitle?: string;
+  /** z. B. Arbeitsblatt-ID bei `worksheet-page` — für Busy-State pro Ressource */
+  resourceId?: string;
+  /** 0-basiert bei `worksheet-page` — Busy-State nur für diese Seite */
+  pageIndex?: number;
   status: AiGenerationJobStatus;
   phaseLabel?: string;
   /** 0–100 wenn bekannt; `null` = unbestimmt (nur Spinner) */
@@ -27,6 +31,8 @@ export type AiGenerationJobStartInput = {
   kind: AiGenerationJobKind;
   title: string;
   subtitle?: string;
+  resourceId?: string;
+  pageIndex?: number;
 };
 
 export type AiGenerationCompleteOptions = {

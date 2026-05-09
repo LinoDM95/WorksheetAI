@@ -116,6 +116,8 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
       kind: input.kind,
       title: input.title,
       subtitle: input.subtitle,
+      ...(input.resourceId ? { resourceId: input.resourceId } : {}),
+      ...(input.pageIndex !== undefined ? { pageIndex: input.pageIndex } : {}),
       status: 'queued',
       phaseLabel: 'In der Warteschlange …',
       progressPercent: null,

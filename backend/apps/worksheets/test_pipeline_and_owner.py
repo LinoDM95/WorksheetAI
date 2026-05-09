@@ -42,6 +42,15 @@ class NormalizePageSetupTests(TestCase):
         self.assertEqual(n['orientation'], 'landscape')
         self.assertGreater(n['safe_area']['width_mm'], 250)
 
+    def test_line_budget_include_app_header_false(self) -> None:
+        base = normalize_page_setup({})
+        off = normalize_page_setup({'margins_mm': base['margins_mm'], 'line_budget_include_app_header': False})
+        self.assertFalse(off['line_budget_include_app_header'])
+        self.assertLess(
+            float(base['content_line_budget']['usable_body_height_mm']),
+            float(off['content_line_budget']['usable_body_height_mm']),
+        )
+
 
 class WorksheetPipelineRepairHookTests(TestCase):
     def test_attach_validation_errors_sets_list(self) -> None:

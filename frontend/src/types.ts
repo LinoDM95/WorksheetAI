@@ -1,4 +1,4 @@
-export type PageSetup={format:'A4';orientation:'portrait'|'landscape';unit:'mm';width_mm:number;height_mm:number;margins_mm:{top:number;right:number;bottom:number;left:number};safe_area:{x_mm:number;y_mm:number;width_mm:number;height_mm:number};renderer:'html'};
+export type PageSetup={format:'A4';orientation:'portrait'|'landscape';unit:'mm';width_mm:number;height_mm:number;margins_mm:{top:number;right:number;bottom:number;left:number};safe_area:{x_mm:number;y_mm:number;width_mm:number;height_mm:number};renderer:'html';line_budget_include_app_header?:boolean};
 
 export type CurriculumUsagePanelPayload =
   | {
@@ -80,6 +80,8 @@ export type Pattern={
 export type GenerateWorksheetPayload={
   /** Standard: Lehrplan-/Vorlagen-Pipeline; Kreativ: freiere HTML/CSS-Gestaltung, kein Pattern-Match */
   worksheet_mode?:'standard'|'creative';
+  /** Kreativ: fester App-Kopfbereich (Titel/Untertitel über dem HTML). Standard true. */
+  creative_show_sheet_header?:boolean;
   topic:string;subject_name:string;grade_value:number|null;
   /** Optional, z. B. „8–10“ für die KI; `grade_value` bleibt ein repräsentativer Punkt für DB/Audience. */
   grade_band?:string|null;

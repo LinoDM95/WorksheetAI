@@ -838,7 +838,9 @@ function CreativeHtmlShadowBody({
     }
     const style = document.createElement('style');
     style.textContent =
-      ':host{display:block;min-height:0;flex:1 1 auto;width:100%;color:#0f172a;font-size:14px;line-height:1.45;}' +
+      ':host{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;width:100%;color:#0f172a;font-size:14px;line-height:1.45;}' +
+      '.ws-creative-mount{display:flex;flex-direction:column;min-height:0;flex:1 1 auto;width:100%;box-sizing:border-box;}' +
+      '.ws-creative-page-inner{flex:1 1 auto;min-height:0;max-height:100%;width:100%;box-sizing:border-box;overflow:hidden;}' +
       (pageCss || '');
     sr.appendChild(style);
     const mount = document.createElement('div');
@@ -867,6 +869,7 @@ function A4PageShell({
   editCtx,
   onPageLayoutOverflow,
   creativeMode = false,
+  showCreativeSheetHeader = true,
 }: {
   page: { page_label?: string; blocks?: any[]; html?: string; page_css?: string };
   pageIndex: number;
@@ -878,6 +881,7 @@ function A4PageShell({
   editCtx?: ContentDraftEdit;
   onPageLayoutOverflow?: (info: PageLayoutOverflowInfo) => void;
   creativeMode?: boolean;
+  showCreativeSheetHeader?: boolean;
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const pageBodyRef = useRef<HTMLDivElement>(null);
@@ -898,6 +902,7 @@ function A4PageShell({
       return JSON.stringify({
         i: pageIndex,
         creative: true,
+        hdr: showCreativeSheetHeader,
         html: page.html || '',
         page_css: page.page_css || '',
         page_label: (page.page_label || '').trim(),
@@ -916,7 +921,7 @@ function A4PageShell({
       })),
       edit: !!editCtx,
     });
-  }, [creativeMode, page.html, page.page_css, page.page_label, page.blocks, pageIndex, editCtx]);
+  }, [creativeMode, page.html, page.page_css, page.page_label, page.blocks, pageIndex, editCtx, showCreativeSheetHeader]);
 
   const overflowEffectKey = useMemo(() => {
     if (!onPageLayoutOverflow) return '';
@@ -924,6 +929,7 @@ function A4PageShell({
       return JSON.stringify({
         i: pageIndex,
         creative: true,
+        hdr: showCreativeSheetHeader,
         htmlLen: (page.html || '').length,
         cssLen: (page.page_css || '').length,
         edit: !!editCtx,
@@ -970,6 +976,7 @@ function A4PageShell({
     page.page_label,
     rm.presentation?.text_scale,
     worksheet.subject,
+    showCreativeSheetHeader,
   ]);
 
   useLayoutEffect(() => {
@@ -1082,6 +1089,7 @@ function A4PageShell({
           boxSizing: 'border-box',
         }}
       >
+        {showCreativeSheetHeader ? (
         <header className="mb-5 shrink-0 border-b border-slate-900 pb-3">
           {editCtx && pageIndex === 0 ? (
             <>
@@ -1122,7 +1130,8 @@ function A4PageShell({
               ) : null}
             </>
           )}
-    </header>
+        </header>
+        ) : null}
         <div ref={pageBodyRef} className="worksheet-page-body min-h-0 flex flex-1 flex-col">
           {creativeMode ? (
             <CreativeHtmlShadowBody
@@ -1221,6 +1230,7 @@ export function A4WorksheetRenderer({
       (contentDraft != null &&
         isCreativeHtmlWorksheetContent(contentDraft as Record<string, unknown>)),
   );
+  const showCreativeSheetHeader = !isCreativeHtml || rm.show_sheet_header !== false;
   const pages =
     Array.isArray(rm.pages) && rm.pages.length > 0
       ? rm.pages
@@ -1303,6 +1313,7 @@ export function A4WorksheetRenderer({
             editCtx={editCtx}
             onPageLayoutOverflow={onPageLayoutOverflow}
             creativeMode={isCreativeHtml}
+            showCreativeSheetHeader={showCreativeSheetHeader}
           />
         ))}
  </div>

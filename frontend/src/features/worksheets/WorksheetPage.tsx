@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
 import axios from 'axios';
 import { api } from '../../lib/api';
 import { cn } from '../../lib/cn';
@@ -37,6 +38,8 @@ export function WorksheetPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { startJob, updateJob, completeJob, failJob, runSerialized, jobs } = useAiGenerationJobs();
+  const worksheetIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (id) clearPendingFirstOpenWorksheet(id);
@@ -57,7 +60,35 @@ export function WorksheetPage() {
   const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
   const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
   const [staffLibBusy, setStaffLibBusy] = useState(false);
-  const [regeneratePageBusy, setRegeneratePageBusy] = useState(false);
+
+  useEffect(() => {
+    worksheetIdRef.current = id;
+  }, [id]);
+
+  const draftRef = useRef<Record<string, unknown> | null>(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const worksheetPageKiUi = useMemo(() => {
+    if (!id) {
+      return (_pageIdx: number): { blocking: boolean; queued: boolean } => ({
+        blocking: false,
+        queued: false,
+      });
+    }
+    return (pageIdx: number): { blocking: boolean; queued: boolean } => {
+      const hit = jobs.find(
+        (j) =>
+          j.kind === 'worksheet-page' &&
+          j.resourceId === id &&
+          j.pageIndex === pageIdx &&
+          (j.status === 'queued' || j.status === 'running'),
+      );
+      if (!hit) return { blocking: false, queued: false };
+      return { blocking: true, queued: hit.status === 'queued' };
+    };
+  }, [id, jobs]);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -288,37 +319,125 @@ export function WorksheetPage() {
 
   const handleRegenerateWorksheetPage = useCallback(
     async (pageIndex: number, teacherInstruction: string) => {
-      if (!id || !draft || ws?.viewer_is_owner === false) return;
+      if (!id || !draft || !ws || ws.viewer_is_owner === false) return;
       const instruction = teacherInstruction.trim();
       if (!instruction) {
         setErr('Bitte beschreibe, was die KI ändern soll.');
         return;
       }
-      setRegeneratePageBusy(true);
-      setErr('');
-      try {
-        const r = await api.post(`/worksheets/${id}/regenerate-page/`, {
-          page_index: pageIndex,
-          teacher_instruction: instruction,
-          content: draft,
+
+      const targetWorksheetId = id;
+      const titleSnippet = (ws.title || '').trim() || 'Arbeitsblatt';
+      const jid = startJob({
+        kind: 'worksheet-page',
+        title: 'Seite wird überarbeitet',
+        subtitle: `${titleSnippet} · Seite ${pageIndex + 1}`,
+        resourceId: targetWorksheetId,
+        pageIndex,
+      });
+
+      await runSerialized(jid, async () => {
+        updateJob(jid, { phaseLabel: 'KI überarbeitet die Seite …', progressPercent: 8 });
+        setErr('');
+
+        const cur = draftRef.current;
+        if (!cur || typeof cur !== 'object') {
+          const msg = 'Inhalt konnte nicht für die Überarbeitung gelesen werden.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+          throw new Error(msg);
+        }
+
+        let contentSnapshot: Record<string, unknown>;
+        try {
+          contentSnapshot = JSON.parse(JSON.stringify(cur)) as Record<string, unknown>;
+        } catch {
+          const msg = 'Inhalt konnte nicht für die Überarbeitung kopiert werden.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+          throw new Error(msg);
+        }
+
+        let r;
+        try {
+          r = await api.post(`/worksheets/${targetWorksheetId}/regenerate-page/`, {
+            page_index: pageIndex,
+            teacher_instruction: instruction,
+            content: contentSnapshot,
+          });
+        } catch (e: unknown) {
+          let msg = 'Seite konnte nicht überarbeitet werden.';
+          if (axios.isAxiosError(e)) {
+            const d = e.response?.data as { detail?: string } | undefined;
+            if (typeof d?.detail === 'string') msg = d.detail;
+          }
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setErr(msg);
+          }
+          throw e;
+        }
+
+        updateJob(jid, { progressPercent: 85 });
+        const nextContent = normalizeContentForEdit(r.data.content as Record<string, unknown>);
+
+        try {
+          const patchResp = await api.patch<Worksheet>(`/worksheets/${targetWorksheetId}/`, {
+            content: nextContent,
+          });
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setWs(patchResp.data);
+            setDraft(normalizeContentForEdit(patchResp.data.content as Record<string, unknown>));
+            setPreviewRm((patchResp.data.render_model || null) as Record<string, unknown> | null);
+            setPageLayoutOverflow({});
+            clearDraftUndoStack();
+          } else {
+            void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+          }
+        } catch (e: unknown) {
+          const msg =
+            'Überarbeitung war erfolgreich, Speichern fehlgeschlagen. Bitte Seite neu laden und erneut speichern.';
+          failJob(jid, msg);
+          if (worksheetIdRef.current === targetWorksheetId) {
+            setDraft(nextContent);
+            if (r.data.render_model && typeof r.data.render_model === 'object') {
+              setPreviewRm(r.data.render_model as Record<string, unknown>);
+            }
+            setErr(msg);
+          }
+          throw e;
+        }
+
+        const stillHere = worksheetIdRef.current === targetWorksheetId;
+        completeJob(jid, {
+          successMessage: stillHere
+            ? 'Seite überarbeitet und gespeichert.'
+            : 'Seite überarbeitet und gespeichert. Das Arbeitsblatt liegt im Aktivitätsbereich unter „Öffnen“.',
+          ...(!stillHere
+            ? {
+                primaryAction: {
+                  label: 'Arbeitsblatt öffnen',
+                  to: `/app/worksheets/${targetWorksheetId}`,
+                },
+              }
+            : {}),
         });
-        setDraft(normalizeContentForEdit(r.data.content as Record<string, unknown>));
-        if (r.data.render_model && typeof r.data.render_model === 'object') {
-          setPreviewRm(r.data.render_model as Record<string, unknown>);
-        }
-      } catch (e: unknown) {
-        let msg = 'Seite konnte nicht überarbeitet werden.';
-        if (axios.isAxiosError(e)) {
-          const d = e.response?.data as { detail?: string } | undefined;
-          if (typeof d?.detail === 'string') msg = d.detail;
-        }
-        setErr(msg);
-        throw e;
-      } finally {
-        setRegeneratePageBusy(false);
-      }
+
+        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+      });
     },
-    [id, draft, ws?.viewer_is_owner],
+    [
+      ws,
+      id,
+      draft,
+      startJob,
+      runSerialized,
+      updateJob,
+      completeJob,
+      failJob,
+      queryClient,
+      clearDraftUndoStack,
+    ],
   );
 
   const handlePageLayoutOverflow = useCallback((info: PageLayoutOverflowInfo) => {
@@ -621,7 +740,7 @@ export function WorksheetPage() {
             >
               <div className="print:block">
                 <div className="flex min-h-0 min-w-0 justify-center print:block print:w-full print:justify-start">
-                  <div className="w-full max-w-full shrink-0 overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
+                  <div className="w-full max-w-full shrink-0 overflow-x-hidden overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
                     <A4WorksheetRenderer
                       worksheet={viewWorksheet}
                       showGuide={false}
@@ -656,7 +775,7 @@ export function WorksheetPage() {
                 err={err}
                 pageLayoutOverflow={pageLayoutOverflow}
                 onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
-                regeneratePageBusy={regeneratePageBusy}
+                worksheetPageKiUi={worksheetPageKiUi}
               />
             </div>
           ) : null}
@@ -679,7 +798,7 @@ export function WorksheetPage() {
               pageLayoutOverflow={pageLayoutOverflow}
               rootElement="div"
               onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
-              regeneratePageBusy={regeneratePageBusy}
+              worksheetPageKiUi={worksheetPageKiUi}
             />
           }
         />

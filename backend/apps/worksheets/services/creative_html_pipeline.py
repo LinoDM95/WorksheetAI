@@ -5,9 +5,31 @@ from typing import Any
 
 from apps.boards.services.free_html_sanitize import sanitize_css, sanitize_html_fragment
 
+from .creative_html_reflow import apply_creative_reflow_if_needed
 from .page import normalize_page_setup
 
 RENDER_KIND_CREATIVE_HTML = 'html-a4-creative-v1'
+
+
+def _coerce_header_flag(req: dict[str, Any] | None) -> bool:
+    """App-Kopfzeile (Titel/Untertitel) im Renderer; Standard an."""
+    if not isinstance(req, dict):
+        return True
+    for key in ('show_sheet_header', 'creative_show_sheet_header'):
+        if key not in req:
+            continue
+        v = req.get(key)
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)) and v in (0, 1):
+            return bool(v)
+        s = str(v).strip().lower()
+        if s in ('0', 'false', 'no', 'off'):
+            return False
+        if s in ('1', 'true', 'yes', 'on'):
+            return True
+        return True
+    return True
 
 
 def repair_creative_html_worksheet(content: dict[str, Any], page_setup: dict) -> tuple[dict[str, Any], list[str]]:
@@ -57,6 +79,10 @@ def repair_creative_html_worksheet(content: dict[str, Any], page_setup: dict) ->
         notes.append('Sanitisierung ergab keine Seiten — Notizseite.')
 
     out['pages'] = sanitized_pages
+    tmp = {**out, 'pages': list(sanitized_pages)}
+    tmp, reflow_notes = apply_creative_reflow_if_needed(tmp, normalize_page_setup(page_setup))
+    out['pages'] = tmp['pages']
+    notes.extend(reflow_notes)
     out['render_kind'] = RENDER_KIND_CREATIVE_HTML
     title = str(out.get('title') or '').strip()
     out['title'] = title if title else 'Arbeitsblatt'
@@ -65,7 +91,6 @@ def repair_creative_html_worksheet(content: dict[str, Any], page_setup: dict) ->
     if not isinstance(out.get('solutions'), list):
         out['solutions'] = []
 
-    _ = page_setup
     return out, notes
 
 
@@ -76,6 +101,7 @@ def build_creative_html_render_model(
 ) -> dict[str, Any]:
     req = request_meta or {}
     page = normalize_page_setup(page_setup)
+    show_sheet_header = _coerce_header_flag(req)
     pages_out: list[dict[str, Any]] = []
     for p in content.get('pages') or []:
         if not isinstance(p, dict):
@@ -96,6 +122,7 @@ def build_creative_html_render_model(
         'solutions': content.get('solutions') or [],
         'theme': req.get('theme', 'neutral'),
         'creativity': req.get('creativity', 'balanced'),
+        'show_sheet_header': show_sheet_header,
         'tokens': {
             'palette': {
                 'primary': '#111827',

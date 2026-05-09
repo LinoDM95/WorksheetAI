@@ -49,6 +49,22 @@ from .validators import validate_and_repair
 logger = logging.getLogger(__name__)
 
 
+def _payload_bool(payload: dict[str, Any], key: str, *, default: bool = True) -> bool:
+    if key not in payload:
+        return default
+    v = payload.get(key)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return bool(v)
+    s = str(v).strip().lower()
+    if s in ('0', 'false', 'no', 'off'):
+        return False
+    if s in ('1', 'true', 'yes', 'on'):
+        return True
+    return default
+
+
 def _sanitize_curriculum_alignment(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -130,14 +146,22 @@ class WorksheetGenerator(WorksheetPipeline):
         from apps.boards.services.pipeline_ai_meter import generation_meter_context
 
         self._resolve_pattern()
-        self.page_setup = self.normalize_setup(self.payload.get('page_setup'))
+        creative_mode = (self.payload.get('worksheet_mode') or '').strip().lower() == 'creative'
+        raw_ps: dict[str, Any] = dict(self.payload.get('page_setup') or {})
+        if creative_mode:
+            raw_ps['line_budget_include_app_header'] = _payload_bool(
+                self.payload,
+                'creative_show_sheet_header',
+                default=True,
+            )
+        self.page_setup = self.normalize_setup(raw_ps)
         self._resolve_curriculum_match()
         with generation_meter_context(user=self.user) as meter:
             content = self._generate_with_provider()
             curriculum_alignment: dict[str, Any] = {}
             if isinstance(content, dict):
                 curriculum_alignment = _sanitize_curriculum_alignment(content.pop('curriculum_alignment', None))
-            creative = (self.payload.get('worksheet_mode') or '').strip().lower() == 'creative'
+            creative = creative_mode
             if creative:
                 if isinstance(content, dict):
                     content.pop('curriculum_alignment', None)
@@ -467,6 +491,7 @@ class PageRegenerator(WorksheetPipeline):
         return {
             'theme': rm.get('theme', 'neutral'),
             'creativity': rm.get('creativity', 'balanced'),
+            'show_sheet_header': rm.get('show_sheet_header', True),
         }
 
     def _build_payload(self, src: dict, old_page: dict, *, creative: bool = False) -> dict[str, Any]:
@@ -477,6 +502,7 @@ class PageRegenerator(WorksheetPipeline):
                 'subject': self.worksheet.subject,
                 'grade': self.worksheet.grade,
                 'topic': self.worksheet.topic,
+                'show_sheet_header': (self.worksheet.render_model or {}).get('show_sheet_header', True),
             },
             'page_index': self.page_index,
             'page_total': len(src['pages']),

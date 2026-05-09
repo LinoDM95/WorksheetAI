@@ -31,10 +31,17 @@ def _f(name: str, default: float) -> float:
         return float(default)
 
 
-def compute_content_line_budget(page_setup: dict | None) -> dict:
+def compute_content_line_budget(
+    page_setup: dict | None,
+    *,
+    app_sheet_header: bool = True,
+) -> dict:
     """
     Nutzbare Höhe = safe_area.height − reservierter Kopf − reservierter Fuß (außerhalb des Fließtextes).
     Zeilenkapazität = nutzbare Höhe / \\baselineskip (LaTeX-nah, konfigurierbar in pt).
+
+    ``app_sheet_header``: Wenn False (Kreativmodus ohne App-Kopfzeile), entfällt die
+    Kopf-Reserve — die KI darf die volle Breite/Höhe des Seitenkörpers nutzen.
     """
     ps = page_setup if isinstance(page_setup, dict) else {}
     safe = ps.get('safe_area') if isinstance(ps.get('safe_area'), dict) else {}
@@ -50,7 +57,7 @@ def compute_content_line_budget(page_setup: dict | None) -> dict:
         bs_pt = 13.6
     bs_mm = bs_pt * _MM_PER_PT
 
-    head = _f('WORKSHEET_LINE_BUDGET_HEADER_RESERVE_MM', 26.0)
+    head = _f('WORKSHEET_LINE_BUDGET_HEADER_RESERVE_MM', 26.0) if app_sheet_header else 0.0
     foot = _f('WORKSHEET_LINE_BUDGET_FOOTER_RESERVE_MM', 16.0)
     head = max(0.0, head)
     foot = max(0.0, foot)

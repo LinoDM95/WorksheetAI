@@ -4,12 +4,19 @@ Dieser Auftrag läuft im **Kreativmodus**. Zusätzlich zu allen Pflichtregeln ob
 
 ### A4-Disziplin (Orientierung wie „feste Bühne“ bei interaktiven Boards)
 
-Die App rendert **eine physische A4-Seite pro `pages[n]`** — vergleichbar mit einer festen 1280×720-Bühne beim Smartboard: Inhalt darf **nicht** so geplant werden, dass er am unteren oder rechten Rand **abgeschnitten** wirkt oder nur „digital weiterscrollbar“ wäre.
+Die App rendert **eine physische A4-Seite pro `pages[n]`** — vergleichbar mit einer festen 1280×720-Bühne beim Smartboard: Inhalt darf **nicht** so geplant werden, dass er am unteren oder rechten Rand **abgeschnitten** wirkt oder nur „digital weiterscrollbar“ wäre. **`html` / `page_css` dürfen keine Scrollbars innerhalb dieser Seitenfläche erzeugen** (`overflow` nicht `auto`/`scroll` auf Seitencontainern).
 
 - **`page_setup` / `content_line_budget`:** `usable_body_height_mm`, `max_line_units_per_page`, `effective_max` (über `presentation_scale_hint`) **strikt** einhalten — wie im Hauptprompt beschrieben. Kreativ heißt **nicht**: durch extrem kleine Skalen oder `density: dense` + maximal viele Blöcke die Seite überfrachten.
+- **Kein blindes Verlassen auf Auto-Umbruch:** Mehrere `section.ws-flow-item` dürfen serverseitig auf Folgeseiten verteilt werden, um harte Beschneidung zu vermeiden — **eine** extrem große Aufgabe (lange Tabelle, riesige Zeichenfläche) bleibt problematisch; **plane** lieber **weitere `pages[]`** oder **kürzere** Aufgaben.
 - **Lieber aufteilen:** Wie bei Boards **„lieber kürzen oder Struktur staffeln“** — hier: **zusätzliche Seite** (`pages[n+1]`) statt eine Seite bis an die Grenze zu stapeln.
 - **Ausrichtung:** Hoch- oder Querformat aus dem Request/`page_setup` **respektieren**; keine implizite Annahme „unendlich langer Bogen“.
 - **Druck vor Deko:** Sichtbarer Weißraum ist erlaubt und oft sinnvoll; **keine** Deko- oder Rahmen-Ideen in Freitextfeldern erzwingen, die reale Schreib- oder Lesefläche **wegnähmen**.
+
+### Lesbarkeit & Farbkontrast (HTML/CSS, verbindlich)
+
+- **Kein Hell-auf-Hell:** Keine sehr helle Schriftfarbe auf sehr hellem oder pastelligem Untergrund — weder Überschrift, Fließtext, Listen, Tabellen **noch** Platzhalter- oder Hinweistext.
+- Bei **farbig gefüllten** Aufgabenkästen: `color` immer so setzen, dass der Text auch auf dem **Tablet** und im **Ausdruck** klar wirkt (bei Unsicherheit: **sehr dunkle** Schrift auf dem farbigen Kasten).
+- **Hell auf dunkel** nur, wenn Untergrund ausreichend dunkel ist und der Kontrast zur Schrift stark bleibt; **nie** weiß/flieder auf fast-weißem oder pastelligem Feld.
 
 ### Vorschau am Gerät (analog Board-„Touch-first“)
 

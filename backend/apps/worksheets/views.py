@@ -70,6 +70,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
         req = {
             'theme': (ws.render_model or {}).get('theme', 'neutral'),
             'creativity': (ws.render_model or {}).get('creativity', 'balanced'),
+            'show_sheet_header': (ws.render_model or {}).get('show_sheet_header', True),
         }
         if isinstance(content, dict) and (
             is_creative_html_content(content) or worksheet_pages_are_creative_html_shape(content)

@@ -71,3 +71,6 @@ Die **jeweils gültigen Haupt-Prompts und Produktregeln** haben **immer Vorrang*
 
 - **Vorrang:** `generation.md` / `review.md` — **keine** Farben, Banner, Emojis oder „mach es lila“ in Aufgaben; `design_notes` nur sachlich.
 - Aus **diesem** Anhang: **Klartext**, **Lesbarkeit**, sinnvolle **presentation**-Skalen — **keine** zusätzlichen „UI-Design“-Forderungen im Fließtext.
+- **Kreativmodus (nur HTML/CSS):** Schriftfarben immer so wählen, dass **nie** sehr helle Schrift auf sehr hellem oder pastelligem Hintergrund liegt — Tabellenköpfe/-zellen, Infokästen und Aufgabentitel eingeschlossen. Bei Unsicherheit **dunkle Schrift auf hellem Untergrund**; Druck gedanklich mitplanen (Kontrast dort oft geringer).
+- **Kreativmodus — Scroll:** **Keine** Scrollleisten **auf** der Arbeitsblatt-Seite (kein inneres Scrollen mit `overflow: auto|scroll`); Inhalt passt logisch auf die Seite oder wird über Seitenumbruch / Struktur gelöst.
+- **Kreativmodus — Seitenkonsistenz:** Alle Seiten desselben Arbeitsblatts **gleich** gestalten (Typo, Farben, Abstände, Kasten-/Tabellenmuster), **außer** der Auftrag verlangt ausdrücklich oder inhaltlich eindeutig unterschiedliche Seitentypen — siehe Hauptprompt `worksheet_creative_html/generation.md`.

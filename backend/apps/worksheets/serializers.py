@@ -130,6 +130,7 @@ class WorksheetSerializer(serializers.ModelSerializer):
         req = {
             'theme': (instance.render_model or {}).get('theme', 'neutral'),
             'creativity': (instance.render_model or {}).get('creativity', 'balanced'),
+            'show_sheet_header': (instance.render_model or {}).get('show_sheet_header', True),
         }
         content = instance.content if isinstance(instance.content, dict) else {}
         rm_existing = data.get('render_model')
@@ -230,9 +231,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 instance.library_published_at = None
             instance.save(update_fields=['library_published_at', 'updated_at'])
         if 'content' in validated_data:
-            req={
-                'theme':(instance.render_model or {}).get('theme','neutral'),
-                'creativity':(instance.render_model or {}).get('creativity','balanced'),
+            req = {
+                'theme': (instance.render_model or {}).get('theme', 'neutral'),
+                'creativity': (instance.render_model or {}).get('creativity', 'balanced'),
+                'show_sheet_header': (instance.render_model or {}).get('show_sheet_header', True),
             }
             ic = instance.content if isinstance(instance.content, dict) else {}
             if _worksheet_content_is_creative_html(ic):

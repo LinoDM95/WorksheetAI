@@ -22,9 +22,6 @@ import { cn } from '../../lib/cn';
 import {
   buildGeneratePayload,
   validateWizardInhaltStep,
-  type WizardColorMode,
-  type WizardDecoLevel,
-  type WizardDesignStyle,
   type WizardOrientation,
   type WizardRenderer,
   type WizardState,
@@ -49,6 +46,13 @@ const selectClassName = cn(
   'select h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-0 text-sm text-slate-900',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30',
 );
+
+/** Demo-Anmutung nur für die Wizard-Vorschau — ohne separate UI-Steuerung. */
+const WIZARD_A4_PREVIEW_STYLE = {
+  colorMode: 'dezent',
+  designStyle: 'modern',
+  decoLevel: 'leicht',
+} as const;
 
 const formatWizardGradeSummary = (state: WizardState): string => {
   const a = state.gradeFrom.trim();
@@ -560,7 +564,9 @@ const StepDesign = ({
       <div className="card h-fit p-5 sm:p-6">
         <h2 className="text-lg font-bold text-slate-900">Design &amp; Seite</h2>
         <p className="mt-1 mb-5 text-[13.5px] leading-relaxed text-slate-500">
-          Visuelle Anmutung und Druckparameter. Das Blatt rechts aktualisiert sich live.
+          Seitenformat und Ränder. Die Vorschau rechts zeigt nur den Druckbereich (Platzhalter). Wenn du Farben,
+          Deko oder einen bestimmten Gestaltungsstil möchtest, formuliere das im Schritt „Inhalt“ im Lehrer-Prompt — die KI
+          setzt es im Arbeitsblatt um.
         </p>
 
         <SectionHeading>Format</SectionHeading>
@@ -637,82 +643,46 @@ const StepDesign = ({
         )}
 
         <div className="divider my-5" />
-        <SectionHeading>Designstil</SectionHeading>
-        <RadioGroup
-          value={state.designStyle}
-          onChange={(id) => set('designStyle', id as WizardDesignStyle)}
-          columns={2}
-          options={[
-            { id: 'klassisch', label: 'Klassisch', sub: 'Schlicht, sachlich' },
-            { id: 'modern', label: 'Modern', sub: 'Aufgeräumt, klar' },
-            { id: 'grundschule', label: 'Grundschule', sub: 'Freundlich, größer' },
-            { id: 'akademisch', label: 'Akademisch', sub: 'Serif, Punktevergabe' },
-            { id: 'kreativ', label: 'Kreativ', sub: 'Mehr Variation' },
-          ]}
-        />
 
-        <div className="mt-5 flex items-center justify-between">
-          <SectionHeading>Farbmodus</SectionHeading>
-          <MockBadge
-            variant="inline"
-            label="Deko-Level/Farbmodus"
-            tooltip="Wirkt im Wizard nur visuell. Das echte Rendering wird im Editor angewendet."
-          />
-        </div>
-        <RadioGroup
-          value={state.colorMode}
-          onChange={(id) => set('colorMode', id as WizardColorMode)}
-          options={[
-            { id: 'sw', label: 'Schwarz-Weiß', sub: 'Maximal druckschonend', swatch: ['#0f172a', '#475569', '#94a3b8'] },
-            { id: 'print', label: 'Druckfreundlich', sub: 'Graustufen mit Akzent', swatch: ['#1e293b', '#64748b', '#cbd5e1'] },
-            { id: 'dezent', label: 'Dezent farbig', sub: 'Indigo-Akzent', swatch: ['#0f172a', '#4f46e5', '#cbd5e1'] },
-            { id: 'bunt', label: 'Bunt', sub: 'Mehrere Akzente — für GS', swatch: ['#4f46e5', '#10b981', '#f59e0b'] },
-          ]}
-        />
-
-        <SectionHeading>
-          <span className="mt-5 inline-flex">Deko-Level</span>
-        </SectionHeading>
-        <div className="flex flex-wrap gap-1.5">
-          {(['keine', 'leicht', 'mittel', 'kreativ'] as const).map((l) => (
-            <button
-              key={l}
-              type="button"
-              className="chip capitalize"
-              aria-pressed={state.decoLevel === l}
-              onClick={() => set('decoLevel', l as WizardDecoLevel)}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-
-        <SectionHeading>
-          <span className="mt-5 inline-flex">Renderer</span>
-        </SectionHeading>
-        {state.worksheetMode === 'creative' ? (
-          <p className="mb-3 text-[12.5px] leading-relaxed text-slate-600">
-            Im Kreativmodus wird die Vorschau und der Druckpfad über <strong className="font-medium">HTML</strong>{' '}
-            gefahren; LaTeX ist hier nicht vorgesehen.
-          </p>
+        {state.worksheetMode === 'standard' ? (
+          <>
+            <SectionHeading>Renderer</SectionHeading>
+            <p className="mb-3 text-[12.5px] leading-relaxed text-slate-600">
+              Ziel-Pipeline für spätere Bearbeitung und Druckweg.{' '}
+              <strong className="font-medium">Kreativ</strong>-Arbeitsblätter sind immer{' '}
+              <strong className="font-medium">HTML</strong> (ohne eigene Auswahl).
+            </p>
+            <RadioGroup
+              value={state.renderer}
+              onChange={(id) => set('renderer', id as WizardRenderer)}
+              columns={3}
+              options={[
+                { id: 'auto', label: 'Auto', sub: 'Empfohlen' },
+                { id: 'html', label: 'HTML', sub: 'Web-Vorschau' },
+                { id: 'latex', label: 'LaTeX', sub: 'Druckqualität' },
+              ]}
+            />
+          </>
         ) : null}
-        <RadioGroup
-          value={state.renderer}
-          onChange={(id) => set('renderer', id as WizardRenderer)}
-          columns={state.worksheetMode === 'creative' ? 2 : 3}
-          options={
-            state.worksheetMode === 'creative'
-              ? [
-                  { id: 'auto', label: 'Auto', sub: 'Empfohlen' },
-                  { id: 'html', label: 'HTML', sub: 'Web & Druck' },
-                ]
-              : [
-                  { id: 'auto', label: 'Auto', sub: 'Empfohlen' },
-                  { id: 'html', label: 'HTML', sub: 'Web-Vorschau' },
-                  { id: 'latex', label: 'LaTeX', sub: 'Druckqualität' },
-                ]
-          }
-        />
+        {state.worksheetMode === 'creative' ? (
+          <>
+            <div className="divider my-5" />
+            <SectionHeading>Vorgegebener Kopfbereich</SectionHeading>
+            <p className="mb-3 text-[12.5px] leading-relaxed text-slate-600">
+              Standard zeigt über dem gestalteten Inhalt weiterhin einen <strong className="font-medium">festen Kopf</strong> mit
+              Titel und Unterzeile (Fach/Stufe). Wenn du die volle A4‑Fläche nur für das KI‑Layout möchtest, schalte den Kopf hier
+              ab — dann sollte die KI Titelführung im HTML auf Seite 1 einplanen.
+            </p>
+            <RadioGroup
+              value={state.creativeShowSheetHeader ? 'with' : 'without'}
+              onChange={(id) => set('creativeShowSheetHeader', id === 'with')}
+              options={[
+                { id: 'with', label: 'Mit Kopf', sub: 'Titel/Unterzeile wie gewohnt' },
+                { id: 'without', label: 'Ohne Kopf', sub: 'Nur gestaltetes HTML‑Feld (voller Bereich)' },
+              ]}
+            />
+          </>
+        ) : null}
       </div>
 
       <div className="lg:sticky lg:top-4 lg:self-start">
@@ -732,9 +702,7 @@ const StepDesign = ({
               margins={state.margins}
               showGuide
               scale={state.orientation === 'portrait' ? 0.46 : 0.36}
-              colorMode={state.colorMode}
-              designStyle={state.designStyle}
-              decoLevel={state.decoLevel}
+              {...WIZARD_A4_PREVIEW_STYLE}
             />
           </div>
           <div className="mt-2 flex items-center justify-between px-1 text-[11.5px] text-slate-500">
@@ -770,7 +738,14 @@ const StepGenerieren = ({
         <div className="text-[15px] font-bold text-emerald-800">Bereit zur Generierung</div>
         <div className="mt-1 text-[13px] text-slate-700">
           „{state.topic}“ · {state.subject} · {formatWizardGradeSummary(state)} ·{' '}
-          {state.worksheetMode === 'creative' ? 'Modus: Kreativ (HTML/CSS)' : 'Modus: Standard'}
+          {state.worksheetMode === 'creative' ? (
+            <>
+              Modus: Kreativ (HTML/CSS)
+              {state.creativeShowSheetHeader ? ' · App-Kopf: an' : ' · App-Kopf: aus'}
+            </>
+          ) : (
+            'Modus: Standard'
+          )}
         </div>
       </div>
     </div>
@@ -808,9 +783,7 @@ const StepGenerieren = ({
           margins={state.margins}
           showGuide={false}
           scale={state.orientation === 'portrait' ? 0.44 : 0.36}
-          colorMode={state.colorMode}
-          designStyle={state.designStyle}
-          decoLevel={state.decoLevel}
+          {...WIZARD_A4_PREVIEW_STYLE}
         />
       </div>
     </div>
