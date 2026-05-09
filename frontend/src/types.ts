@@ -52,6 +52,28 @@ export type Worksheet={
   library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
   library_published_at?: string | null;
   viewer_is_owner?: boolean;
+  /** Neueste gespeicherte Revision (KI/Manuell); gleich dem Dropdown-Wert „Aktueller Stand“. */
+  revision_head_id?: string | null;
+  /** False, wenn der Arbeitsblatt-Stand nicht der neuesten Revision entspricht (z. B. alte Version in Vorschau). */
+  can_revise_with_ai?: boolean;
+};
+
+export type WorksheetRevision = {
+  id: string;
+  worksheet: string;
+  prompt: string;
+  revision_mode: string;
+  previous_content: Record<string, unknown>;
+  new_content: Record<string, unknown>;
+  previous_render_model: Record<string, unknown>;
+  new_render_model: Record<string, unknown>;
+  previous_metadata: Record<string, unknown>;
+  new_metadata: Record<string, unknown>;
+  ai_raw_output: unknown;
+  validation_errors: unknown[];
+  validation_warnings: unknown[];
+  created_at: string;
+  created_by: number | null;
 };
 
 /** Öffentlicher Arbeitsblatt-Katalog (/worksheets/library/). */

@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
 import axios from 'axios';
 import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { Worksheet } from '../../types';
+import type { Worksheet, WorksheetRevision } from '../../types';
 import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetRenderer';
 import { normalizeContentForEdit } from './WorksheetContentEditor';
 import { WorksheetEditSidebar } from './WorksheetEditSidebar';
 import { WorksheetDetailPageHeader } from './WorksheetDetailPageHeader';
 import { ResizableEditorDock } from '../../components/ResizableEditorDock';
 import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
-import { WORKSHEET_LIST_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
+import { WORKSHEET_LIST_QUERY_KEY, WORKSHEETS_REVISIONS_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
 import { useAuth } from '../../lib/authContext';
 import { BoardLibraryPublishModal, type BoardLibraryListingForm } from '../boards/components/BoardLibraryPublishModal';
 import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boards/boardsApi';
 import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
 import { clearPendingFirstOpenWorksheet } from './lib/worksheetFirstOpenHighlight';
+import {
+  applyWorksheetRevision,
+  deleteWorksheetRevision,
+  fetchWorksheetRevisions,
+  revertLastWorksheetRevision,
+} from './worksheetsApi';
 
 const MAX_DRAFT_UNDO = 10;
 
@@ -84,6 +90,8 @@ export function WorksheetPage() {
   const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
   const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
   const [staffLibBusy, setStaffLibBusy] = useState(false);
+  const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
+  const [revertRevisionError, setRevertRevisionError] = useState<string | null>(null);
 
   useEffect(() => {
     worksheetIdRef.current = id;
@@ -93,6 +101,62 @@ export function WorksheetPage() {
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  const { data: revisions = [] } = useQuery({
+    queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id ?? ''),
+    queryFn: () => fetchWorksheetRevisions(id!),
+    enabled: Boolean(id && ws && ws.viewer_is_owner !== false),
+  });
+
+  const applyRevisionMutation = useMutation({
+    mutationFn: (revisionId: string) => applyWorksheetRevision(id!, revisionId),
+    onSuccess: (data) => {
+      setWs(data);
+      setPreviewRevisionId(null);
+      void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+    },
+  });
+
+  const deleteRevisionMutation = useMutation({
+    mutationFn: (revisionId: string) => deleteWorksheetRevision(id!, revisionId),
+    onSuccess: () => {
+      setPreviewRevisionId(null);
+      void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
+    },
+  });
+
+  const revertRevisionMutation = useMutation({
+    mutationFn: (revisionId: string) => revertLastWorksheetRevision(id!, revisionId),
+    onSuccess: (data) => {
+      setWs(data);
+      setRevertRevisionError(null);
+      setPreviewRevisionId(null);
+      void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+    },
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        'Zurücksetzen fehlgeschlagen.';
+      setRevertRevisionError(detail);
+    },
+  });
+
+  const revisionPreview = useMemo((): WorksheetRevision | null => {
+    if (!ws || previewRevisionId === null) return null;
+    const head = ws.revision_head_id ?? revisions[0]?.id ?? null;
+    if (!head || previewRevisionId === head) return null;
+    return revisions.find((r) => r.id === previewRevisionId) ?? null;
+  }, [ws, previewRevisionId, revisions]);
+
+  useEffect(() => {
+    if (!previewRevisionId) return;
+    if (!revisions.some((r) => r.id === previewRevisionId)) {
+      setPreviewRevisionId(null);
+    }
+  }, [previewRevisionId, revisions]);
 
   const worksheetPageKiUi = useMemo(() => {
     if (!id) {
@@ -129,10 +193,12 @@ export function WorksheetPage() {
 
   const previewPageCountForHook = useMemo(() => {
     if (!ws) return 1;
-    const rm = previewRm ?? ((ws.render_model || {}) as Record<string, unknown>);
+    const rm = revisionPreview
+      ? ((revisionPreview.new_render_model || {}) as Record<string, unknown>)
+      : (previewRm ?? ((ws.render_model || {}) as Record<string, unknown>));
     const p = rm.pages;
     return Array.isArray(p) && p.length > 0 ? p.length : 1;
-  }, [ws, previewRm]);
+  }, [ws, revisionPreview, previewRm]);
 
   const dominantPageMountKey = draft && ws && id ? `e:${id}:${previewPageCountForHook}` : 'idle';
 
@@ -196,6 +262,8 @@ export function WorksheetPage() {
     setDraft(null);
     clearDraftUndoStack();
     setPreviewRm(null);
+    setPreviewRevisionId(null);
+    setRevertRevisionError(null);
     setLoading(true);
     api
       .get(`/worksheets/${id}/`)
@@ -291,7 +359,7 @@ export function WorksheetPage() {
   };
 
   const save = async () => {
-    if (!ws || !id || !draft || ws.viewer_is_owner === false) return;
+    if (!ws || !id || !draft || ws.viewer_is_owner === false || revisionPreview) return;
     setSaving(true);
     setErr('');
     try {
@@ -301,6 +369,7 @@ export function WorksheetPage() {
       setDraft(normalizeContentForEdit(r.data.content as Record<string, unknown>));
       setPreviewRm((r.data.render_model || null) as Record<string, unknown> | null);
       setPageLayoutOverflow({});
+      void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id) });
     } catch (e: unknown) {
       const m = e as { response?: { data?: { detail?: string } } };
       setErr(m.response?.data?.detail || 'Speichern fehlgeschlagen.');
@@ -355,6 +424,14 @@ export function WorksheetPage() {
   const handleRegenerateWorksheetPage = useCallback(
     async (pageIndex: number, teacherInstruction: string) => {
       if (!id || !draft || !ws || ws.viewer_is_owner === false) return;
+      if (revisionPreview) {
+        setErr('Bitte zuerst „Aktueller Stand“ wählen oder eine Version übernehmen.');
+        return;
+      }
+      if ((ws.can_revise_with_ai ?? true) === false) {
+        setErr('Speichere zuerst, bis der Stand wieder der neuesten Version entspricht.');
+        return;
+      }
       const instruction = teacherInstruction.trim();
       if (!instruction) {
         setErr('Bitte beschreibe, was die KI ändern soll.');
@@ -414,47 +491,19 @@ export function WorksheetPage() {
         }
 
         updateJob(jid, { progressPercent: 85 });
-        const nextContent = normalizeContentForEdit(r.data.content as Record<string, unknown>);
+        const nextWs = r.data as Worksheet;
+        const persistedDraft = normalizeContentForEdit(nextWs.content as Record<string, unknown>);
 
-        try {
-          const patchResp = await api.patch<Worksheet>(`/worksheets/${targetWorksheetId}/`, {
-            content: nextContent,
-          });
-          if (worksheetIdRef.current === targetWorksheetId) {
-            const persistedDraft = normalizeContentForEdit(
-              patchResp.data.content as Record<string, unknown>,
-            );
-            // Wichtig: draftRef synchron aktualisieren, BEVOR der nächste serialisierte
-            // Job den Snapshot liest. setDraft schedulet nur einen Re-Render — der
-            // useEffect, der draftRef synchronisiert, läuft erst nach dem React-Commit.
-            // Wenn der User direkt eine zweite Seite korrigiert, würde dieser Job sonst
-            // mit dem alten Stand vor der ersten Korrektur arbeiten und Seite 1
-            // ungewollt zurücksetzen.
-            draftRef.current = persistedDraft;
-            setWs(patchResp.data);
-            setDraft(persistedDraft);
-            setPreviewRm((patchResp.data.render_model || null) as Record<string, unknown> | null);
-            setPageLayoutOverflow({});
-            clearDraftUndoStack();
-          } else {
-            void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
-          }
-        } catch (e: unknown) {
-          const msg =
-            'Überarbeitung war erfolgreich, Speichern fehlgeschlagen. Bitte Seite neu laden und erneut speichern.';
-          failJob(jid, msg);
-          if (worksheetIdRef.current === targetWorksheetId) {
-            // Auch hier draftRef synchron mitziehen, damit eine direkt folgende
-            // Page-Regeneration auf dem (zumindest lokal) aktuellen Stand aufsetzt.
-            draftRef.current = nextContent;
-            setDraft(nextContent);
-            if (r.data.render_model && typeof r.data.render_model === 'object') {
-              setPreviewRm(r.data.render_model as Record<string, unknown>);
-            }
-            setErr(msg);
-          }
-          throw e;
+        if (worksheetIdRef.current === targetWorksheetId) {
+          draftRef.current = persistedDraft;
+          setWs(nextWs);
+          setDraft(persistedDraft);
+          setPreviewRm((nextWs.render_model || null) as Record<string, unknown> | null);
+          setPageLayoutOverflow({});
+          clearDraftUndoStack();
         }
+
+        void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(targetWorksheetId) });
 
         const stillHere = worksheetIdRef.current === targetWorksheetId;
         completeJob(jid, {
@@ -478,6 +527,7 @@ export function WorksheetPage() {
       ws,
       id,
       draft,
+      revisionPreview,
       startJob,
       runSerialized,
       updateJob,
@@ -513,13 +563,13 @@ export function WorksheetPage() {
   }, []);
 
   const hasUnsavedChanges = useMemo(() => {
-    if (!ws || !draft) return false;
+    if (!ws || !draft || revisionPreview) return false;
     try {
       return JSON.stringify(draft) !== JSON.stringify(normalizeContentForEdit(ws.content as Record<string, unknown>));
     } catch {
       return false;
     }
-  }, [draft, ws]);
+  }, [draft, ws, revisionPreview]);
 
   if (fetchErr) {
     return (
@@ -704,11 +754,43 @@ export function WorksheetPage() {
     }
   };
 
-  const displayRm = previewRm ?? ((ws.render_model || {}) as Record<string, unknown>);
+  const handleRevertLastRevision = () => {
+    const latestId = revisions[0]?.id;
+    if (!latestId || !id) return;
+    const ok = window.confirm(
+      'Stand vor der letzten gespeicherten Revision wiederherstellen? Die neueste Revision wird dabei entfernt.',
+    );
+    if (!ok) return;
+    setRevertRevisionError(null);
+    revertRevisionMutation.mutate(latestId);
+  };
+
+  const handleConfirmDeleteRevisionEntry = (revisionId: string) => {
+    const ok = window.confirm(
+      'Diesen Versionseintrag aus der Historie löschen? Der aktuelle Arbeitsblatt-Stand bleibt unverändert.',
+    );
+    if (!ok) return;
+    deleteRevisionMutation.mutate(revisionId);
+  };
+
+  const displayRm = revisionPreview
+    ? ((revisionPreview.new_render_model || {}) as Record<string, unknown>)
+    : (previewRm ?? ((ws.render_model || {}) as Record<string, unknown>));
+
+  const nm = revisionPreview
+    ? (revisionPreview.new_metadata as Record<string, unknown> | undefined)
+    : undefined;
+  const nc = revisionPreview
+    ? (revisionPreview.new_content as Record<string, unknown> | undefined)
+    : undefined;
+  const displayTitle =
+    revisionPreview != null
+      ? String(nc?.title ?? nm?.title ?? draft.title ?? ws.title)
+      : String(draft.title ?? ws.title);
 
   const viewWorksheet: Worksheet = {
     ...ws,
-    title: String(draft.title ?? ws.title) as string,
+    title: displayTitle,
     render_model: displayRm,
   };
 
@@ -745,7 +827,7 @@ export function WorksheetPage() {
         <div className="no-print relative z-[45] shrink-0">
           <WorksheetDetailPageHeader
             ws={ws}
-            displayTitle={String(draft.title ?? ws.title)}
+            displayTitle={displayTitle}
             readOnly={isReadOnly}
             userIsStaff={Boolean(user?.is_staff)}
             libraryBusy={libraryBusy}
@@ -769,6 +851,18 @@ export function WorksheetPage() {
             }
             onUndo={isReadOnly ? undefined : handleDraftUndo}
             canUndo={canDraftUndo}
+            revisions={isReadOnly ? undefined : revisions}
+            previewRevisionId={previewRevisionId}
+            onPreviewRevisionChange={setPreviewRevisionId}
+            previewRevision={revisionPreview}
+            applyRevisionPending={applyRevisionMutation.isPending}
+            onApplyRevision={(rid) => applyRevisionMutation.mutate(rid)}
+            deleteRevisionPending={deleteRevisionMutation.isPending}
+            onDeleteRevisionEntry={handleConfirmDeleteRevisionEntry}
+            canRevertLastRevision={!revisionPreview && revisions.length > 0 && !isReadOnly}
+            revertRevisionPending={revertRevisionMutation.isPending}
+            onRevertLastRevision={handleRevertLastRevision}
+            revertRevisionError={revertRevisionError}
           />
         </div>
 
@@ -791,6 +885,13 @@ export function WorksheetPage() {
                   <div className="w-full max-w-full shrink-0 overflow-x-hidden overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm lg:mx-auto lg:w-fit lg:max-w-full print:mx-0 print:max-w-none print:w-full print:min-w-0 print:overflow-visible print:border-0 print:rounded-none print:bg-transparent print:shadow-none">
                     <A4WorksheetRenderer
                       worksheet={viewWorksheet}
+                      contentDraft={
+                        revisionPreview
+                          ? normalizeContentForEdit(
+                              revisionPreview.new_content as Record<string, unknown>,
+                            )
+                          : undefined
+                      }
                       showGuide={false}
                       onPageLayoutOverflow={handlePageLayoutOverflow}
                     />
@@ -816,15 +917,28 @@ export function WorksheetPage() {
 
           {!editDock.isLgViewport && !isReadOnly ? (
             <div className="no-print flex h-[min(45vh,28rem)] min-h-[12rem] max-h-[50vh] shrink-0 flex-col border-t border-[var(--color-border)] bg-[var(--color-bg-card)] lg:hidden">
-              <WorksheetEditSidebar
-                draft={draft}
-                setDraft={handleDraftFromSheet}
-                displayTitle={String(draft.title ?? ws.title)}
-                err={err}
-                pageLayoutOverflow={pageLayoutOverflow}
-                onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
-                worksheetPageKiUi={worksheetPageKiUi}
-              />
+              {revisionPreview ? (
+                <div className="shrink-0 border-b border-amber-200 bg-amber-50/95 px-3 py-2 text-[11px] text-amber-950">
+                  Vorschau einer älteren gespeicherten Version. „Übernehmen“ wählen oder „Aktueller Stand“, um
+                  weiterzubearbeiten oder KI zu nutzen.
+                </div>
+              ) : null}
+              <div
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col',
+                  revisionPreview && 'pointer-events-none select-none opacity-[0.72]',
+                )}
+              >
+                <WorksheetEditSidebar
+                  draft={draft}
+                  setDraft={handleDraftFromSheet}
+                  displayTitle={String(draft.title ?? ws.title)}
+                  err={err}
+                  pageLayoutOverflow={pageLayoutOverflow}
+                  onRegenerateWorksheetPage={revisionPreview ? undefined : handleRegenerateWorksheetPage}
+                  worksheetPageKiUi={worksheetPageKiUi}
+                />
+              </div>
             </div>
           ) : null}
         </div>
@@ -838,16 +952,31 @@ export function WorksheetPage() {
           dock={editDock}
           asideClassName="border-l-[3px] border-l-[var(--color-primary-200)] border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[-16px_0_48px_-12px_rgba(15,23,42,0.2)]"
           expanded={
-            <WorksheetEditSidebar
-              draft={draft}
-              setDraft={handleDraftFromSheet}
-              displayTitle={String(draft.title ?? ws.title)}
-              err={err}
-              pageLayoutOverflow={pageLayoutOverflow}
-              rootElement="div"
-              onRegenerateWorksheetPage={handleRegenerateWorksheetPage}
-              worksheetPageKiUi={worksheetPageKiUi}
-            />
+            <>
+              {revisionPreview ? (
+                <div className="shrink-0 border-b border-amber-200 bg-amber-50/95 px-3 py-2 text-[11px] text-amber-950">
+                  Vorschau einer älteren gespeicherten Version. „Übernehmen“ wählen oder „Aktueller Stand“, um
+                  weiterzubearbeiten oder KI zu nutzen.
+                </div>
+              ) : null}
+              <div
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col overflow-hidden',
+                  revisionPreview && 'pointer-events-none select-none opacity-[0.72]',
+                )}
+              >
+                <WorksheetEditSidebar
+                  draft={draft}
+                  setDraft={handleDraftFromSheet}
+                  displayTitle={String(draft.title ?? ws.title)}
+                  err={err}
+                  pageLayoutOverflow={pageLayoutOverflow}
+                  rootElement="div"
+                  onRegenerateWorksheetPage={revisionPreview ? undefined : handleRegenerateWorksheetPage}
+                  worksheetPageKiUi={worksheetPageKiUi}
+                />
+              </div>
+            </>
           }
         />
       ) : null}

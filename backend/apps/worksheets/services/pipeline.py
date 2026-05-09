@@ -44,6 +44,7 @@ from .creative_html_pipeline import (
 )
 from .page import normalize_page_setup
 from .render_model import build_render_model
+from .worksheet_revision_head import create_initial_revision_if_absent
 from .validators import validate_and_repair
 from .worksheet_document_ops import apply_document_operations, build_document_outline
 
@@ -377,6 +378,7 @@ class WorksheetGenerator(WorksheetPipeline):
             generation_meta=meta,
         )
         self._persist_curriculum_usage(worksheet, curriculum_alignment)
+        create_initial_revision_if_absent(worksheet, user=self.user, prompt='(Erstgenerierung)')
         return worksheet
 
     def _persist_curriculum_usage(self, worksheet: Worksheet, curriculum_alignment: dict[str, Any]) -> None:

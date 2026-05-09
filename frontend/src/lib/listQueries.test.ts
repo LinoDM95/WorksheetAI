@@ -7,6 +7,7 @@ import {
   BOARDS_REVISIONS_QUERY_KEY,
   PATTERNS_LIST_QUERY_KEY,
   WORKSHEET_LIST_QUERY_KEY,
+  WORKSHEETS_REVISIONS_QUERY_KEY,
   boardsLibraryQueryKey,
   boardLibraryEntryQueryKey,
 } from './listQueries';
@@ -21,6 +22,7 @@ describe('listQueries keys', () => {
   it('scopes board detail and revisions by id', () => {
     expect(BOARDS_DETAIL_QUERY_KEY('abc')).toEqual(['boards', 'detail', 'abc']);
     expect(BOARDS_REVISIONS_QUERY_KEY('abc')).toEqual(['boards', 'revisions', 'abc']);
+    expect(WORKSHEETS_REVISIONS_QUERY_KEY('w1')).toEqual(['worksheets', 'revisions', 'w1']);
     expect(BOARDS_FOLDERS_QUERY_KEY).toEqual(['boards', 'folders']);
     expect(boardsLibraryQueryKey('all')).toEqual(['boards', 'library', 'all']);
     expect(boardsLibraryQueryKey('mine')).toEqual(['boards', 'library', 'mine']);

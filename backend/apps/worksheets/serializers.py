@@ -1,10 +1,11 @@
 from rest_framework import serializers
 import copy
+import json
 
 from django.conf import settings
 from django.utils import timezone
 
-from .models import Worksheet
+from .models import Worksheet, WorksheetRevision
 from .services.render_model import build_render_model
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.creative_html_pipeline import (
@@ -15,6 +16,14 @@ from .services.creative_html_pipeline import (
 )
 
 import logging
+
+from .owner import resolve_worksheet_owner
+from .services.worksheet_revision_head import (
+    append_manual_content_revision,
+    latest_revision,
+    worksheet_matches_revision_head,
+    worksheet_metadata_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +104,8 @@ class WorksheetSerializer(serializers.ModelSerializer):
     curriculum_show_usage = serializers.SerializerMethodField()
     curriculum_usage_panel = serializers.SerializerMethodField()
     viewer_is_owner = serializers.SerializerMethodField()
+    revision_head_id = serializers.SerializerMethodField()
+    can_revise_with_ai = serializers.SerializerMethodField()
 
     class Meta:
         model=Worksheet
@@ -102,14 +113,25 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 'generation_meta','pattern','pattern_name','created_at','updated_at',
                 'curriculum_warning','curriculum_show_usage','curriculum_usage_panel',
                 'library_public','library_listing_title','library_listing_topic','library_listing_description',
-                'library_moderation_status','library_published_at','viewer_is_owner']
-        read_only_fields=['owner','created_at','updated_at','generation_meta','library_published_at','viewer_is_owner','library_moderation_status']
+                'library_moderation_status','library_published_at','viewer_is_owner',
+                'revision_head_id','can_revise_with_ai']
+        read_only_fields=['owner','created_at','updated_at','generation_meta','library_published_at','viewer_is_owner','library_moderation_status',
+                         'revision_head_id','can_revise_with_ai']
 
     def get_viewer_is_owner(self, obj: Worksheet) -> bool:
         request = self.context.get('request')
         if not request or not getattr(request.user, 'is_authenticated', False):
             return False
         return obj.owner_id == request.user.id
+
+    @staticmethod
+    def get_revision_head_id(obj: Worksheet) -> str | None:
+        r = latest_revision(obj)
+        return str(r.pk) if r else None
+
+    @staticmethod
+    def get_can_revise_with_ai(obj: Worksheet) -> bool:
+        return worksheet_matches_revision_head(obj)
 
     @staticmethod
     def get_curriculum_warning(obj: Worksheet) -> str | None:
@@ -164,6 +186,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
         pages = rm.get('pages')
         return isinstance(pages, list) and len(pages) > 0
 
+    @staticmethod
+    def _content_snapshot_equal(a: dict, b: dict) -> bool:
+        return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+
     def update(self, instance, validated_data):
         content = validated_data.get('content')
         request = self.context.get('request')
@@ -214,6 +240,13 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 validated_data['library_listing_description'] = ld[:_LISTING_CAP_DESC]
 
         was_catalog = instance.is_catalog_listed()
+        prev_manual_rev: tuple[dict, dict, dict] | None = None
+        if 'content' in validated_data:
+            prev_manual_rev = (
+                copy.deepcopy(instance.content) if isinstance(instance.content, dict) else {},
+                copy.deepcopy(instance.render_model) if isinstance(instance.render_model, dict) else {},
+                worksheet_metadata_snapshot(instance),
+            )
         if isinstance(content, dict):
             c = copy.deepcopy(content)
             if _worksheet_content_is_creative_html(c):
@@ -254,7 +287,45 @@ class WorksheetSerializer(serializers.ModelSerializer):
             if ct:
                 instance.title=str(ct)[:255]
             instance.save(update_fields=['render_model','title','updated_at'])
+            if prev_manual_rev is not None:
+                prev_c, prev_rm, prev_meta = prev_manual_rev
+                new_c = instance.content if isinstance(instance.content, dict) else {}
+                if not self._content_snapshot_equal(prev_c, new_c):
+                    try:
+                        u = resolve_worksheet_owner(request.user) if request else None
+                    except ValueError:
+                        u = None
+                    append_manual_content_revision(
+                        instance,
+                        user=u,
+                        prev_content=prev_c,
+                        prev_render_model=prev_rm,
+                        prev_meta=prev_meta,
+                    )
         return instance
+
+
+class WorksheetRevisionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorksheetRevision
+        fields = (
+            'id',
+            'worksheet',
+            'prompt',
+            'revision_mode',
+            'previous_content',
+            'new_content',
+            'previous_render_model',
+            'new_render_model',
+            'previous_metadata',
+            'new_metadata',
+            'ai_raw_output',
+            'validation_errors',
+            'validation_warnings',
+            'created_at',
+            'created_by',
+        )
+        read_only_fields = fields
 
 
 class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):

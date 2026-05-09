@@ -4,6 +4,7 @@ import type { WorksheetLibraryItem } from '../types';
 
 /** Geteilter Cache für alle Listen-Ansichten (Dashboard, „Meine Arbeitsblätter“). */
 export const WORKSHEET_LIST_QUERY_KEY = ['worksheets', 'list'] as const;
+export const WORKSHEETS_REVISIONS_QUERY_KEY = (id: string) => ['worksheets', 'revisions', id] as const;
 
 export const fetchWorksheetList = async <T>(): Promise<T[]> => {
   const r = await api.get('/worksheets/');

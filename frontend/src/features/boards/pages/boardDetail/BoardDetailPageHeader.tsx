@@ -2,7 +2,7 @@ import { Globe2, Sparkles, Trash2 } from 'lucide-react';
 import { Alert, Button } from '../../../../components/ui';
 import { formatDate } from '../../../../lib/formatDate';
 import type { BoardCodeUpdate, BoardDetail, BoardFolderDto, BoardRevision } from '../../types';
-import { revisionVLabel } from './revisionVLabel';
+import { revisionVLabel } from '../../../../lib/revisionVLabel';
 
 export function BoardDetailPageHeader({
   board,

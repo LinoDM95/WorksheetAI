@@ -1,7 +1,10 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
+from apps.boards.models import REVISION_MODE_CHOICES
+
 from apps.patterns.models import WorksheetPattern
+
 
 class Worksheet(models.Model):
     class LibraryModerationStatus(models.TextChoices):
@@ -39,3 +42,38 @@ class Worksheet(models.Model):
 
     def is_catalog_listed(self) -> bool:
         return self.library_public and self.library_moderation_status == self.LibraryModerationStatus.APPROVED
+
+
+class WorksheetRevision(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    worksheet = models.ForeignKey(
+        Worksheet,
+        on_delete=models.CASCADE,
+        related_name='revisions',
+    )
+    prompt = models.TextField(blank=True)
+    revision_mode = models.CharField(
+        max_length=30,
+        choices=REVISION_MODE_CHOICES,
+        default='general',
+    )
+    previous_content = models.JSONField(default=dict)
+    new_content = models.JSONField(default=dict)
+    previous_render_model = models.JSONField(default=dict)
+    new_render_model = models.JSONField(default=dict)
+    previous_metadata = models.JSONField(default=dict)
+    new_metadata = models.JSONField(default=dict)
+    ai_raw_output = models.JSONField(default=dict)
+    validation_errors = models.JSONField(default=list)
+    validation_warnings = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='worksheet_revisions',
+    )
+
+    class Meta:
+        ordering = ['-created_at']

@@ -1,6 +1,7 @@
 from rest_framework import viewsets, decorators, response, status
 import copy
 
+from django.db import transaction
 from django.db.models import Q
 
 from apps.ai.error_mapper import AIErrorMapper
@@ -8,7 +9,12 @@ from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
 from .models import Worksheet
-from .serializers import WorksheetSerializer, build_curriculum_usage_payload, WorksheetLibraryEntrySerializer
+from .serializers import (
+    WorksheetSerializer,
+    WorksheetRevisionSerializer,
+    build_curriculum_usage_payload,
+    WorksheetLibraryEntrySerializer,
+)
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.creative_html_pipeline import (
     build_creative_html_render_model,
@@ -20,6 +26,13 @@ from .services.generation import generate_worksheet
 from .services.page_regenerate import regenerate_worksheet_page, regenerate_worksheet_pages
 from .services.page import normalize_page_setup
 from .services.render_model import build_render_model
+from .services.worksheet_revision_head import (
+    apply_revision_to_worksheet,
+    create_initial_revision_if_absent,
+    persist_worksheet_after_ai_regenerate,
+    require_worksheet_at_revision_head,
+    worksheet_metadata_snapshot,
+)
 from .owner import resolve_worksheet_owner
 
 
@@ -107,6 +120,10 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     def regenerate_page_view(self, request, pk=None):
         enforce_positive_ai_credits_balance(request.user)
         ws = self.get_object()
+        try:
+            rev_user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            rev_user = None
         raw_idx = request.data.get('page_index')
         if raw_idx is None:
             return response.Response({'detail': 'page_index ist erforderlich.'}, status=400)
@@ -116,6 +133,19 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             return response.Response({'detail': 'page_index muss eine Zahl sein.'}, status=400)
         instruction = request.data.get('teacher_instruction') or ''
         body_content = request.data.get('content')
+        try:
+            require_worksheet_at_revision_head(ws)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=400)
+        create_initial_revision_if_absent(ws, user=rev_user, prompt='(Historie)')
+        ws.refresh_from_db()
+        prev_content = (
+            copy.deepcopy(body_content)
+            if isinstance(body_content, dict)
+            else copy.deepcopy(ws.content) if isinstance(ws.content, dict) else {}
+        )
+        prev_render_model = copy.deepcopy(ws.render_model) if isinstance(ws.render_model, dict) else {}
+        prev_meta = worksheet_metadata_snapshot(ws)
         try:
             content, render_model, notes = regenerate_worksheet_page(
                 ws,
@@ -127,15 +157,30 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             return response.Response({'detail': str(exc)}, status=400)
         except Exception as exc:
             return AIErrorMapper.to_response(exc, detail_prefix='KI-Aufruf fehlgeschlagen')
-        out = {'content': content, 'render_model': render_model}
-        if notes:
-            out['validation_notes'] = notes
-        return response.Response(out)
+        persist_worksheet_after_ai_regenerate(
+            ws,
+            user=rev_user,
+            prev_content=prev_content,
+            prev_render_model=prev_render_model,
+            prev_meta=prev_meta,
+            new_content=content,
+            new_render_model=render_model,
+            prompt=str(instruction).strip()[:4000],
+            revision_mode='general',
+            ai_raw_output={'page_index': page_index},
+            validation_notes=notes,
+        )
+        ws.refresh_from_db()
+        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
 
     @decorators.action(detail=True, methods=['post'], url_path='regenerate-pages')
     def regenerate_pages_view(self, request, pk=None):
         enforce_positive_ai_credits_balance(request.user)
         ws = self.get_object()
+        try:
+            rev_user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            rev_user = None
         instruction = request.data.get('teacher_instruction') or ''
         body_content = request.data.get('content')
         raw_indices = request.data.get('page_indices')
@@ -153,6 +198,19 @@ class WorksheetViewSet(viewsets.ModelViewSet):
                     status=400,
                 )
         try:
+            require_worksheet_at_revision_head(ws)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=400)
+        create_initial_revision_if_absent(ws, user=rev_user, prompt='(Historie)')
+        ws.refresh_from_db()
+        prev_content = (
+            copy.deepcopy(body_content)
+            if isinstance(body_content, dict)
+            else copy.deepcopy(ws.content) if isinstance(ws.content, dict) else {}
+        )
+        prev_render_model = copy.deepcopy(ws.render_model) if isinstance(ws.render_model, dict) else {}
+        prev_meta = worksheet_metadata_snapshot(ws)
+        try:
             content, render_model, notes = regenerate_worksheet_pages(
                 ws,
                 parsed,
@@ -163,10 +221,120 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             return response.Response({'detail': str(exc)}, status=400)
         except Exception as exc:
             return AIErrorMapper.to_response(exc, detail_prefix='KI-Aufruf fehlgeschlagen')
-        out = {'content': content, 'render_model': render_model}
-        if notes:
-            out['validation_notes'] = notes
-        return response.Response(out)
+        persist_worksheet_after_ai_regenerate(
+            ws,
+            user=rev_user,
+            prev_content=prev_content,
+            prev_render_model=prev_render_model,
+            prev_meta=prev_meta,
+            new_content=content,
+            new_render_model=render_model,
+            prompt=str(instruction).strip()[:4000],
+            revision_mode='general',
+            ai_raw_output={'page_indices': parsed},
+            validation_notes=notes,
+        )
+        ws.refresh_from_db()
+        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
+
+    @decorators.action(detail=True, methods=['get'], url_path='revisions')
+    def list_revisions(self, request, pk=None):
+        ws = self.get_object()
+        qs = ws.revisions.order_by('-created_at')
+        return response.Response(WorksheetRevisionSerializer(qs, many=True).data)
+
+    @decorators.action(detail=True, methods=['post'], url_path='revert-revision')
+    def revert_revision(self, request, pk=None):
+        ws = self.get_object()
+        rev = ws.revisions.order_by('-created_at').first()
+        if not rev:
+            return response.Response(
+                {'detail': 'Keine Revision zum Zurücksetzen.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        body = request.data if isinstance(request.data, dict) else {}
+        rid = body.get('revision_id')
+        if rid is not None and str(rev.id) != str(rid):
+            return response.Response(
+                {
+                    'detail': (
+                        'Es kann nur die zuletzt erzeugte Revision zurückgenommen werden. '
+                        'Bitte Seite aktualisieren, falls zwischenzeitlich eine neuere Revision existiert.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pc = rev.previous_content if isinstance(rev.previous_content, dict) else {}
+        prm = rev.previous_render_model if isinstance(rev.previous_render_model, dict) else {}
+        pm = rev.previous_metadata if isinstance(rev.previous_metadata, dict) else {}
+        with transaction.atomic():
+            ws.content = copy.deepcopy(pc)
+            ws.render_model = copy.deepcopy(prm)
+            if 'title' in pm:
+                ws.title = str(pm.get('title') or '')[:255]
+            if 'subject' in pm:
+                ws.subject = str(pm.get('subject') or '')[:120]
+            if 'topic' in pm:
+                ws.topic = str(pm.get('topic') or '')[:255]
+            if 'grade' in pm:
+                ws.grade = pm.get('grade')
+            ws.save()
+            rev.delete()
+        ws.refresh_from_db()
+        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
+
+    @decorators.action(detail=True, methods=['post'], url_path='apply-revision')
+    def apply_revision(self, request, pk=None):
+        ws = self.get_object()
+        body = request.data if isinstance(request.data, dict) else {}
+        rid = body.get('revision_id')
+        if not rid:
+            return response.Response(
+                {'detail': 'Parameter revision_id fehlt.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target = ws.revisions.filter(pk=rid).first()
+        if not target:
+            return response.Response(
+                {'detail': 'Revision nicht gefunden.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            rev_user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            rev_user = None
+        try:
+            apply_revision_to_worksheet(ws, target=target, user=rev_user)
+        except ValueError as exc:
+            return response.Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        ws.refresh_from_db()
+        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
+
+    @decorators.action(detail=True, methods=['post'], url_path='delete-revision')
+    def delete_revision(self, request, pk=None):
+        ws = self.get_object()
+        body = request.data if isinstance(request.data, dict) else {}
+        rid = body.get('revision_id')
+        if not rid:
+            return response.Response(
+                {'detail': 'Parameter revision_id fehlt.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target = ws.revisions.filter(pk=rid).first()
+        if not target:
+            return response.Response(
+                {'detail': 'Revision nicht gefunden.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        latest = ws.revisions.order_by('-created_at').first()
+        if latest is not None and latest.id == target.id:
+            return response.Response(
+                {'detail': 'Die aktuelle Version kann nicht gelöscht werden.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        target.delete()
+        ws.refresh_from_db()
+        return response.Response(WorksheetSerializer(ws, context={'request': request}).data)
 
     @decorators.action(detail=False, methods=['post'], url_path='page-preview')
     def page_preview(self, request):
@@ -199,6 +367,11 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             library_published_at=None,
         )
         clone.save()
+        try:
+            dup_user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            dup_user = None
+        create_initial_revision_if_absent(clone, user=dup_user, prompt='(Kopie)')
         return response.Response(
             WorksheetSerializer(clone, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
