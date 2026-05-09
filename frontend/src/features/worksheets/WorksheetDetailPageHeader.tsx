@@ -1,7 +1,7 @@
 import { ArrowLeft, Download, Globe2, Trash2, Undo2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { Alert, Badge, Button } from '../../components/ui';
+import { Badge, Button } from '../../components/ui';
 import { formatDate } from '../../lib/formatDate';
 import { formatDateTime } from '../../lib/formatDate';
 import { revisionVLabel } from '../../lib/revisionVLabel';
@@ -37,10 +37,6 @@ export type WorksheetDetailPageHeaderProps = {
   onApplyRevision?: (revisionId: string) => void;
   deleteRevisionPending?: boolean;
   onDeleteRevisionEntry?: (revisionId: string) => void;
-  canRevertLastRevision?: boolean;
-  revertRevisionPending?: boolean;
-  onRevertLastRevision?: () => void;
-  revertRevisionError?: string | null;
 };
 
 export function WorksheetDetailPageHeader({
@@ -73,10 +69,6 @@ export function WorksheetDetailPageHeader({
   onApplyRevision = () => {},
   deleteRevisionPending = false,
   onDeleteRevisionEntry = () => {},
-  canRevertLastRevision = false,
-  revertRevisionPending = false,
-  onRevertLastRevision = () => {},
-  revertRevisionError = null,
 }: WorksheetDetailPageHeaderProps) {
   const navigate = useNavigate();
   const rm = (ws.render_model || {}) as Record<string, unknown>;
@@ -123,24 +115,27 @@ export function WorksheetDetailPageHeader({
 
         {revisions !== undefined && !readOnly ? (
           <>
-            <select
-              className="max-w-[7.5rem] rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-1 text-[11px] text-slate-800 sm:max-w-[14rem] sm:text-xs"
-              value={previewRevisionId ?? ''}
-              onChange={(e) => {
-                const v = e.target.value;
-                onPreviewRevisionChange(v === '' ? null : v);
-              }}
-              disabled={revisions.length === 0 || applyRevisionPending}
-              aria-label="Arbeitsblatt-Version"
-              title="Versionen durchblättern"
-            >
-              <option value="">Aktueller Stand</option>
-              {revisions.map((r, idx) => (
-                <option key={r.id} value={r.id}>
-                  {revisionVLabel(idx, revisions.length)} · {formatDate(r.created_at)}
-                </option>
-              ))}
-            </select>
+            <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-1.5 sm:max-w-[20rem]">
+              <span className="hidden shrink-0 text-[11px] text-slate-600 sm:inline">Version</span>
+              <select
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-1 text-[11px] text-slate-800 sm:text-xs"
+                value={previewRevisionId ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  onPreviewRevisionChange(v === '' ? null : v);
+                }}
+                disabled={revisions.length === 0 || applyRevisionPending}
+                aria-label="Arbeitsblatt-Version"
+                title="Zwischen Versionen wechseln; mit Übernehmen den Stand aktiv setzen"
+              >
+                <option value="">Aktueller Stand</option>
+                {revisions.map((r, idx) => (
+                  <option key={r.id} value={r.id}>
+                    {revisionVLabel(idx, revisions.length)} · {formatDate(r.created_at)}
+                  </option>
+                ))}
+              </select>
+            </div>
             {previewRevision ? (
               <>
                 <Button
@@ -165,22 +160,6 @@ export function WorksheetDetailPageHeader({
                   <Trash2 size={14} aria-hidden />
                 </Button>
               </>
-            ) : null}
-            {canRevertLastRevision ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="!px-2"
-                loading={revertRevisionPending}
-                disabled={applyRevisionPending || deleteRevisionPending}
-                title="Stand vor der letzten KI-/Speicher-Änderung wiederherstellen (löscht die neueste Revision)."
-                aria-label="Letzte gespeicherte Revision zurücknehmen"
-                onClick={onRevertLastRevision}
-                leftIcon={<Undo2 size={13} aria-hidden />}
-              >
-                <span className="hidden sm:inline">Revision zurück</span>
-              </Button>
             ) : null}
             <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
           </>
@@ -237,12 +216,6 @@ export function WorksheetDetailPageHeader({
           ) : null}
         </div>
       </div>
-
-      {revertRevisionError ? (
-        <div className="no-print px-0 pt-0.5">
-          <Alert tone="error">{revertRevisionError}</Alert>
-        </div>
-      ) : null}
 
       {userIsStaff && readOnly ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2">

@@ -31,6 +31,7 @@ from .services.worksheet_revision_head import (
     create_initial_revision_if_absent,
     persist_worksheet_after_ai_regenerate,
     require_worksheet_at_revision_head,
+    revision_revert_restore_bundle,
     worksheet_metadata_snapshot,
 )
 from .owner import resolve_worksheet_owner
@@ -264,14 +265,14 @@ class WorksheetViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        pc = rev.previous_content if isinstance(rev.previous_content, dict) else {}
-        prm = rev.previous_render_model if isinstance(rev.previous_render_model, dict) else {}
-        pm = rev.previous_metadata if isinstance(rev.previous_metadata, dict) else {}
+        pc, prm, pm = revision_revert_restore_bundle(rev)
         with transaction.atomic():
             ws.content = copy.deepcopy(pc)
             ws.render_model = copy.deepcopy(prm)
             if 'title' in pm:
                 ws.title = str(pm.get('title') or '')[:255]
+            elif isinstance(pc, dict) and pc.get('title'):
+                ws.title = str(pc.get('title') or '')[:255]
             if 'subject' in pm:
                 ws.subject = str(pm.get('subject') or '')[:120]
             if 'topic' in pm:

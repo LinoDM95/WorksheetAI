@@ -18,12 +18,7 @@ import { BoardLibraryPublishModal, type BoardLibraryListingForm } from '../board
 import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boards/boardsApi';
 import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
 import { clearPendingFirstOpenWorksheet } from './lib/worksheetFirstOpenHighlight';
-import {
-  applyWorksheetRevision,
-  deleteWorksheetRevision,
-  fetchWorksheetRevisions,
-  revertLastWorksheetRevision,
-} from './worksheetsApi';
+import { applyWorksheetRevision, deleteWorksheetRevision, fetchWorksheetRevisions } from './worksheetsApi';
 
 const MAX_DRAFT_UNDO = 10;
 
@@ -91,7 +86,6 @@ export function WorksheetPage() {
   const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
   const [staffLibBusy, setStaffLibBusy] = useState(false);
   const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
-  const [revertRevisionError, setRevertRevisionError] = useState<string | null>(null);
 
   useEffect(() => {
     worksheetIdRef.current = id;
@@ -123,24 +117,6 @@ export function WorksheetPage() {
     onSuccess: () => {
       setPreviewRevisionId(null);
       void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
-    },
-  });
-
-  const revertRevisionMutation = useMutation({
-    mutationFn: (revisionId: string) => revertLastWorksheetRevision(id!, revisionId),
-    onSuccess: (data) => {
-      setWs(data);
-      setRevertRevisionError(null);
-      setPreviewRevisionId(null);
-      void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
-      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
-    },
-    onError: (err: unknown) => {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as Error)?.message ||
-        'Zurücksetzen fehlgeschlagen.';
-      setRevertRevisionError(detail);
     },
   });
 
@@ -263,7 +239,6 @@ export function WorksheetPage() {
     clearDraftUndoStack();
     setPreviewRm(null);
     setPreviewRevisionId(null);
-    setRevertRevisionError(null);
     setLoading(true);
     api
       .get(`/worksheets/${id}/`)
@@ -754,17 +729,6 @@ export function WorksheetPage() {
     }
   };
 
-  const handleRevertLastRevision = () => {
-    const latestId = revisions[0]?.id;
-    if (!latestId || !id) return;
-    const ok = window.confirm(
-      'Stand vor der letzten gespeicherten Revision wiederherstellen? Die neueste Revision wird dabei entfernt.',
-    );
-    if (!ok) return;
-    setRevertRevisionError(null);
-    revertRevisionMutation.mutate(latestId);
-  };
-
   const handleConfirmDeleteRevisionEntry = (revisionId: string) => {
     const ok = window.confirm(
       'Diesen Versionseintrag aus der Historie löschen? Der aktuelle Arbeitsblatt-Stand bleibt unverändert.',
@@ -859,10 +823,6 @@ export function WorksheetPage() {
             onApplyRevision={(rid) => applyRevisionMutation.mutate(rid)}
             deleteRevisionPending={deleteRevisionMutation.isPending}
             onDeleteRevisionEntry={handleConfirmDeleteRevisionEntry}
-            canRevertLastRevision={!revisionPreview && revisions.length > 0 && !isReadOnly}
-            revertRevisionPending={revertRevisionMutation.isPending}
-            onRevertLastRevision={handleRevertLastRevision}
-            revertRevisionError={revertRevisionError}
           />
         </div>
 
