@@ -26,6 +26,10 @@ export const useDashboardDerived = (
         topic: b.topic,
         updated_at: b.updated_at,
         libraries: b.used_libraries,
+        html: b.html ?? '',
+        css: b.css ?? '',
+        javascript: b.javascript ?? '',
+        used_datasets: b.used_datasets,
       });
     }
     for (const w of wsData ?? []) {
@@ -37,6 +41,8 @@ export const useDashboardDerived = (
         grade: w.grade,
         status: w.status,
         updated_at: w.updated_at,
+        page_setup: w.page_setup,
+        thumbnail_render_model: w.thumbnail_render_model ?? null,
       });
     }
     items.sort((a, b) => {

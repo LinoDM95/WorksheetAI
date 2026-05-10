@@ -32,9 +32,11 @@ def usd_cents_to_credit_charge(usd_cents: int) -> int:
 
 def get_or_create_balance(user: Any):
     from apps.accounts.models import UserCreditBalance
+    from apps.accounts.services.subscription import ensure_user_subscription
 
-    initial = int(getattr(settings, 'USER_CREDITS_INITIAL_BALANCE', 10000))
-    obj, _ = UserCreditBalance.objects.get_or_create(user=user, defaults={'balance': initial})
+    ensure_user_subscription(user)
+    initial = int(getattr(settings, 'USER_CREDITS_INITIAL_BALANCE', 0))
+    obj, _ = UserCreditBalance.objects.get_or_create(user=user, defaults={'balance': max(0, initial)})
     return obj
 
 

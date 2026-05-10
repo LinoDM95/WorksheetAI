@@ -11,6 +11,7 @@ import { Button, IconButton } from '../../components/ui';
 import { cn } from '../../lib/cn';
 import { subjectAccent } from './dashboardConstants';
 import type { ContinueItem } from './dashboardTypes';
+import { WorksheetCardThumbnail } from '../worksheets/WorksheetCardThumbnail';
 
 export const HeroHeader = ({ greeting, greetingName }: { greeting: string; greetingName?: string }) => (
   <header className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-indigo-50/60 px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5">
@@ -272,31 +273,81 @@ const ContinueCard = ({ item }: { item: ContinueItem }) => {
       : null;
   const updatedLabel = item.updated_at ? formatRelative(item.updated_at) : null;
   const accent = subjectAccent(subjectLabel);
+  const wsThumb =
+    !isBoard &&
+    item.thumbnail_render_model &&
+    Object.keys(item.thumbnail_render_model).length > 0;
+  const boardHasPreview =
+    isBoard &&
+    Boolean(
+      (item.html && item.html.trim()) ||
+        (item.css && item.css.trim()) ||
+        (item.javascript && item.javascript.trim()),
+    );
 
   return (
     <Link
       to={href}
       aria-label={`${item.title || 'Ohne Titel'} öffnen`}
       className={cn(
-        'group relative flex w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm outline-none ring-indigo-400/80',
+        'group relative flex w-[260px] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm outline-none ring-indigo-400/80',
         'transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
         'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
-        'sm:w-[240px]',
+        'sm:w-[280px]',
       )}
     >
-      <div
-        className={cn(
-          'relative grid h-[6.5rem] place-items-center overflow-hidden',
-          accent.bg,
-        )}
-      >
-        <div className={cn('grid h-12 w-12 place-items-center rounded-2xl bg-white/85 shadow-sm', accent.fg)}>
-          {isBoard ? <Presentation size={22} aria-hidden /> : <FileText size={22} aria-hidden />}
+      {wsThumb ? (
+        <div className="relative shrink-0 overflow-hidden">
+          <span
+            className={cn(
+              'pointer-events-none absolute left-2 top-2 z-20 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+              accent.pill,
+            )}
+          >
+            Arbeitsblatt
+          </span>
+          <WorksheetCardThumbnail
+            worksheetId={item.id}
+            pageSetup={item.page_setup}
+            thumbnailRenderModel={item.thumbnail_render_model}
+            density="compact"
+          />
         </div>
-        <span className={cn('absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', accent.pill)}>
-          {isBoard ? 'Smartboard' : 'Arbeitsblatt'}
-        </span>
-      </div>
+      ) : boardHasPreview ? (
+        <div className="relative shrink-0 overflow-hidden">
+          <span
+            className={cn(
+              'pointer-events-none absolute left-2 top-2 z-20 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+              accent.pill,
+            )}
+          >
+            Smartboard
+          </span>
+          <BoardLibraryThumbnail
+            boardId={item.id}
+            html={item.html}
+            css={item.css}
+            javascript={item.javascript}
+            usedLibraries={item.libraries ?? []}
+            usedDatasets={item.used_datasets}
+            density="compact"
+          />
+        </div>
+      ) : (
+        <div
+          className={cn(
+            'relative grid h-[6.5rem] place-items-center overflow-hidden',
+            accent.bg,
+          )}
+        >
+          <div className={cn('grid h-12 w-12 place-items-center rounded-2xl bg-white/85 shadow-sm', accent.fg)}>
+            {isBoard ? <Presentation size={22} aria-hidden /> : <FileText size={22} aria-hidden />}
+          </div>
+          <span className={cn('absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', accent.pill)}>
+            {isBoard ? 'Smartboard' : 'Arbeitsblatt'}
+          </span>
+        </div>
+      )}
       <div className="flex flex-1 flex-col gap-1 px-3 pb-2.5 pt-2.5">
         <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug tracking-tight text-slate-900">
           {item.title || 'Ohne Titel'}
@@ -354,7 +405,7 @@ export const ThemeChipsSection = ({ chips }: { chips: { label: string; count: nu
 };
 
 const SkeletonContinueCard = () => (
-  <div className="w-[230px] shrink-0 snap-start animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:w-[240px]">
+  <div className="w-[260px] shrink-0 snap-start animate-pulse overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:w-[280px]">
     <div className="h-[6.5rem] bg-slate-100" />
     <div className="space-y-2 p-3">
       <div className="h-3 w-3/4 rounded bg-slate-200" />

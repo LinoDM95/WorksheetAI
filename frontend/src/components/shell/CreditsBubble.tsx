@@ -8,18 +8,22 @@ export const CreditsBubble = () => {
 
   if (!bootstrapped || !user) return null;
 
-  const cap = Math.max(1, user.credits_reference_cap ?? 10000);
+  const capRaw = user.credits_reference_cap ?? 0;
   const bal = user.credits_balance ?? 0;
-  const fillRatio = Math.min(1, Math.max(0, bal / cap));
+  const fillRatio = capRaw > 0 ? Math.min(1, Math.max(0, bal / capRaw)) : 0;
   const fillPct = Math.round(fillRatio * 100);
 
   const labelExact = `${bal.toLocaleString('de-DE')} Credits`;
+  const labelCap =
+    capRaw > 0
+      ? `Monatskontingent ${capRaw.toLocaleString('de-DE')} Credits`
+      : 'Kein monatliches Kontingent (Kostenlos — Abo auswählen für Credits)';
 
   return (
     <div className="relative shrink-0 overflow-visible">
       <button
         type="button"
-        aria-label={`Credits — aktuell ${labelExact}, Bezugsgröße bis ${cap.toLocaleString('de-DE')} Credits.`}
+        aria-label={`Credits — aktuell ${labelExact}. ${labelCap}.`}
         className={cn(
           'group relative z-[2] block h-11 w-11 shrink-0 overflow-visible rounded-full sm:h-12 sm:w-12',
           'shadow-[0_2px_10px_rgba(15,23,42,0.08)]',

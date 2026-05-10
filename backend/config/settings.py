@@ -166,7 +166,9 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='WorksheetAI <noreply@loc
 # ── KI-Credits (Abrechnung aus geschätzten USD-Tokenkosten → EUR → Credits)
 # 10000 Credits = 10 EUR ⇒ USER_CREDITS_PER_EUR=1000
 AI_CREDITS_ENABLED = env.bool('AI_CREDITS_ENABLED', default=True)
-USER_CREDITS_INITIAL_BALANCE = env.int('USER_CREDITS_INITIAL_BALANCE', default=10000)
+# Neuregistrierungen: 0 Credits; Aufladung über Abo (monatliches Kontingent) oder spätere Zahlarten.
+USER_CREDITS_INITIAL_BALANCE = env.int('USER_CREDITS_INITIAL_BALANCE', default=0)
+# Fallback für Clients ohne Abo-Payload (sollte über SubscriptionPlan kommen).
 USER_CREDITS_REFERENCE_CAP = env.int('USER_CREDITS_REFERENCE_CAP', default=10000)
 USER_CREDITS_PER_EUR = env.int('USER_CREDITS_PER_EUR', default=1000)
 AI_COST_USD_TO_EUR = env.float('AI_COST_USD_TO_EUR', default=0.92)

@@ -37,7 +37,8 @@ class BoardListSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'subject', 'grade', 'grade_from', 'grade_to', 'topic',
             'board_type', 'status',
-            'used_libraries',
+            'html', 'css', 'javascript',
+            'used_libraries', 'used_datasets',
             'folder',
             'source_board',
             'library_public',

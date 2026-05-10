@@ -56,6 +56,15 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=resolve_worksheet_owner(self.request.user))
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(
+            queryset,
+            many=True,
+            context={**self.get_serializer_context(), 'worksheet_list': True},
+        )
+        return response.Response(serializer.data)
+
     @decorators.action(detail=False, methods=['get'], url_path='library')
     def library_list(self, request):
         try:

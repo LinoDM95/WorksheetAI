@@ -56,6 +56,8 @@ export type Worksheet={
   revision_head_id?: string | null;
   /** False, wenn der Arbeitsblatt-Stand nicht der neuesten Revision entspricht (z. B. alte Version in Vorschau). */
   can_revise_with_ai?: boolean;
+  /** Nur bei GET /worksheets/ (Liste): erste Seite für Karten-Vorschau. */
+  thumbnail_render_model?: Record<string, unknown> | null;
 };
 
 export type WorksheetRevision = {
@@ -91,6 +93,8 @@ export type WorksheetLibraryItem={
   library_published_at:string|null;
   owner_label:string;
   viewer_is_owner:boolean;
+  page_setup?: PageSetup;
+  thumbnail_render_model?: Record<string, unknown> | null;
 };
 export type Pattern={
   id:string;key:string;name:string;description:string;status:string;blueprint:any;preview_svg:string;

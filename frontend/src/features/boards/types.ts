@@ -179,7 +179,12 @@ export type BoardListItem = {
   topic: string;
   board_type: string;
   status: string;
+  /** Mit in GET /boards/ für Karten-Vorschaubilder (Dashboard, Raster). */
+  html: string;
+  css: string;
+  javascript: string;
   used_libraries: LibraryId[];
+  used_datasets?: DatasetId[];
   folder: BoardFolderBrief | null;
   source_board: string | null;
   library_public: boolean;

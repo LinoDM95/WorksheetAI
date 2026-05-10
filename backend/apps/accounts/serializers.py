@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -66,13 +65,30 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     credits_balance = serializers.SerializerMethodField()
     credits_reference_cap = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'credits_balance', 'credits_reference_cap', 'is_staff']
+        fields = [
+            'id',
+            'email',
+            'first_name',
+            'last_name',
+            'credits_balance',
+            'credits_reference_cap',
+            'subscription',
+            'is_staff',
+        ]
+
+    def get_subscription(self, obj: User) -> dict | None:
+        from apps.accounts.services.subscription import get_subscription_api_payload
+
+        return get_subscription_api_payload(obj)
 
     def get_credits_reference_cap(self, obj: User) -> int:
-        return int(getattr(settings, 'USER_CREDITS_REFERENCE_CAP', 10000))
+        from apps.accounts.services.subscription import effective_monthly_credit_grant
+
+        return int(effective_monthly_credit_grant(obj))
 
     def get_credits_balance(self, obj: User) -> int:
         from apps.accounts.services.credits import get_or_create_balance

@@ -24,6 +24,7 @@ from .services.worksheet_revision_head import (
     worksheet_matches_revision_head,
     worksheet_metadata_snapshot,
 )
+from .services.worksheet_thumbnail_preview import first_page_render_model_for_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -156,26 +157,26 @@ class WorksheetSerializer(serializers.ModelSerializer):
         }
         content = instance.content if isinstance(instance.content, dict) else {}
         rm_existing = data.get('render_model')
-        if self._render_model_usable(rm_existing):
-            return data
-
-        try:
-            if _worksheet_content_is_creative_html(content):
-                c2, _ = repair_creative_html_worksheet(copy.deepcopy(content), instance.page_setup)
-                data['render_model'] = build_creative_html_render_model(c2, instance.page_setup, req)
-            else:
-                data['render_model'] = build_render_model(
-                    content,
-                    instance.page_setup,
-                    instance.pattern,
-                    req,
-                )
-        except Exception as exc:
-            logger.warning('render_model Neuaufbau fehlgeschlagen, nutze gespeichertes Modell: %s', exc)
-            if isinstance(instance.render_model, dict) and instance.render_model:
-                data['render_model'] = instance.render_model
-            else:
-                data['render_model'] = {'version': 'fallback', 'pages': [], 'solutions': []}
+        if not self._render_model_usable(rm_existing):
+            try:
+                if _worksheet_content_is_creative_html(content):
+                    c2, _ = repair_creative_html_worksheet(copy.deepcopy(content), instance.page_setup)
+                    data['render_model'] = build_creative_html_render_model(c2, instance.page_setup, req)
+                else:
+                    data['render_model'] = build_render_model(
+                        content,
+                        instance.page_setup,
+                        instance.pattern,
+                        req,
+                    )
+            except Exception as exc:
+                logger.warning('render_model Neuaufbau fehlgeschlagen, nutze gespeichertes Modell: %s', exc)
+                if isinstance(instance.render_model, dict) and instance.render_model:
+                    data['render_model'] = instance.render_model
+                else:
+                    data['render_model'] = {'version': 'fallback', 'pages': [], 'solutions': []}
+        if self.context.get('worksheet_list'):
+            data['thumbnail_render_model'] = first_page_render_model_for_thumbnail(data.get('render_model'))
         return data
 
     @staticmethod
@@ -329,7 +330,7 @@ class WorksheetRevisionSerializer(serializers.ModelSerializer):
 
 
 class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
-    """Leichtgewichtiger Katalog-Eintrag (ohne content/render_model)."""
+    """Leichtgewichtiger Katalog-Eintrag (ohne content/volles render_model)."""
 
     kind = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
@@ -339,6 +340,8 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
     owner_label = serializers.SerializerMethodField()
     viewer_is_owner = serializers.SerializerMethodField()
     planned_duration_minutes = serializers.SerializerMethodField()
+    page_setup = serializers.JSONField(read_only=True)
+    thumbnail_render_model = serializers.SerializerMethodField()
 
     class Meta:
         model = Worksheet
@@ -354,6 +357,8 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
             'library_published_at',
             'owner_label',
             'viewer_is_owner',
+            'page_setup',
+            'thumbnail_render_model',
         )
 
     def get_kind(self, obj: Worksheet) -> str:
@@ -395,3 +400,7 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
 
     def get_planned_duration_minutes(self, obj: Worksheet) -> int | None:
         return _planned_duration_from_worksheet(obj)
+
+    @staticmethod
+    def get_thumbnail_render_model(obj: Worksheet) -> dict | None:
+        return first_page_render_model_for_thumbnail(obj.render_model)

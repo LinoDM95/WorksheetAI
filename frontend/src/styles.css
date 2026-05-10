@@ -775,3 +775,46 @@ input[type="range"]::-moz-range-thumb {
     }
   }
 }
+
+/* =====================================================================
+   Landing / Login (PublicLoginPage) — Animationen
+   1:1 aus design/screen-landing.jsx übernommen
+   ===================================================================== */
+@keyframes wai-blink { 50% { opacity: 0; } }
+@keyframes wai-spin  { to { transform: rotate(360deg); } }
+@keyframes wai-click {
+  0%   { transform: scale(0.4); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes wai-pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+@keyframes wai-float {
+  0%, 100% { transform: translateY(-50%) translateY(0); }
+  50%      { transform: translateY(-50%) translateY(-10px); }
+}
+@keyframes wai-line-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.wai-line-in {
+  animation: wai-line-in 380ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wai-line-in { animation: none; }
+}
+
+/* Stack auf schmalen Viewports: Hero oben, Login unten, Toggle ausgeblendet */
+@media (max-width: 900px) {
+  .wai-landing-shell {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto;
+    height: auto !important;
+    min-height: 100dvh;
+  }
+  .wai-landing-shell .wai-login-toggle { display: none !important; }
+  .wai-landing-shell .wai-login-panel  { border-left: none; border-top: 1px solid var(--color-border); }
+}

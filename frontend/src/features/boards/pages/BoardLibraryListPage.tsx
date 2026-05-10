@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, FileText, MessageCircle, SlidersHorizontal, Star } from 'lucide-react';
+import { ChevronRight, MessageCircle, SlidersHorizontal, Star } from 'lucide-react';
 import {
   Alert,
   Badge,
@@ -37,6 +37,7 @@ import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDura
 import { LibrarySubjectChipsScrollBar } from '../components/library/LibrarySubjectChipsScrollBar';
 import type { BoardLibraryItem, LibraryId } from '../types';
 import type { WorksheetLibraryItem } from '../../../types';
+import { WorksheetCardThumbnail } from '../../worksheets/WorksheetCardThumbnail';
 
 type ResourceKindFilter = 'all' | 'boards' | 'worksheets';
 
@@ -199,11 +200,16 @@ function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; 
           'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
         )}
       >
-        <div className="relative flex aspect-[16/10] shrink-0 items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 to-slate-50">
-          <FileText className="h-12 w-12 text-slate-300" strokeWidth={1.25} aria-hidden />
-          <span className="pointer-events-none absolute left-2 top-2 rounded-lg bg-violet-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+        <div className="relative shrink-0 overflow-hidden">
+          <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg bg-violet-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
             Arbeitsblatt
           </span>
+          <WorksheetCardThumbnail
+            worksheetId={ws.id}
+            pageSetup={ws.page_setup}
+            thumbnailRenderModel={ws.thumbnail_render_model}
+            density="storefront"
+          />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 pb-2.5 pt-2.5 sm:gap-2 sm:px-3 sm:pb-3 sm:pt-3">
           <div className="flex items-start gap-2">
