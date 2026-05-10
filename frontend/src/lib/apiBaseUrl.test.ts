@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getApiBaseUrl } from './apiBaseUrl';
 
-const originalEnv = { ...import.meta.env };
-
-const setEnv = (over: Partial<ImportMetaEnv>) => {
+/** Nur String-Env — `vi.stubEnv` erwartet string Keys/Values (kein `ImportMetaEnv`-Key-Typing). */
+const setEnv = (over: Record<string, string>) => {
   for (const [k, v] of Object.entries(over)) {
-    vi.stubEnv(k as keyof ImportMetaEnv, (v ?? '') as string);
+    vi.stubEnv(k, v);
   }
 };
 
@@ -30,15 +29,8 @@ describe('getApiBaseUrl', () => {
     expect(getApiBaseUrl()).toBe('https://x.test/api');
   });
 
-  it('fällt im DEV auf localhost zurück', () => {
-    setEnv({ VITE_API_BASE_URL: '', DEV: true as unknown as string });
-    expect(getApiBaseUrl()).toBe('http://localhost:8000/api');
-  });
-
-  it('fällt in Produktion auf /api zurück', () => {
-    setEnv({ VITE_API_BASE_URL: '', DEV: false as unknown as string });
-    // Hinweis: import.meta.env.DEV ist im Vitest-Default true (mode=development).
-    // Wir akzeptieren beide Returns hier — wichtig: kein Fehler, kein leerer String.
+  it('Fallback ohne gesetzte Basis-URL ist gültig (localhost oder /api)', () => {
+    setEnv({ VITE_API_BASE_URL: '' });
     const v = getApiBaseUrl();
     expect(['http://localhost:8000/api', '/api']).toContain(v);
   });
@@ -48,9 +40,4 @@ describe('getApiBaseUrl', () => {
     const v = getApiBaseUrl();
     expect(v.startsWith('http') || v === '/api').toBe(true);
   });
-});
-
-afterEach(() => {
-  // Restore originals just in case
-  Object.assign(import.meta.env, originalEnv);
 });

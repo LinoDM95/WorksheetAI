@@ -46,12 +46,12 @@ describe('refreshAuthCookies', () => {
   });
 
   it('dedupliziert parallele Aufrufe (in-flight)', async () => {
-    let resolveOnce: (() => void) | null = null;
+    const unlock: { release?: () => void } = {};
     postSpy.mockImplementation(
       () =>
-        new Promise((res) => {
-          resolveOnce = () =>
-            res({
+        new Promise((resolve) => {
+          unlock.release = () =>
+            resolve({
               data: {},
               status: 200,
               statusText: 'OK',
@@ -63,7 +63,7 @@ describe('refreshAuthCookies', () => {
     const p1 = refreshAuthCookies();
     const p2 = refreshAuthCookies();
     expect(postSpy).toHaveBeenCalledTimes(1);
-    resolveOnce?.();
+    unlock.release?.();
     await Promise.all([p1, p2]);
   });
 });

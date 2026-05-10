@@ -44,6 +44,8 @@ const okResponse = <T>(data: T) => ({
   config: {},
 });
 
+type MockCallArgs = readonly unknown[];
+
 describe('boardsApi', () => {
   let getSpy: ReturnType<typeof vi.spyOn>;
   let postSpy: ReturnType<typeof vi.spyOn>;
@@ -111,7 +113,7 @@ describe('boardsApi', () => {
 
     it('fetchBoardLibrary: scope-Parameter', async () => {
       await fetchBoardLibrary('mine');
-      const call = getSpy.mock.calls.find((c) => c[0] === '/boards/library/');
+      const call = getSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/library/');
       expect(call).toBeTruthy();
       const cfg = call![1] as { params?: { scope?: string } };
       expect(cfg.params?.scope).toBe('mine');
@@ -119,7 +121,7 @@ describe('boardsApi', () => {
 
     it('fetchBoardLibrary: defaults zu scope=all', async () => {
       await fetchBoardLibrary();
-      const call = getSpy.mock.calls.find((c) => c[0] === '/boards/library/');
+      const call = getSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/library/');
       const cfg = call![1] as { params?: { scope?: string } };
       expect(cfg.params?.scope).toBe('all');
     });
@@ -163,7 +165,7 @@ describe('boardsApi', () => {
     it('generateBoard: POST /boards/generate/ mit longBoard timeout', async () => {
       postSpy.mockResolvedValueOnce(okResponse({ id: 'b1' }) as never);
       await generateBoard({ topic: 'X' } as never);
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/generate/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/generate/');
       expect(call).toBeTruthy();
       expect(call![1]).toEqual({ topic: 'X' });
       expect((call![2] as { timeout?: number })?.timeout).toBeGreaterThan(60_000);
@@ -174,7 +176,7 @@ describe('boardsApi', () => {
         okResponse({ board: { id: 'b' }, revision: { id: 'r' } }) as never,
       );
       await reviseBoard('b1', 'mach besser');
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/revise/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/revise/');
       expect(call![1]).toEqual({ prompt: 'mach besser' });
     });
 
@@ -183,7 +185,7 @@ describe('boardsApi', () => {
         okResponse({ board: { id: 'b' }, revision: { id: 'r' } }) as never,
       );
       await reviseBoard('b1', 'p', { ai_quality_tier: 'ultra' });
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/revise/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/revise/');
       expect(call![1]).toEqual({ prompt: 'p', ai_quality_tier: 'ultra' });
     });
 
@@ -192,13 +194,13 @@ describe('boardsApi', () => {
         okResponse({ board: { id: 'b' }, revision: { id: 'r' } }) as never,
       );
       await reviseBoard('b1', 'p', { revision_mode: 'general' });
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/revise/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/revise/');
       expect(call![1]).toEqual({ prompt: 'p' });
     });
 
     it('runBoardQualityCheck', async () => {
       await runBoardQualityCheck('b1');
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/run-quality-check/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/run-quality-check/');
       expect(call).toBeTruthy();
     });
 
@@ -207,7 +209,7 @@ describe('boardsApi', () => {
         okResponse({ board: {}, revision: {}, ok: true }) as never,
       );
       await autoRepairBoard('b1');
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/auto-repair/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/auto-repair/');
       expect(call![1]).toEqual({});
     });
 
@@ -245,7 +247,7 @@ describe('boardsApi', () => {
 
     it('applyBoardRevision', async () => {
       await applyBoardRevision('b1', 'r1');
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/b1/apply-revision/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/b1/apply-revision/');
       expect(call).toBeTruthy();
       expect(call![1]).toEqual({ revision_id: 'r1' });
     });
@@ -302,7 +304,7 @@ describe('boardsApi', () => {
     it('generateBoardFromBlocks: POST mit Plan-Body und longBoard timeout', async () => {
       const plan = { foo: 'bar' };
       await generateBoardFromBlocks(plan as never);
-      const call = postSpy.mock.calls.find((c) => c[0] === '/boards/generate-blocks/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/boards/generate-blocks/');
       expect(call).toBeTruthy();
       expect(call![1]).toEqual(plan);
       expect((call![2] as { timeout?: number })?.timeout).toBeGreaterThan(60_000);

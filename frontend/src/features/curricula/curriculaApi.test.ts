@@ -32,6 +32,8 @@ const okResponse = <T>(data: T) => ({
   config: {},
 });
 
+type MockCallArgs = readonly unknown[];
+
 describe('curriculaApi', () => {
   let getSpy: ReturnType<typeof vi.spyOn>;
   let postSpy: ReturnType<typeof vi.spyOn>;
@@ -59,7 +61,7 @@ describe('curriculaApi', () => {
       fd.append('title', 'X');
       postSpy.mockResolvedValueOnce(okResponse({ id: 's1', title: 'X' }) as never);
       await createCurriculumSource(fd);
-      const call = postSpy.mock.calls.find((c) => c[0] === '/curricula/sources/');
+      const call = postSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/curricula/sources/');
       expect(call).toBeTruthy();
       expect(call![1]).toBeInstanceOf(FormData);
     });
@@ -148,14 +150,14 @@ describe('curriculaApi', () => {
   describe('Contexts', () => {
     it('fetchCurriculumContexts: ohne Params', async () => {
       await fetchCurriculumContexts();
-      const call = getSpy.mock.calls.find((c) => c[0] === '/curricula/contexts/');
+      const call = getSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/curricula/contexts/');
       const cfg = (call![1] ?? {}) as { params?: unknown };
       expect(cfg.params).toBeUndefined();
     });
 
     it('fetchCurriculumContexts: mit Params', async () => {
       await fetchCurriculumContexts({ subject: 'Math', state: 'bayern' });
-      const call = getSpy.mock.calls.find((c) => c[0] === '/curricula/contexts/');
+      const call = getSpy.mock.calls.find((c: MockCallArgs) => c[0] === '/curricula/contexts/');
       const cfg = call![1] as { params?: Record<string, string> };
       expect(cfg.params).toEqual({ subject: 'Math', state: 'bayern' });
     });
