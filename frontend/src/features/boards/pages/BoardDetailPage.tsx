@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -40,8 +40,7 @@ export function BoardDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
-  const reviseJobRef = useRef<string | null>(null);
+  const { jobs, startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
 
   const [reviseOpen, setReviseOpen] = useState(false);
   const [fatalOpen, setFatalOpen] = useState(false);
@@ -181,58 +180,62 @@ export function BoardDetailPage() {
     [folders],
   );
 
-  const reviseMutation = useMutation({
-    mutationFn: ({ prompt, mode }: { prompt: string; mode: RevisionMode }) => {
-      const jid = reviseJobRef.current;
-      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
-      return runSerialized(jid, async () => {
+  const reviseKiJobs = useMemo(
+    () =>
+      jobs.filter(
+        (j) =>
+          j.kind === 'board-revise' &&
+          j.resourceId === id &&
+          (j.status === 'queued' || j.status === 'running'),
+      ),
+    [jobs, id],
+  );
+  const reviseKiRunning = reviseKiJobs.some((j) => j.status === 'running');
+  const reviseKiQueued = reviseKiJobs.some((j) => j.status === 'queued');
+
+  const handleRevise = () => {
+    setReviseError(null);
+    if (!reviseInput.trim()) {
+      setReviseError('Bitte beschreibe deinen Änderungswunsch.');
+      return;
+    }
+    if (!id) return;
+    const prompt = reviseInput.trim();
+    const mode = revisionMode;
+    const jid = startJob({
+      kind: 'board-revise',
+      title: 'Board wird überarbeitet',
+      subtitle: board?.title?.trim() || undefined,
+      resourceId: id,
+    });
+    void runSerialized(jid, async () => {
+      try {
         updateJob(jid, {
           phaseLabel: 'Die KI passt HTML, CSS und JavaScript an …',
           progressPercent: null,
         });
-        return reviseBoard(id, prompt, { revision_mode: mode });
-      });
-    },
-    onMutate: () => {
-      reviseJobRef.current = startJob({
-        kind: 'board-revise',
-        title: 'Board wird überarbeitet',
-        subtitle: board?.title?.trim() || undefined,
-      });
-    },
-    onSuccess: () => {
-      const jid = reviseJobRef.current;
-      if (jid) {
+        await reviseBoard(id, prompt, { revision_mode: mode });
         completeJob(jid, { successMessage: 'Vorschau wurde aktualisiert.' });
-        reviseJobRef.current = null;
-      }
-      queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
-      queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
-      queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
-      setReviseInput('');
-      setRevisionMode('general');
-      setRevertError(null);
-      setReloadKey((k) => k + 1);
-      setReviseOpen(false);
-      setPreviewRevisionId(null);
-    },
-    onError: (err: unknown) => {
-      if (isAiGenerationQueueAbortedError(err)) {
-        reviseJobRef.current = null;
-        return;
-      }
-      const jid = reviseJobRef.current;
-      const detail =
-        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
-        || (err as Error)?.message
-        || 'Revision fehlgeschlagen.';
-      if (jid) {
+        queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+        queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
+        queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+        setReviseInput('');
+        setRevisionMode('general');
+        setRevertError(null);
+        setReloadKey((k) => k + 1);
+        setReviseOpen(false);
+        setPreviewRevisionId(null);
+      } catch (err: unknown) {
+        if (isAiGenerationQueueAbortedError(err)) return;
+        const detail =
+          (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+          || (err as Error)?.message
+          || 'Revision fehlgeschlagen.';
         failJob(jid, detail);
-        reviseJobRef.current = null;
+        setReviseError(detail);
       }
-      setReviseError(detail);
-    },
-  });
+    });
+  };
 
   const revertMutation = useMutation({
     mutationFn: (revisionId: string) => revertLastBoardRevision(id, revisionId),
@@ -464,15 +467,6 @@ export function BoardDetailPage() {
     );
   }, [board, patchMutation]);
 
-  const handleRevise = () => {
-    setReviseError(null);
-    if (!reviseInput.trim()) {
-      setReviseError('Bitte beschreibe deinen Änderungswunsch.');
-      return;
-    }
-    reviseMutation.mutate({ prompt: reviseInput.trim(), mode: revisionMode });
-  };
-
   const handleRevertRevision = () => {
     const latestId = revisions[0]?.id;
     if (!latestId) return;
@@ -637,7 +631,8 @@ export function BoardDetailPage() {
           onModeChange={setRevisionMode}
           error={reviseError}
           revertError={revertError}
-          busy={reviseMutation.isPending}
+          busyRunning={reviseKiRunning}
+          busyQueued={reviseKiQueued}
           revertBusy={revertMutation.isPending}
           canRevert={isHeadView && revisions.length > 0}
           onRevert={handleRevertRevision}

@@ -19,7 +19,8 @@ import { AiGenerationQueueAbortedError } from './generationQueue';
 /** Während langer KI-Läufe Access-Cookie vor Ablauf erneuern (Access default 120 min, Jobs bis 60 min+). */
 const PROACTIVE_AUTH_REFRESH_MS = 10 * 60 * 1000;
 
-const MAX_JOBS = 6;
+/** Maximale sichtbare Jobs in der Liste; ältere werden beim Start verworfen. */
+export const AI_GENERATION_MAX_JOBS = 6;
 
 type State = { jobs: AiGenerationJob[] };
 
@@ -36,7 +37,7 @@ const newId = (): string =>
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'start':
-      return { jobs: [action.job, ...state.jobs].slice(0, MAX_JOBS) };
+      return { jobs: [action.job, ...state.jobs].slice(0, AI_GENERATION_MAX_JOBS) };
     case 'patch':
       return {
         jobs: state.jobs.map((j) => (j.id === action.id ? { ...j, ...action.patch } : j)),

@@ -79,38 +79,52 @@ export function WizardPage() {
     actions.patch({ subject: raw.slice(0, 120) });
   }, [searchParams, actions]);
   const { startJob, updateJob, completeJob, failJob, runSerialized, jobs } = useAiGenerationJobs();
-  const worksheetJobRef = useRef<string | null>(null);
-  const worksheetJobMeta = worksheetJobRef.current
-    ? jobs.find((j) => j.id === worksheetJobRef.current)
-    : undefined;
-  const worksheetJobRunning = worksheetJobMeta?.status === 'running';
+  const wizardWsJobIdsRef = useRef(new Set<string>());
   const [step, setStep] = useState(0);
   const [inhaltStepError, setInhaltStepError] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateProgress, setGenerateProgress] = useState(0);
   const progressStop = useRef(false);
 
+  const runningWsCreateJobId = jobs.find(
+    (j) =>
+      wizardWsJobIdsRef.current.has(j.id) &&
+      j.kind === 'worksheet-create' &&
+      j.status === 'running',
+  )?.id;
+
+  const wizardWsQueuedOnly = jobs.some(
+    (j) =>
+      wizardWsJobIdsRef.current.has(j.id) &&
+      j.kind === 'worksheet-create' &&
+      j.status === 'queued',
+  );
+
+  const wizardWsBusy = Boolean(
+    jobs.some(
+      (j) =>
+        wizardWsJobIdsRef.current.has(j.id) &&
+        j.kind === 'worksheet-create' &&
+        (j.status === 'queued' || j.status === 'running'),
+    ),
+  );
+
   useEffect(() => {
-    if (!generating || !worksheetJobRunning) return;
+    if (!runningWsCreateJobId) return;
     progressStop.current = false;
     setGenerateProgress(0);
-    const jid = worksheetJobRef.current;
-    if (jid) {
-      updateJob(jid, { progressPercent: 0, phaseLabel: 'KI erstellt dein Arbeitsblatt …' });
-    }
+    const jid = runningWsCreateJobId;
+    updateJob(jid, { progressPercent: 0, phaseLabel: 'KI erstellt dein Arbeitsblatt …' });
     const id = window.setInterval(() => {
       if (progressStop.current) return;
       setGenerateProgress((p) => {
         const next = p >= 92 ? p : Math.min(92, p + (92 - p) * 0.035 + 0.35);
-        if (jid) {
-          updateJob(jid, { progressPercent: next });
-        }
+        updateJob(jid, { progressPercent: next });
         return next;
       });
     }, 60);
     return () => window.clearInterval(id);
-  }, [generating, worksheetJobRunning, updateJob]);
+  }, [runningWsCreateJobId, updateJob]);
 
   const handleGenerate = async () => {
     setGenerateError(null);
@@ -130,8 +144,7 @@ export function WizardPage() {
       title: 'Arbeitsblatt wird erstellt',
       subtitle,
     });
-    worksheetJobRef.current = jid;
-    setGenerating(true);
+    wizardWsJobIdsRef.current.add(jid);
     try {
       await runSerialized(jid, async () => {
         updateJob(jid, { phaseLabel: 'KI erstellt dein Arbeitsblatt …', progressPercent: 4 });
@@ -148,13 +161,11 @@ export function WizardPage() {
           successMessage: 'Arbeitsblatt ist bereit.',
           primaryAction: { label: 'Arbeitsblatt öffnen', to: `/app/worksheets/${ws.id}` },
         });
-        worksheetJobRef.current = null;
         navigate('/app/worksheets');
       });
     } catch (err) {
       if (isAiGenerationQueueAbortedError(err)) {
         progressStop.current = true;
-        worksheetJobRef.current = null;
         setGenerateProgress(0);
         return;
       }
@@ -179,11 +190,10 @@ export function WizardPage() {
         }
       }
       failJob(jid, msg);
-      worksheetJobRef.current = null;
       setGenerateError(msg);
       setGenerateProgress(0);
     } finally {
-      setGenerating(false);
+      wizardWsJobIdsRef.current.delete(jid);
     }
   };
 
@@ -231,7 +241,8 @@ export function WizardPage() {
           {step === 3 && (
             <StepGenerieren
               state={state}
-              generating={generating}
+              generating={wizardWsBusy}
+              queuedOnly={wizardWsQueuedOnly && !runningWsCreateJobId}
               progress={generateProgress}
               error={generateError}
             />
@@ -253,7 +264,7 @@ export function WizardPage() {
           <Button
             variant="success"
             onClick={() => void handleGenerate()}
-            disabled={generating}
+            disabled={wizardWsBusy}
             leftIcon={<Check size={15} aria-hidden />}
           >
             Fertigstellen & Generieren
@@ -721,11 +732,13 @@ const StepDesign = ({
 const StepGenerieren = ({
   state,
   generating,
+  queuedOnly,
   progress,
   error,
 }: {
   state: WizardState;
   generating: boolean;
+  queuedOnly?: boolean;
   progress: number;
   error: string | null;
 }) => (
@@ -757,13 +770,13 @@ const StepGenerieren = ({
     {generating ? (
       <div className="mt-5">
         <div className="mb-1 flex justify-between text-[12px] text-slate-600">
-          <span>Generierung läuft …</span>
-          <span className="tabular-nums">{Math.round(progress)} %</span>
+          <span>{queuedOnly ? 'In der KI-Warteschlange …' : 'Generierung läuft …'}</span>
+          {!queuedOnly ? <span className="tabular-nums">{Math.round(progress)} %</span> : null}
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
           <div
             className="h-full bg-indigo-600 transition-[width] duration-100 ease-linear"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${queuedOnly ? 8 : progress}%` }}
           />
         </div>
       </div>

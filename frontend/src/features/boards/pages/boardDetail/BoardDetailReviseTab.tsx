@@ -12,7 +12,8 @@ export function BoardDetailReviseTab({
   onModeChange,
   error,
   revertError,
-  busy,
+  busyRunning,
+  busyQueued = false,
   revertBusy,
   canRevert,
   onRevert,
@@ -26,7 +27,10 @@ export function BoardDetailReviseTab({
   onModeChange: (m: RevisionMode) => void;
   error: string | null;
   revertError: string | null;
-  busy: boolean;
+  /** Aktiver Netzwerk-Lauf für diese Board-Überarbeitung (Spinner am Absenden). */
+  busyRunning: boolean;
+  /** Mind. ein Überarbeitungs-Job wartet noch in der globalen KI-Warteschlange. */
+  busyQueued?: boolean;
   revertBusy: boolean;
   canRevert: boolean;
   onRevert: () => void;
@@ -45,12 +49,18 @@ export function BoardDetailReviseTab({
         Beschreibe in eigenen Worten, was am Board verändert werden soll. Die KI liefert eine überarbeitete
         Komplettfassung von HTML, CSS und JavaScript zurück.
       </p>
+      {busyQueued ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          Mindestens eine Überarbeitung steht noch in der KI-Warteschlange — du kannst weitere Wünsche absenden; sie
+          werden nacheinander ausgeführt.
+        </p>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
-        <RevisionModeSelect value={mode} onChange={onModeChange} disabled={busy} />
+        <RevisionModeSelect value={mode} onChange={onModeChange} disabled={busyRunning} />
         <div>
           <label className="mb-1 block text-[12px] font-semibold text-slate-600">Schnellauswahl</label>
           <RevisionQuickActions
-            disabled={busy}
+            disabled={busyRunning}
             onPick={(action) => {
               onModeChange(action.mode);
               if (!value.trim()) onChange(action.prompt);
@@ -80,13 +90,13 @@ export function BoardDetailReviseTab({
               variant="secondary"
               onClick={onRevert}
               loading={revertBusy}
-              disabled={busy}
+              disabled={busyRunning}
               leftIcon={<Undo2 size={14} aria-hidden />}
             >
               Letzte Überarbeitung rückgängig
             </Button>
           )}
-          <Button onClick={onSubmit} loading={busy} disabled={revertBusy}>
+          <Button onClick={onSubmit} loading={busyRunning} disabled={revertBusy}>
             Board überarbeiten
           </Button>
         </div>

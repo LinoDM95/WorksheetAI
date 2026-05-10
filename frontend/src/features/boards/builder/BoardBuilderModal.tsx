@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 import { Alert, Button, Field, IconButton, TextInput } from '../../../components/ui';
-import { BOARDS_BLOCKS_QUERY_KEY, BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
+import { BOARDS_BLOCKS_QUERY_KEY, BOARDS_DETAIL_QUERY_KEY, BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
 import { fetchBlockRegistry, generateBoardFromBlocks } from '../boardsApi';
 import type { BlockRegistryEntry, CompositionPlan } from '../types';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
@@ -24,8 +24,8 @@ type Props = {
 
 export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: Props) => {
   const queryClient = useQueryClient();
-  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
-  const boardJobRef = useRef<string | null>(null);
+  const { startJob, updateJob, completeJob, failJob, runSerialized, jobs } = useAiGenerationJobs();
+  const sessionBlocksJobIdsRef = useRef(new Set<string>());
   const registryQ = useQuery({
     queryKey: BOARDS_BLOCKS_QUERY_KEY,
     queryFn: fetchBlockRegistry,
@@ -69,51 +69,21 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
     [persistCurrentPageBullets, dispatch],
   );
 
-  const generateM = useMutation({
-    mutationFn: async (p: CompositionPlan) => {
-      const jid = boardJobRef.current;
-      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
-      return runSerialized(jid, async () => {
-        updateJob(jid, {
-          phaseLabel: 'KI füllt Bausteine und komponiert das Board …',
-          progressPercent: null,
-        });
-        const board = await generateBoardFromBlocks(p);
-        return { board, jid };
-      });
-    },
-    onMutate: (p: CompositionPlan) => {
-      boardJobRef.current = startJob({
-        kind: 'board-blocks',
-        title: 'Board aus Bausteinen wird erstellt',
-        subtitle: p.title.trim() || p.topic.trim() || undefined,
-      });
-    },
-    onSuccess: ({ board, jid }) => {
-      queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
-      addPendingFirstOpenBoard(board.id);
-      onPendingHighlightChange?.();
-      completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
-      boardJobRef.current = null;
-      onClose();
-    },
-    onError: (err: unknown) => {
-      if (isAiGenerationQueueAbortedError(err)) {
-        boardJobRef.current = null;
-        return;
-      }
-      const jid = boardJobRef.current;
-      const detail =
-        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
-        || (err as Error)?.message
-        || 'Generierung fehlgeschlagen.';
-      if (jid) {
-        failJob(jid, detail);
-        boardJobRef.current = null;
-      }
-    },
-  });
-  const busy = generateM.isPending;
+  const [blocksGenerateError, setBlocksGenerateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      sessionBlocksJobIdsRef.current.clear();
+      setBlocksGenerateError(null);
+    }
+  }, [open]);
+
+  const busy = jobs.some(
+    (j) =>
+      sessionBlocksJobIdsRef.current.has(j.id) &&
+      j.kind === 'board-blocks' &&
+      j.status === 'running',
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -161,7 +131,38 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
       pages: pagesMerged,
       title: plan.title || plan.topic || 'Board',
     };
-    generateM.mutate(payload);
+    const jid = startJob({
+      kind: 'board-blocks',
+      title: 'Board aus Bausteinen wird erstellt',
+      subtitle: payload.title.trim() || payload.topic.trim() || undefined,
+    });
+    sessionBlocksJobIdsRef.current.add(jid);
+    setBlocksGenerateError(null);
+    void runSerialized(jid, async () => {
+      try {
+        updateJob(jid, {
+          phaseLabel: 'KI füllt Bausteine und komponiert das Board …',
+          progressPercent: null,
+        });
+        const board = await generateBoardFromBlocks(payload);
+        queryClient.setQueryData(BOARDS_DETAIL_QUERY_KEY(String(board.id)), board);
+        queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+        addPendingFirstOpenBoard(board.id);
+        onPendingHighlightChange?.();
+        completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
+        onClose();
+      } catch (err: unknown) {
+        if (isAiGenerationQueueAbortedError(err)) return;
+        const detail =
+          (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+          || (err as Error)?.message
+          || 'Generierung fehlgeschlagen.';
+        failJob(jid, detail);
+        setBlocksGenerateError(detail);
+      } finally {
+        sessionBlocksJobIdsRef.current.delete(jid);
+      }
+    });
   };
 
   if (!open || typeof document === 'undefined') return null;
@@ -303,9 +304,9 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
         </div>
 
         {/* Hinweise / Fehler */}
-        {(generateM.isError || (totalSlots === 0 && !busy) || planError) && (
+        {(blocksGenerateError || (totalSlots === 0 && !busy) || planError) && (
           <div className="space-y-1 border-t border-slate-100 bg-slate-50 px-4 py-2">
-            {totalSlots === 0 && !busy && !generateM.isError && !planError && (
+            {totalSlots === 0 && !busy && !blocksGenerateError && !planError && (
               <p className="text-[12px] text-slate-500">
                 Wähle links mindestens einen Baustein, dann kannst du das Board erzeugen lassen.
               </p>
@@ -313,11 +314,9 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
             {planError && (
               <p className="text-[12px] text-amber-800">{planError}</p>
             )}
-            {generateM.isError && (
+            {blocksGenerateError && (
               <Alert tone="error">
-                {(generateM.error as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
-                  || (generateM.error as Error)?.message
-                  || 'Generierung fehlgeschlagen.'}
+                {blocksGenerateError}
               </Alert>
             )}
           </div>

@@ -420,8 +420,8 @@ function SortableBlockShell({
 function WorksheetKiEditPanel({
   pageNumber1Based,
   open,
-  busy,
-  busyQueued,
+  kiRunning,
+  kiQueued,
   input,
   onInputChange,
   messages,
@@ -429,9 +429,8 @@ function WorksheetKiEditPanel({
 }: {
   pageNumber1Based: number;
   open: boolean;
-  busy: boolean;
-  /** Wenn true und `busy`: Job noch in der globalen KI-Warteschlange (nicht aktiv am Netzwerk). */
-  busyQueued?: boolean;
+  kiRunning: boolean;
+  kiQueued?: boolean;
   input: string;
   onInputChange: (v: string) => void;
   messages: { role: 'user' | 'assistant'; text: string }[];
@@ -439,7 +438,7 @@ function WorksheetKiEditPanel({
 }) {
   if (!open) return null;
   const sendLabel =
-    busy && busyQueued ? 'In Warteschlange …' : busy ? 'KI arbeitet …' : 'Anweisung senden';
+    kiQueued && !kiRunning ? 'In Warteschlange …' : kiRunning ? 'KI arbeitet …' : 'Anweisung senden';
   return (
     <div
       className="mt-2 rounded-xl border border-indigo-200/90 bg-indigo-50/50 px-3 py-3"
@@ -479,12 +478,11 @@ function WorksheetKiEditPanel({
         placeholder="z. B.: „Aufgabe 2 kürzen“, „Tippfehler im Titel beheben“ …"
         value={input}
         onChange={(e) => onInputChange(e.target.value)}
-        disabled={busy}
       />
       <button
         type="button"
         className="btn btn-primary mt-2 w-full text-[12px] disabled:opacity-60"
-        disabled={busy || !input.trim()}
+        disabled={!input.trim()}
         onClick={onSend}
       >
         {sendLabel}
@@ -552,8 +550,8 @@ type SidebarProps = {
   rootElement?: 'aside' | 'div';
   /** Eine Seite (Standard oder Kreativ HTML) mit KI nachbearbeiten — Anweisung der Lehrkraft. */
   onRegenerateWorksheetPage?: (pageIndex: number, teacherInstruction: string) => Promise<void>;
-  /** KI-Busy nur für die jeweilige Seite (andere Seiten bleiben bedienbar; globale Warteschlange im Dock). */
-  worksheetPageKiUi?: (pageIndex: number) => { blocking: boolean; queued: boolean };
+  /** KI-Zustand nur für die jeweilige Seite — `running` = aktiv am Netzwerk; `queued` = nur in der globalen Warteschlange. */
+  worksheetPageKiUi?: (pageIndex: number) => { running: boolean; queued: boolean };
 };
 
 export function WorksheetEditSidebar({
@@ -585,8 +583,7 @@ export function WorksheetEditSidebar({
   const toggle = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleKiSend = (pageIndex: number) => {
-    const ui = worksheetPageKiUi?.(pageIndex);
-    if (!onRegenerateWorksheetPage || ui?.blocking) return;
+    if (!onRegenerateWorksheetPage) return;
     const text = (kiDraft[pageIndex] ?? '').trim();
     if (!text) return;
     setKiChatLog((prev) => ({
@@ -837,8 +834,8 @@ export function WorksheetEditSidebar({
                 <WorksheetKiEditPanel
                   pageNumber1Based={pageIndex + 1}
                   open={Boolean(kiPanelOpen[pageIndex])}
-                  busy={Boolean(worksheetPageKiUi?.(pageIndex)?.blocking)}
-                  busyQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
+                  kiRunning={Boolean(worksheetPageKiUi?.(pageIndex)?.running)}
+                  kiQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
                   input={kiDraft[pageIndex] ?? ''}
                   onInputChange={(v) => setKiDraft((p) => ({ ...p, [pageIndex]: v }))}
                   messages={kiChatLog[pageIndex] ?? []}
@@ -1280,8 +1277,8 @@ export function WorksheetEditSidebar({
               <WorksheetKiEditPanel
                 pageNumber1Based={pageIndex + 1}
                 open={Boolean(kiPanelOpen[pageIndex])}
-                busy={Boolean(worksheetPageKiUi?.(pageIndex)?.blocking)}
-                busyQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
+                kiRunning={Boolean(worksheetPageKiUi?.(pageIndex)?.running)}
+                kiQueued={Boolean(worksheetPageKiUi?.(pageIndex)?.queued)}
                 input={kiDraft[pageIndex] ?? ''}
                 onInputChange={(v) => setKiDraft((p) => ({ ...p, [pageIndex]: v }))}
                 messages={kiChatLog[pageIndex] ?? []}

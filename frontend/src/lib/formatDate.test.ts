@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatDate, formatRelative } from './formatDate';
+import { formatDate, formatDateTime, formatLongDate, formatRelative } from './formatDate';
 
 describe('formatDate', () => {
   it('returns em dash for empty input', () => {
@@ -13,6 +13,28 @@ describe('formatDate', () => {
     const s = formatDate('2026-03-02T10:00:00.000Z');
     expect(s).toMatch(/2026/);
     expect(s).toMatch(/3|03/);
+  });
+
+  it('akzeptiert Date-Objekt', () => {
+    expect(formatDate(new Date('2026-04-05T10:00:00Z'))).toMatch(/2026/);
+  });
+});
+
+describe('formatDateTime', () => {
+  it('returns em dash for empty input', () => {
+    expect(formatDateTime(null)).toBe('—');
+  });
+  it('liefert eine de-DE Datums+Zeit-Repräsentation', () => {
+    const s = formatDateTime('2026-04-05T10:30:00Z');
+    expect(s).toMatch(/2026/);
+  });
+});
+
+describe('formatLongDate', () => {
+  it('formatiert ein Datum mit Wochentag', () => {
+    const s = formatLongDate(new Date('2026-04-06T10:00:00Z')); // Montag
+    expect(s).toMatch(/2026/);
+    expect(s.length).toBeGreaterThan(8);
   });
 });
 
@@ -36,5 +58,22 @@ describe('formatRelative', () => {
 
   it('shows minutes within an hour', () => {
     expect(formatRelative('2026-01-15T11:30:00.000Z')).toBe('vor 30 Min.');
+  });
+
+  it('shows Std. innerhalb 24h', () => {
+    expect(formatRelative('2026-01-15T08:00:00.000Z')).toBe('vor 4 Std.');
+  });
+
+  it('shows gestern wenn 1 Tag her', () => {
+    expect(formatRelative('2026-01-14T11:00:00.000Z')).toBe('gestern');
+  });
+
+  it('shows vor X Tagen für 2..6 Tage', () => {
+    expect(formatRelative('2026-01-12T11:00:00.000Z')).toBe('vor 3 Tagen');
+  });
+
+  it('fällt nach 7 Tagen auf de-DE Datum zurück', () => {
+    const s = formatRelative('2025-12-30T11:00:00.000Z');
+    expect(s).toMatch(/2025/);
   });
 });

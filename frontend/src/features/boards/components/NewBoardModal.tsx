@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Blocks, Sparkles, X } from 'lucide-react';
 import {
   Alert,
@@ -10,7 +10,7 @@ import {
   IconButton,
   TextInput,
 } from '../../../components/ui';
-import { BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
+import { BOARDS_DETAIL_QUERY_KEY, BOARDS_LIST_QUERY_KEY } from '../../../lib/listQueries';
 import { generateBoardWithProgress } from '../boardsApi';
 import type { BoardGeneratePayload, VisualStyleId } from '../types';
 import { cn } from '../../../lib/cn';
@@ -47,8 +47,8 @@ type NewBoardModalProps = {
 
 export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBoardModalProps) => {
   const queryClient = useQueryClient();
-  const { startJob, updateJob, completeJob, failJob, runSerialized } = useAiGenerationJobs();
-  const boardJobRef = useRef<string | null>(null);
+  const { startJob, updateJob, completeJob, failJob, runSerialized, jobs } = useAiGenerationJobs();
+  const sessionCreativeJobIdsRef = useRef(new Set<string>());
 
   const [subject, setSubject] = useState('');
   const [gradeFrom, setGradeFrom] = useState('');
@@ -59,51 +59,10 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const [prompt, setPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const createMutation = useMutation({
-    mutationFn: async (payload: BoardGeneratePayload) => {
-      const jid = boardJobRef.current;
-      if (!jid) throw new Error('Interner Fehler: Kein KI-Job.');
-      return runSerialized(jid, async () => {
-        updateJob(jid, { phaseLabel: 'Wir bereiten die Generierung vor …', progressPercent: 4 });
-        const board = await generateBoardWithProgress(payload, {
-          onPhase: (p) => updateJob(jid, { phaseLabel: p.label, progressPercent: p.pct }),
-        });
-        return { board, jid };
-      });
-    },
-    onMutate: (payload: BoardGeneratePayload) => {
-      boardJobRef.current = startJob({
-        kind: 'board-creative',
-        title: 'Board wird erstellt',
-        subtitle: payload.topic.trim() || undefined,
-      });
-    },
-    onSuccess: ({ board, jid }) => {
-      queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
-      addPendingFirstOpenBoard(board.id);
-      onPendingHighlightChange?.();
-      completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
-      boardJobRef.current = null;
-      onClose();
-      setError(null);
-    },
-    onError: (err: unknown) => {
-      if (isAiGenerationQueueAbortedError(err)) {
-        boardJobRef.current = null;
-        return;
-      }
-      const jid = boardJobRef.current;
-      const detail =
-        (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
-        || (err as Error)?.message
-        || 'Generierung fehlgeschlagen.';
-      if (jid) {
-        failJob(jid, detail);
-        boardJobRef.current = null;
-      }
-      setError(detail);
-    },
-  });
+  useEffect(() => {
+    if (!open) return;
+    sessionCreativeJobIdsRef.current.clear();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,10 +123,45 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       creativity: 'experimentell',
       visual_style: visualStyle,
     };
-    createMutation.mutate(payload);
+    const jid = startJob({
+      kind: 'board-creative',
+      title: 'Board wird erstellt',
+      subtitle: payload.topic.trim() || undefined,
+    });
+    sessionCreativeJobIdsRef.current.add(jid);
+    void runSerialized(jid, async () => {
+      try {
+        updateJob(jid, { phaseLabel: 'Wir bereiten die Generierung vor …', progressPercent: 4 });
+        const board = await generateBoardWithProgress(payload, {
+          onPhase: (p) => updateJob(jid, { phaseLabel: p.label, progressPercent: p.pct }),
+        });
+        queryClient.setQueryData(BOARDS_DETAIL_QUERY_KEY(String(board.id)), board);
+        queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
+        addPendingFirstOpenBoard(board.id);
+        onPendingHighlightChange?.();
+        completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
+        onClose();
+        setError(null);
+      } catch (err: unknown) {
+        if (isAiGenerationQueueAbortedError(err)) return;
+        const detail =
+          (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
+          || (err as Error)?.message
+          || 'Generierung fehlgeschlagen.';
+        failJob(jid, detail);
+        setError(detail);
+      } finally {
+        sessionCreativeJobIdsRef.current.delete(jid);
+      }
+    });
   };
 
-  const busy = createMutation.isPending;
+  const busy = jobs.some(
+    (j) =>
+      sessionCreativeJobIdsRef.current.has(j.id) &&
+      j.kind === 'board-creative' &&
+      j.status === 'running',
+  );
 
   if (!open || typeof document === 'undefined') return null;
 

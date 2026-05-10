@@ -38,4 +38,20 @@ describe('getWorksheetStatusInfo', () => {
       hasCheck: false,
     });
   });
+
+  it('mappt shared auf primary ohne Check', () => {
+    expect(getWorksheetStatusInfo('shared')).toEqual({
+      tone: 'primary',
+      label: 'Geteilt',
+      hasCheck: false,
+    });
+  });
+
+  it('verwendet Entwurf bei leerem String', () => {
+    expect(getWorksheetStatusInfo('')).toEqual({
+      tone: 'neutral',
+      label: 'Entwurf',
+      hasCheck: false,
+    });
+  });
 });

@@ -136,12 +136,12 @@ export function WorksheetPage() {
 
   const worksheetPageKiUi = useMemo(() => {
     if (!id) {
-      return (_pageIdx: number): { blocking: boolean; queued: boolean } => ({
-        blocking: false,
+      return (_pageIdx: number): { running: boolean; queued: boolean } => ({
+        running: false,
         queued: false,
       });
     }
-    return (pageIdx: number): { blocking: boolean; queued: boolean } => {
+    return (pageIdx: number): { running: boolean; queued: boolean } => {
       const bulk = jobs.find(
         (j) =>
           j.kind === 'worksheet-pages' &&
@@ -149,7 +149,7 @@ export function WorksheetPage() {
           (j.status === 'queued' || j.status === 'running'),
       );
       if (bulk) {
-        return { blocking: true, queued: bulk.status === 'queued' };
+        return { running: bulk.status === 'running', queued: bulk.status === 'queued' };
       }
       const hit = jobs.find(
         (j) =>
@@ -159,9 +159,9 @@ export function WorksheetPage() {
           (j.status === 'queued' || j.status === 'running'),
       );
       if (hit) {
-        return { blocking: true, queued: hit.status === 'queued' };
+        return { running: hit.status === 'running', queued: hit.status === 'queued' };
       }
-      return { blocking: false, queued: false };
+      return { running: false, queued: false };
     };
   }, [id, jobs]);
 

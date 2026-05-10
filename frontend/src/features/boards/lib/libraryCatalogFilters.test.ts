@@ -72,4 +72,40 @@ describe('libraryCatalogFilters', () => {
     expect(matchesLibraryPurpose(undefined, 'tasks')).toBe(true);
     expect(matchesLibraryPurpose('', '')).toBe(true);
   });
+
+  it('canonicalSubjectLabel: kein „Sport“-Treffer für „Transport“', () => {
+    // Der Label „Sport“ darf nicht greifen, wenn es Teil eines anderen Wortes ist.
+    expect(canonicalSubjectLabel('Transportwesen')).toBe(LIBRARY_SUBJECT_OTHER);
+  });
+
+  it('canonicalSubjectLabel: trifft Wirtschaft nur als ganzes Wort', () => {
+    expect(canonicalSubjectLabel('Wirtschaft Kl. 11')).toBe('Wirtschaftslehre');
+  });
+
+  it('extractLibraryClassStep: römische Zahlen (I–V) werden erkannt', () => {
+    expect(extractLibraryClassStep('Klasse III')).toBe('3');
+    expect(extractLibraryClassStep('IV')).toBe('4');
+    expect(extractLibraryClassStep('V')).toBe('5');
+  });
+
+  it('extractLibraryClassStep: leerer/unbekannter Input → null', () => {
+    expect(extractLibraryClassStep('')).toBeNull();
+    expect(extractLibraryClassStep('keine Klasse')).toBeNull();
+    expect(extractLibraryClassStep('Q2')).toBeNull();
+  });
+
+  it('extractLibraryClassStep: 13.te Klasse-Schreibweise', () => {
+    expect(extractLibraryClassStep('13.te Klasse')).toBe('13');
+  });
+
+  it('matchesLibraryGradeFilter: ungültiger Filter-Step → true (kein Filter)', () => {
+    expect(matchesLibraryGradeFilter('Klasse 5', '0')).toBe(true);
+    expect(matchesLibraryGradeFilter('Klasse 5', '99')).toBe(true);
+    expect(matchesLibraryGradeFilter('Klasse 5', 'abc')).toBe(true);
+  });
+
+  it('matchesLibrarySubjectFilter: leerer Filter → akzeptiert alles', () => {
+    expect(matchesLibrarySubjectFilter('beliebig', '')).toBe(true);
+    expect(matchesLibrarySubjectFilter('', '')).toBe(true);
+  });
 });
