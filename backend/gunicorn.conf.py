@@ -36,7 +36,11 @@ def _resolved_workers() -> int:
         except ValueError:
             continue
     cores = max(1, multiprocessing.cpu_count() or 1)
-    return min(cores, 4)
+    planned = min(cores, 4)
+    # Sync-Worker verarbeiten jeweils nur eine Anfrage. Mit nur einem Worker blockiert eine
+    # lange KI-Pipeline (Streaming, Worksheet-Generate) alle anderen HTTP-Requests — die App
+    # wirkt dann „tot“, obwohl Frontend und Queue in Ordnung sind.
+    return max(2, planned)
 
 
 port = os.environ.get('PORT', '8000')
