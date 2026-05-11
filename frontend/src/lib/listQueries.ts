@@ -28,6 +28,8 @@ export const BOARDS_FOLDERS_QUERY_KEY = ['boards', 'folders'] as const;
 export const BOARDS_DETAIL_QUERY_KEY = (id: string) => ['boards', 'detail', id] as const;
 export const BOARDS_REVISIONS_QUERY_KEY = (id: string) => ['boards', 'revisions', id] as const;
 export const BOARDS_BLOCKS_QUERY_KEY = ['boards', 'blocks'] as const;
+export const BOARDS_STUDENT_PRESENCE_QUERY_KEY = (id: string) =>
+  ['boards', 'student-presence', id] as const;
 
 export type BoardLibraryScope = 'all' | 'mine';
 

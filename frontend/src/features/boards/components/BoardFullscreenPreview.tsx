@@ -1,4 +1,13 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { motion, useAnimationControls, useReducedMotion } from 'framer-motion';
 import { ChevronDown, ChevronUp, Maximize2, Minimize2, QrCode, RotateCw } from 'lucide-react';
@@ -84,6 +93,8 @@ export type BoardFullscreenPreviewProps = {
   toolbarCollapsible?: boolean;
   clipBoxClassName?: string;
   className?: string;
+  /** Gleiche Wurzel wie Fullscreen-Ziel — Schüler-Teilen-Overlays per Portal hier einhängen, damit sie im Randlos-Modus sichtbar bleiben. */
+  shareOverlayPortalRef?: MutableRefObject<HTMLDivElement | null>;
 };
 
 export function BoardFullscreenPreview({
@@ -110,8 +121,16 @@ export function BoardFullscreenPreview({
   toolbarCollapsible = false,
   clipBoxClassName = 'shadow-inner',
   className,
+  shareOverlayPortalRef,
 }: BoardFullscreenPreviewProps) {
   const livePreviewFullscreenRef = useRef<HTMLDivElement>(null);
+  const assignLivePreviewRootRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      livePreviewFullscreenRef.current = node;
+      if (shareOverlayPortalRef) shareOverlayPortalRef.current = node;
+    },
+    [shareOverlayPortalRef],
+  );
   const stageOuterRef = useRef<HTMLDivElement>(null);
   const clipMotion = useAnimationControls();
   const reduceMotion = useReducedMotion();
@@ -393,7 +412,7 @@ export function BoardFullscreenPreview({
 
   return (
     <div
-      ref={livePreviewFullscreenRef}
+      ref={assignLivePreviewRootRef}
       style={vtStyle}
       className={cn(
         'flex min-h-0 flex-1 flex-col overflow-hidden',

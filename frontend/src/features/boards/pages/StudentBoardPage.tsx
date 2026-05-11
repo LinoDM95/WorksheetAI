@@ -11,7 +11,13 @@ import {
   requestDocumentFullscreen,
 } from '../../../lib/requestDocumentFullscreen';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
-import { fetchPublicBoardByToken, type PublicBoardPayload } from '../publicBoardApi';
+import {
+  fetchPublicBoardByToken,
+  getOrCreateStudentPresenceClientId,
+  postStudentPresence,
+  postStudentPresenceLeaveBeacon,
+  type PublicBoardPayload,
+} from '../publicBoardApi';
 import type { DatasetId, LibraryId } from '../types';
 
 export function StudentBoardPage() {
@@ -56,6 +62,25 @@ export function StudentBoardPage() {
       document.title = 'Worksheet AI';
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !data) return;
+    const clientId = getOrCreateStudentPresenceClientId(token);
+    const touch = () => {
+      void postStudentPresence(token, clientId, 'touch').catch(() => {});
+    };
+    touch();
+    const intervalId = window.setInterval(touch, 45_000);
+    const onPageHide = () => {
+      postStudentPresenceLeaveBeacon(token, clientId);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('pagehide', onPageHide);
+      void postStudentPresence(token, clientId, 'leave').catch(() => {});
+    };
+  }, [token, data]);
 
   const handleStart = useCallback(async () => {
     setStarting(true);

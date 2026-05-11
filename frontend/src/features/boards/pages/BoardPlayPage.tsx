@@ -11,8 +11,8 @@ import { FreeHtmlBoardFrame } from '../components/free-html/FreeHtmlBoardFrame';
 import { buildStudentBoardUrl } from '../publicBoardApi';
 import { boardStageClipBoxStyle, boardStageScaledInnerStyle, STAGE_BASE_W, STAGE_BASE_H, useBoardStageScale } from '../boardStageLayout';
 import { cn } from '../../../lib/cn';
-import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
-import { needsStudentSharePrep } from '../lib/studentShareFlow';
+import { needsStudentSharePrep, isStudentShareLinkActive } from '../lib/studentShareFlow';
+import { BoardStudentPresenceBadge } from '../components/BoardStudentPresenceBadge';
 
 export function BoardPlayPage() {
   const { id = '' } = useParams<{ id: string }>();
@@ -49,11 +49,8 @@ export function BoardPlayPage() {
   });
 
   const showShareQrModalWithPayload = useCallback((payload: { url: string; expiresAt: string | null; title: string }) => {
-    void (async () => {
-      await exitElementFullscreen();
-      setShareQrPayload(payload);
-      setShareQrOpen(true);
-    })();
+    setShareQrPayload(payload);
+    setShareQrOpen(true);
   }, []);
 
   const openExistingShareQr = useCallback(() => {
@@ -66,14 +63,11 @@ export function BoardPlayPage() {
   }, [board, showShareQrModalWithPayload]);
 
   const handleStudentShareMenuClick = useCallback(() => {
-    void (async () => {
-      await exitElementFullscreen();
-      if (!board || needsStudentSharePrep(board)) {
-        setSharePrepOpen(true);
-        return;
-      }
-      openExistingShareQr();
-    })();
+    if (!board || needsStudentSharePrep(board)) {
+      setSharePrepOpen(true);
+      return;
+    }
+    openExistingShareQr();
   }, [board, openExistingShareQr]);
 
   const handleConfirmStudentShare = useCallback(
@@ -81,8 +75,7 @@ export function BoardPlayPage() {
       patchMutation.mutate(
         { student_link_enabled: true, student_link_valid_minutes: validMinutes },
         {
-          onSuccess: async (data) => {
-            await exitElementFullscreen();
+          onSuccess: (data) => {
             setSharePrepOpen(false);
             const token = data.share_token ?? board?.share_token ?? null;
             if (token) {
@@ -98,6 +91,23 @@ export function BoardPlayPage() {
       );
     },
     [patchMutation, board?.share_token, board?.title],
+  );
+
+  const handleResetStudentLinkValidity = useCallback(
+    (validMinutes: number) => {
+      patchMutation.mutate(
+        { student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: (data) => {
+            setShareQrPayload((prev) =>
+              prev ? { ...prev, expiresAt: data.student_link_expires_at ?? null } : prev,
+            );
+            void queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+          },
+        },
+      );
+    },
+    [patchMutation, queryClient, id],
   );
 
   const goEditor = useCallback(() => {
@@ -206,9 +216,14 @@ export function BoardPlayPage() {
           <span className="hidden sm:inline">Zurück</span>
         </Button>
 
-        <h1 className="min-w-0 flex-1 truncate px-1 text-center text-sm font-semibold sm:text-left sm:text-base">
-          {board.title}
-        </h1>
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-1 sm:justify-start">
+          <h1 className="min-w-0 truncate text-center text-sm font-semibold sm:text-left sm:text-base">
+            {board.title}
+          </h1>
+          {isStudentShareLinkActive(board) ? (
+            <BoardStudentPresenceBadge boardId={board.id} enabled variant="dark" className="shrink-0" />
+          ) : null}
+        </div>
 
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           <details className="relative min-h-12">
@@ -375,6 +390,7 @@ export function BoardPlayPage() {
         onClose={() => setSharePrepOpen(false)}
         onConfirm={handleConfirmStudentShare}
         busy={patchMutation.isPending}
+        portalRootRef={rootRef}
       />
       <BoardShareQrModal
         open={shareQrOpen && Boolean(shareQrPayload?.url)}
@@ -385,6 +401,9 @@ export function BoardPlayPage() {
         studentUrl={shareQrPayload?.url ?? ''}
         title={shareQrPayload?.title ?? ''}
         expiresAt={shareQrPayload?.expiresAt}
+        onResetValidity={handleResetStudentLinkValidity}
+        resetBusy={patchMutation.isPending}
+        portalRootRef={rootRef}
       />
     </div>
   );

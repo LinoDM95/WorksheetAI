@@ -15,3 +15,13 @@ export function needsStudentSharePrep(board: StudentShareGate): boolean {
   if (Number.isNaN(t)) return true;
   return t <= Date.now();
 }
+
+/** Aktiver Schüler-Link (Token + aktiviert + nicht abgelaufen). */
+export function isStudentShareLinkActive(board: StudentShareGate): boolean {
+  if (!board?.share_token || !board.student_link_enabled) return false;
+  const exp = board.student_link_expires_at;
+  if (!exp) return false;
+  const t = new Date(exp).getTime();
+  if (Number.isNaN(t)) return false;
+  return t > Date.now();
+}

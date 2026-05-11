@@ -46,6 +46,11 @@ export const updateBoardFolder = (
 export const fetchBoard = (id: string) =>
   api.get<BoardDetail>(`/boards/${id}/`).then((r) => r.data);
 
+export type BoardStudentPresence = { connected: number };
+
+export const fetchBoardStudentPresence = (boardId: string) =>
+  api.get<BoardStudentPresence>(`/boards/${boardId}/student-presence/`).then((r) => r.data);
+
 export const fetchBoardLibrary = (scope: BoardLibraryScope = 'all') =>
   api
     .get<BoardLibraryItem[]>('/boards/library/', { params: { scope } })

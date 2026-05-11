@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -21,14 +21,14 @@ import {
 } from '../boardsApi';
 import { BoardLibraryPublishModal } from '../components/BoardLibraryPublishModal';
 import { BoardFullscreenPreview } from '../components/BoardFullscreenPreview';
+import { BoardStudentPresenceBadge } from '../components/BoardStudentPresenceBadge';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
 import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import type { BoardCodeUpdate, BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { defaultLibraryListingCategoryFromBoardType, type LibraryListingCategory } from '../lib/libraryCatalogFilters';
-import { needsStudentSharePrep } from '../lib/studentShareFlow';
+import { needsStudentSharePrep, isStudentShareLinkActive } from '../lib/studentShareFlow';
 import { buildStudentBoardUrl } from '../publicBoardApi';
-import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
 import { BoardDetailMetaPanel } from './boardDetail/BoardDetailMetaPanel';
 import { BoardDetailPageHeader } from './boardDetail/BoardDetailPageHeader';
 import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
@@ -72,6 +72,7 @@ export function BoardDetailPage() {
     expiresAt: string | null;
     title: string;
   } | null>(null);
+  const boardSharePortalRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -310,11 +311,8 @@ export function BoardDetailPage() {
 
   const showShareQrModalWithPayload = useCallback(
     (payload: { url: string; expiresAt: string | null; title: string }) => {
-      void (async () => {
-        await exitElementFullscreen();
-        setShareQrPayload(payload);
-        setShareQrOpen(true);
-      })();
+      setShareQrPayload(payload);
+      setShareQrOpen(true);
     },
     [],
   );
@@ -329,14 +327,11 @@ export function BoardDetailPage() {
   }, [board, showShareQrModalWithPayload]);
 
   const handleDetailShareClick = useCallback(() => {
-    void (async () => {
-      await exitElementFullscreen();
-      if (!board || needsStudentSharePrep(board)) {
-        setSharePrepOpen(true);
-        return;
-      }
-      openExistingShareQr();
-    })();
+    if (!board || needsStudentSharePrep(board)) {
+      setSharePrepOpen(true);
+      return;
+    }
+    openExistingShareQr();
   }, [board, openExistingShareQr]);
 
   const handleConfirmStudentShare = useCallback(
@@ -344,8 +339,7 @@ export function BoardDetailPage() {
       patchMutation.mutate(
         { student_link_enabled: true, student_link_valid_minutes: validMinutes },
         {
-          onSuccess: async (data) => {
-            await exitElementFullscreen();
+          onSuccess: (data) => {
             setSharePrepOpen(false);
             const token = data.share_token ?? board?.share_token ?? null;
             if (token) {
@@ -361,6 +355,23 @@ export function BoardDetailPage() {
       );
     },
     [patchMutation, board?.share_token, board?.title],
+  );
+
+  const handleResetStudentLinkValidity = useCallback(
+    (validMinutes: number) => {
+      patchMutation.mutate(
+        { student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: (data) => {
+            setShareQrPayload((prev) =>
+              prev ? { ...prev, expiresAt: data.student_link_expires_at ?? null } : prev,
+            );
+            void queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
+          },
+        },
+      );
+    },
+    [patchMutation, queryClient, id],
   );
 
   const handleSyncPublicLibrarySnapshot = useCallback(() => {
@@ -616,6 +627,7 @@ export function BoardDetailPage() {
         usedLibraries={iframeBundle.used_libraries ?? []}
         usedDatasets={iframeBundle.used_datasets}
         scriptsEnabled={scriptsEnabled}
+        shareOverlayPortalRef={boardSharePortalRef}
         shareToolbarAction={{
           onClick: handleDetailShareClick,
           disabled: !isHeadView,
@@ -623,6 +635,11 @@ export function BoardDetailPage() {
           title: isHeadView ? undefined : aiBlockedHint,
           ariaLabel: isHeadView ? undefined : aiBlockedHint,
         }}
+        toolbarExtras={
+          isStudentShareLinkActive(board) ? (
+            <BoardStudentPresenceBadge boardId={board.id} enabled variant="light" />
+          ) : null
+        }
       />
       </div>
 
@@ -668,6 +685,7 @@ export function BoardDetailPage() {
         onClose={() => setSharePrepOpen(false)}
         onConfirm={handleConfirmStudentShare}
         busy={patchMutation.isPending}
+        portalRootRef={boardSharePortalRef}
       />
       <BoardShareQrModal
         open={shareQrOpen && Boolean(shareQrPayload?.url)}
@@ -678,6 +696,9 @@ export function BoardDetailPage() {
         studentUrl={shareQrPayload?.url ?? ''}
         title={shareQrPayload?.title ?? ''}
         expiresAt={shareQrPayload?.expiresAt}
+        onResetValidity={handleResetStudentLinkValidity}
+        resetBusy={patchMutation.isPending}
+        portalRootRef={boardSharePortalRef}
       />
 
       {board ? (

@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatDate, formatDateTime, formatLongDate, formatRelative } from './formatDate';
+import {
+  formatDate,
+  formatDateTime,
+  formatLongDate,
+  formatRelative,
+  formatTimeRemainingUntil,
+} from './formatDate';
 
 describe('formatDate', () => {
   it('returns em dash for empty input', () => {
@@ -35,6 +41,36 @@ describe('formatLongDate', () => {
     const s = formatLongDate(new Date('2026-04-06T10:00:00Z')); // Montag
     expect(s).toMatch(/2026/);
     expect(s.length).toBeGreaterThan(8);
+  });
+});
+
+describe('formatTimeRemainingUntil', () => {
+  it('returns em dash for empty input', () => {
+    expect(formatTimeRemainingUntil(null, 0)).toBe('—');
+    expect(formatTimeRemainingUntil(undefined, 0)).toBe('—');
+  });
+
+  it('returns abgelaufen when end is in the past', () => {
+    const end = '2026-01-15T12:00:00.000Z';
+    expect(formatTimeRemainingUntil(end, new Date('2026-01-15T12:00:01.000Z').getTime())).toBe(
+      'abgelaufen',
+    );
+  });
+
+  it('shows noch unter 1 Min. for positive diff under one minute', () => {
+    const now = new Date('2026-01-15T12:00:00.000Z').getTime();
+    const end = new Date('2026-01-15T12:00:45.000Z').toISOString();
+    expect(formatTimeRemainingUntil(end, now)).toBe('noch unter 1 Min.');
+  });
+
+  it('shows Tage Std. Min. for longer spans', () => {
+    const now = new Date('2026-01-15T12:00:00.000Z').getTime();
+    const end = new Date('2026-01-17T14:30:00.000Z').toISOString();
+    const s = formatTimeRemainingUntil(end, now);
+    expect(s).toMatch(/^noch /);
+    expect(s).toContain('2 Tage');
+    expect(s).toContain('2 Std.');
+    expect(s).toContain('30 Min.');
   });
 });
 

@@ -47,6 +47,8 @@ from .services.library_public_snapshot import (
     listing_display_topic,
 )
 from .services.board_patch import patch_board_with_validation
+from .services import student_presence
+from .throttles import StudentPresenceScopedThrottle
 from .grade_bounds import validate_creative_generate_payload
 
 
@@ -80,6 +82,39 @@ class PublicBoardPlayView(APIView):
                 'used_datasets': list(board.used_datasets or []),
             }
         )
+
+
+class PublicStudentPresenceView(APIView):
+    """Heartbeat von Schüler-Geräten am Token-Link — anonym, nur Zählung."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = ()
+    throttle_classes = [StudentPresenceScopedThrottle]
+
+    def post(self, request, share_token):
+        now = timezone.now()
+        exists = (
+            Board.objects.filter(
+                share_token=share_token,
+                student_link_enabled=True,
+                student_link_expires_at__gt=now,
+            )
+            .only('id')
+            .first()
+        )
+        if not exists:
+            return response.Response(
+                {'detail': 'Board nicht gefunden, Link nicht aktiv oder Gültigkeit abgelaufen.'},
+                status=404,
+            )
+        body = request.data if isinstance(request.data, dict) else {}
+        client_id = body.get('client_id', '')
+        action = body.get('action', 'touch')
+        if action == 'leave':
+            student_presence.leave(share_token, client_id)
+        else:
+            student_presence.touch(share_token, client_id)
+        return response.Response({'ok': True})
 
 
 class BoardFolderViewSet(viewsets.ModelViewSet):
@@ -157,6 +192,19 @@ class BoardViewSet(viewsets.ModelViewSet):
             'visual_qa_available': bool(playwright_ok and base_ok and allow),
             'visual_qa_document_base_configured': base_ok,
         })
+
+    @decorators.action(detail=True, methods=['get'], url_path='student-presence')
+    def student_presence_count(self, request, pk=None):
+        board = self.get_object()
+        now = timezone.now()
+        if not (
+            board.share_token
+            and board.student_link_enabled
+            and board.student_link_expires_at
+            and board.student_link_expires_at > now
+        ):
+            return response.Response({'connected': 0})
+        return response.Response({'connected': student_presence.count_connected(board.share_token)})
 
     @decorators.action(detail=False, methods=['post'], url_path='generate')
     def generate(self, request):

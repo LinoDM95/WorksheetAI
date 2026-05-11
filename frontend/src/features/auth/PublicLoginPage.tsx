@@ -8,13 +8,11 @@ import {
   Lock,
   Printer,
   Quote,
-  Search,
   Server,
   Share,
   Shield,
   Sparkles,
   Users,
-  Wand,
   XCircle,
 } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -59,7 +57,7 @@ export const PublicLoginPage = () => {
   const sessionExpiredNotice = searchParams.get('reason') === 'session_expired';
 
   useEffect(() => {
-    document.title = 'Anmelden — WorksheetAI';
+    document.title = 'WorksheetAI — Gemeinsam den Unterricht von morgen bauen';
     return () => {
       document.title = 'WorksheetAI';
     };
@@ -197,252 +195,127 @@ export const PublicLoginPage = () => {
 /* Links: Landing                                                      */
 /* ------------------------------------------------------------------ */
 
+const landingPaperBg: CSSProperties = {
+  backgroundColor: '#f2efe8',
+  backgroundImage:
+    'radial-gradient(circle at 1px 1px, rgba(120,113,108,0.075) 1px, transparent 0), radial-gradient(ellipse 100% 55% at 50% -12%, rgba(79,70,229,0.065), transparent 50%)',
+  backgroundSize: '22px 22px, 100% 100%',
+};
+
 const LandingHero = () => (
   <div
-    style={{
-      position: 'relative',
-      background: 'var(--color-bg-app)',
-      display: 'flex',
-      flexDirection: 'column',
-      minWidth: 0,
-      height: '100%',
-      overflowY: 'auto',
-      scrollBehavior: 'smooth',
-    }}
+    className="relative flex h-full min-h-0 min-w-0 flex-col overflow-y-auto scroll-smooth"
+    style={landingPaperBg}
   >
-    <header
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '22px 48px',
-        borderBottom: '1px solid var(--color-border)',
-        background: '#fff',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-4 border-b border-stone-200/80 bg-[#f9f6f0]/90 px-6 py-5 backdrop-blur-md sm:px-12">
+      <div className="flex items-center gap-2.5">
         <BrandMark />
-        <span
-          style={{
-            fontSize: 15,
-            fontWeight: 700,
-            letterSpacing: '-0.01em',
-            color: 'var(--color-ink-900)',
-          }}
-        >
-          WorksheetAI
-        </span>
+        <span className="text-[15px] font-bold tracking-tight text-stone-900">WorksheetAI</span>
       </div>
-      <nav
-        style={{
-          display: 'flex',
-          gap: 28,
-          fontSize: 13.5,
-          color: 'var(--color-ink-700)',
-        }}
-      >
-        <a style={{ cursor: 'pointer' }}>Funktionen</a>
-        <a style={{ cursor: 'pointer' }}>Vorlagen</a>
-        <a style={{ cursor: 'pointer' }}>Für Schulen</a>
-        <a style={{ cursor: 'pointer' }}>Hilfe</a>
+      <nav className="hidden gap-7 text-[13.5px] text-stone-600 md:flex">
+        <a className="cursor-pointer transition hover:text-stone-900">Funktionen</a>
+        <a className="cursor-pointer transition hover:text-stone-900">Vorlagen</a>
+        <a className="cursor-pointer transition hover:text-stone-900">Für Schulen</a>
+        <a className="cursor-pointer transition hover:text-stone-900">Hilfe</a>
       </nav>
-      <div style={{ display: 'flex', gap: 14, alignItems: 'center', fontSize: 13 }}>
-        <a style={{ color: 'var(--color-ink-700)', cursor: 'pointer' }}>Demo ansehen</a>
+      <div className="flex items-center gap-3 text-[13px]">
+        <a className="cursor-pointer text-stone-600 transition hover:text-stone-900">Demo ansehen</a>
       </div>
     </header>
 
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        alignItems: 'center',
-        gap: 56,
-        padding: '56px 48px',
-        minHeight: 'calc(100dvh - 76px - 53px)',
-        maxWidth: 1280,
-        width: '100%',
-        margin: '0 auto',
-        boxSizing: 'border-box',
-      }}
-    >
-      <div style={{ maxWidth: 520 }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '5px 11px',
-            borderRadius: 999,
-            background: 'var(--color-primary-50)',
-            border: '1px solid var(--color-primary-100)',
-            fontSize: 12,
-            fontWeight: 600,
-            color: 'var(--color-primary-700)',
-            marginBottom: 22,
-          }}
-        >
+    <div className="mx-auto grid w-full max-w-[1280px] flex-1 grid-cols-1 items-center gap-12 px-6 py-12 sm:px-12 lg:grid-cols-2 lg:gap-14 lg:py-14">
+      <div className="min-w-0 max-w-xl lg:max-w-[540px]">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-200/80 bg-white/70 px-3 py-1.5 text-[12px] font-semibold text-indigo-800 shadow-sm shadow-stone-200/40 backdrop-blur-sm">
+          <Users size={14} className="shrink-0 text-indigo-600" aria-hidden />
           Für Lehrer:innen · DSGVO-konform · Server in DE
         </div>
-        <h1
-          style={{
-            fontSize: 44,
-            lineHeight: 1.1,
-            letterSpacing: '-0.02em',
-            fontWeight: 700,
-            margin: '0 0 18px',
-            color: 'var(--color-ink-900)',
-          }}
-        >
-          Arbeitsblätter erstellen,
-          <br />
-          ohne den ganzen Sonntag zu&nbsp;verlieren.
+        <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-amber-900/70">
+          Leerer Blatt-Moment? Vorbei.
+        </p>
+        <h1 className="text-[clamp(1.85rem,4.5vw,2.85rem)] font-bold leading-[1.08] tracking-tight text-stone-950">
+          Nie wieder allein vor dem leeren Blatt
         </h1>
-        <p
-          style={{
-            fontSize: 16,
-            lineHeight: 1.6,
-            color: 'var(--color-ink-700)',
-            margin: '0 0 28px',
-          }}
-        >
-          Beschreibe in zwei Sätzen, was deine Klasse üben soll — WorksheetAI erstellt ein
-          druckfertiges A4-Blatt mit passender Vorlage, Aufgaben und Lösungsblatt.
+        <p className="mt-5 text-[1.05rem] leading-relaxed text-stone-700 sm:text-lg">
+          <span className="font-semibold text-indigo-800">Kreativ entwerfen</span>
+          <span className="text-stone-400"> · </span>
+          <span className="font-semibold text-amber-900/85">kollegial teilen</span>
+          <span className="text-stone-400"> · </span>
+          <span className="font-semibold text-stone-800">
+            gemeinsam den Unterricht von morgen bauen.
+          </span>
+        </p>
+        <p className="mt-4 text-[15px] leading-relaxed text-stone-600">
+          Arbeitsblätter, Smartboard-Ideen und Ideen aus der Community — ein Werkzeugkasten für
+          Unterricht, den du mit Kolleg:innen wachsen lässt, statt Sonntag für Sonntag bei Null zu
+          starten.
         </p>
 
-        <ol
-          style={{
-            listStyle: 'none',
-            padding: 0,
-            margin: '0 0 32px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
+        <ol className="mt-8 flex list-none flex-col gap-3 p-0">
           {[
-            { n: 1, t: 'Thema beschreiben', d: 'Fach, Klassenstufe, Lerninhalt.' },
-            { n: 2, t: 'Vorlage wählen', d: 'Klassisch, modern, akademisch oder eigene.' },
+            {
+              n: 1,
+              t: 'Kreativ entwerfen',
+              d: 'A4-Arbeitsblätter und interaktive Boards — mit KI-Unterstützung und klaren Vorlagen.',
+            },
+            {
+              n: 2,
+              t: 'Kollegial teilen',
+              d: 'Bibliothek und Marktplatz: Material inspiriert, du passt an — kein Erfinderzwang.',
+            },
             {
               n: 3,
-              t: 'Drucken oder als PDF speichern',
-              d: 'Inklusive Lösungsblatt.',
+              t: 'Gemeinsam bauen',
+              d: 'Weniger isoliertes Tüfteln, mehr Unterricht, der für morgen schon halb steht.',
             },
           ].map((s) => (
-            <li
-              key={s.n}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}
-            >
-              <span
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 6,
-                  flexShrink: 0,
-                  background: '#fff',
-                  border: '1px solid var(--color-border)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: 'var(--color-primary-700)',
-                }}
-              >
+            <li key={s.n} className="flex items-start gap-3">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-stone-200/90 bg-white text-[12px] font-bold text-indigo-700 shadow-sm">
                 {s.n}
               </span>
               <div>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--color-ink-900)',
-                  }}
-                >
-                  {s.t}
-                </div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: 'var(--color-ink-500)',
-                    lineHeight: 1.45,
-                  }}
-                >
-                  {s.d}
-                </div>
+                <div className="text-[14px] font-semibold text-stone-900">{s.t}</div>
+                <div className="text-[13px] leading-snug text-stone-600">{s.d}</div>
               </div>
             </li>
           ))}
         </ol>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            paddingTop: 18,
-            borderTop: '1px solid var(--color-border)',
-          }}
-        >
-          <div style={{ display: 'flex' }}>
+        <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-stone-200/80 pt-6">
+          <div className="flex">
             {(['#c7d2fe', '#bae6fd', '#bbf7d0', '#fde68a'] as const).map((c, i) => (
               <span
                 key={i}
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 999,
-                  background: c,
-                  border: '2px solid #fff',
-                  marginLeft: i ? -8 : 0,
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--color-ink-700)',
-                }}
+                className="grid h-[26px] w-[26px] place-items-center rounded-full border-2 border-[#f9f6f0] text-[11px] font-bold text-stone-700 first:ml-0"
+                style={{ background: c, marginLeft: i ? -8 : 0 }}
               >
                 {(['AB', 'MK', 'TS', 'JL'] as const)[i]}
               </span>
             ))}
           </div>
-          <div
-            style={{
-              fontSize: 13,
-              color: 'var(--color-ink-700)',
-              lineHeight: 1.4,
-            }}
-          >
-            Im Einsatz an über 120 Schulen in Deutschland.
-          </div>
+          <p className="text-[13px] leading-snug text-stone-600">
+            Schon über 120 Schulen — und tausende Ideen, die weitergegeben werden.
+          </p>
         </div>
       </div>
 
-      <AnimatedAppPreview />
+      <div className="min-w-0 lg:justify-self-end">
+        <AnimatedAppPreview />
+      </div>
     </div>
 
     <LandingSections />
 
-    <footer
-      style={{
-        padding: '16px 48px',
-        borderTop: '1px solid var(--color-border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        fontSize: 12.5,
-        color: 'var(--color-ink-500)',
-        background: '#fff',
-      }}
-    >
+    <footer className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-t border-stone-200/80 bg-[#ebe6dc] px-6 py-4 text-[12.5px] text-stone-600 sm:px-12">
       <span>© 2026 WorksheetAI · München</span>
-      <div style={{ display: 'flex', gap: 22 }}>
-        <Link to="/impressum" style={{ color: 'inherit', textDecoration: 'none' }}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+        <Link to="/impressum" className="text-inherit no-underline hover:text-stone-900">
           Impressum
         </Link>
-        <Link to="/datenschutz" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <Link to="/datenschutz" className="text-inherit no-underline hover:text-stone-900">
           Datenschutz
         </Link>
-        <a style={{ cursor: 'pointer' }}>AGB</a>
-        <a style={{ cursor: 'pointer' }}>Kontakt</a>
+        <a className="cursor-pointer hover:text-stone-900">AGB</a>
+        <a className="cursor-pointer hover:text-stone-900">Kontakt</a>
       </div>
     </footer>
   </div>
@@ -518,7 +391,7 @@ const AnimatedAppPreview = () => {
             alignItems: 'center',
             gap: 8,
             padding: '10px 14px',
-            background: '#fafbfd',
+            background: '#f4f0e8',
             borderBottom: '1px solid var(--color-border)',
           }}
         >
@@ -1080,8 +953,7 @@ const FloatingNote = ({ text }: { text: string }) => (
 );
 
 /* ====================================================================== */
-/* Landing-Sektionen unter dem Hero — Conversion / Trust / Community       */
-/* Tailwind-basiert, Indigo/Slate-Palette, Glassmorphism, sanfte Schatten  */
+/* Landing-Sektionen: warmer „Papier“-Look, Claim Kreativ · kollegial · gemeinsam */
 /* ====================================================================== */
 
 const LandingSections = () => (
@@ -1096,19 +968,20 @@ const LandingSections = () => (
 
 /* -- 1. Pain Avoidance: Vorher / Nachher --------------------------------- */
 const PainAvoidanceSection = () => (
-  <section className="relative overflow-hidden bg-white">
-    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
-    <div className="mx-auto w-full max-w-[1280px] px-12 py-24">
+  <section className="relative overflow-hidden bg-[#faf8f4]">
+    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-stone-300/70 to-transparent" />
+    <div className="mx-auto w-full max-w-[1280px] px-6 py-24 sm:px-12">
       <div className="mx-auto max-w-2xl text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-rose-100 bg-rose-50 px-3 py-1 text-[12px] font-semibold text-rose-700">
-          <Clock size={13} aria-hidden /> Das Sonntagabend-Problem
+        <span className="inline-flex items-center gap-2 rounded-full border border-amber-200/90 bg-amber-50/90 px-3 py-1 text-[12px] font-semibold text-amber-900">
+          <Clock size={13} aria-hidden /> Leeres Blatt, voller Kopf
         </span>
-        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-slate-900">
-          Erkennst du das?
+        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-stone-900">
+          Allein tüfteln — oder mit Struktur und Kolleg:innen starten?
         </h2>
-        <p className="mt-4 text-[16px] leading-relaxed text-slate-600">
-          Drei Stunden Word, ein verschobener Tabulator, ein Schulbuch-Scan, ein
-          eingefrorener Editor — und morgen früh stehst du trotzdem ohne fertiges Blatt vor der Klasse.
+        <p className="mt-4 text-[16px] leading-relaxed text-stone-600">
+          Wenn vor dir nur ein weißes Dokument blinkt, fühlt sich vorbereiten wie Inselurlaub auf
+          dem Arbeitstisch an. Der Weg raus: klare Schritte, gute Vorlagen — und Ideen, die andere
+          schon mit dir teilen.
         </p>
       </div>
 
@@ -1157,9 +1030,9 @@ const PainAvoidanceSection = () => (
           <ul className="mt-6 space-y-3">
             {[
               'Zwei Sätze: „Mathematik · Klasse 9 · 8 lineare Gleichungen mit Lösungen.“',
-              'LaTeX-Brüche, Tabellen, Lineale — perfekt formatiert. Ohne dich.',
+              'LaTeX-Brüche, Tabellen, Lineale — fertig. Mehr Raum für kreative Feinarbeit.',
               'Lösungsblatt liegt automatisch bei. Zwei Seiten, druckbereit.',
-              'Restliche 2,5 Stunden des Sonntags: gehören wieder dir.',
+              'Oder: Von Kolleg:innen inspirieren lassen statt bei null anzufangen.',
             ].map((t) => (
               <li key={t} className="flex items-start gap-3 text-[14.5px] leading-snug text-slate-700">
                 <CheckCircle2
@@ -1252,18 +1125,18 @@ const AfterMockup = () => (
 
 /* -- 2. Cognitive Ease: 3 Schritte --------------------------------------- */
 const CognitiveEaseSection = () => (
-  <section className="relative border-y border-slate-100 bg-gradient-to-b from-slate-50/60 to-white">
-    <div className="mx-auto w-full max-w-[1280px] px-12 py-24">
+  <section className="relative border-y border-stone-200/80 bg-gradient-to-b from-[#f5f0e8]/90 to-white">
+    <div className="mx-auto w-full max-w-[1280px] px-6 py-24 sm:px-12">
       <div className="mx-auto max-w-2xl text-center">
         <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">
-          <Sparkles size={13} aria-hidden /> So einfach geht's
+          <Sparkles size={13} aria-hidden /> Kreativ · kollegial · einsatzbereit
         </span>
-        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-slate-900">
-          3 Schritte. 90 Sekunden. Druckbereit.
+        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-stone-900">
+          Drei klare Schritte zum Unterricht von morgen
         </h2>
-        <p className="mt-4 text-[16px] leading-relaxed text-slate-600">
-          Keine Tutorials. Keine LaTeX-Tricks. Keine zwei Tage Schulung.
-          Wenn du E-Mails schreiben kannst, kannst du das.
+        <p className="mt-4 text-[16px] leading-relaxed text-stone-600">
+          Entwerfen, anpassen, teilen — ohne Word-Chaos und ohne dich durch endlose Tutorials zu
+          klicken.
         </p>
       </div>
 
@@ -1275,21 +1148,21 @@ const CognitiveEaseSection = () => (
         />
         <StepCard
           n={1}
-          icon={<Search size={26} strokeWidth={1.7} aria-hidden />}
-          title="Suchen oder generieren"
-          body="Vorlage aus der Community wählen oder mit zwei Sätzen neu erzeugen lassen."
+          icon={<Sparkles size={26} strokeWidth={1.7} aria-hidden />}
+          title="Kreativ entwerfen"
+          body="Community-Vorlage wählen oder mit wenigen Sätzen neu erzeugen — Arbeitsblatt oder Board."
         />
         <StepCard
           n={2}
-          icon={<Wand size={26} strokeWidth={1.7} aria-hidden />}
-          title="Kurz anpassen"
-          body="Klasse, Anzahl, Schwierigkeit. Drei Klicks — kein Word, kein LaTeX-Wirrwarr."
+          icon={<Share size={26} strokeWidth={1.7} aria-hidden />}
+          title="Kollegial nutzen & anpassen"
+          body="Material von Kolleg:innen als Startpunkt. Du passt Klasse, Umfang und Ton in Minuten an."
         />
         <StepCard
           n={3}
           icon={<Printer size={26} strokeWidth={1.7} aria-hidden />}
-          title="Drucken oder ans Smartboard"
-          body="Als PDF, direkt an den Drucker — oder als interaktives Tafelbild ans Smartboard."
+          title="Fürs Klassenzimmer bereit machen"
+          body="Druck-PDF, Lösungsblatt dazu — oder interaktives Tafelbild fürs Smartboard."
         />
       </ol>
     </div>
@@ -1325,27 +1198,27 @@ const StepCard = ({
 
 /* -- 3. Social Proof + Trust -------------------------------------------- */
 const SocialProofSection = () => (
-  <section className="relative overflow-hidden bg-slate-50">
+  <section className="relative overflow-hidden bg-[#f0ebe3]">
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] [background-size:22px_22px]"
+      className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,rgba(120,113,108,0.06)_1px,transparent_0)] [background-size:22px_22px]"
     />
-    <div className="relative mx-auto w-full max-w-[1280px] px-12 py-24">
+    <div className="relative mx-auto w-full max-w-[1280px] px-6 py-24 sm:px-12">
       <div className="mx-auto max-w-2xl text-center">
-        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700">
-          <Users size={13} aria-hidden /> Schon über 12.000 Lehrkräfte
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-800">
+          <Users size={13} aria-hidden /> Gemeinschaft aus über 12.000 Lehrkräften
         </span>
-        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-slate-900">
-          Andere haben den Sonntag schon zurück.
+        <h2 className="mt-5 text-[34px] font-bold leading-[1.15] tracking-tight text-stone-900">
+          Kolleg:innen, die nicht mehr allein vorm Blatt sitzen
         </h2>
-        <p className="mt-4 text-[16px] leading-relaxed text-slate-600">
-          Echte Stimmen aus dem Lehrerzimmer — keine Marketing-Fotos, keine Strichmännchen.
+        <p className="mt-4 text-[16px] leading-relaxed text-stone-600">
+          Echte Stimmen — weniger Einzelkämpfer:innen, mehr Unterricht, der zusammen wächst.
         </p>
       </div>
 
       <div className="mt-14 grid gap-6 md:grid-cols-3">
         <Testimonial
-          quote="Letzten Sonntag habe ich um 19 Uhr Schluss gemacht. Das hatte ich seit 2017 nicht."
+          quote="Ich starte nicht mehr mit leerem Dokument — zwei Sätze, und ich habe etwas, das ich anpassen und mit meiner Fachschaft teilen kann."
           author="Anna B."
           role="Mathematik & Physik"
           school="Goethe-Gymnasium München"
@@ -1477,30 +1350,30 @@ const TrustBadge = ({
 
 /* -- 4. Reciprocity: Community / Marktplatz ----------------------------- */
 const CommunitySection = () => (
-  <section className="relative overflow-hidden bg-white">
+  <section className="relative overflow-hidden bg-[#fffcf7]">
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-100 to-transparent"
+      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/80 to-transparent"
     />
-    <div className="mx-auto w-full max-w-[1280px] px-12 py-24">
+    <div className="mx-auto w-full max-w-[1280px] px-6 py-24 sm:px-12">
       <div className="grid items-start gap-14 lg:grid-cols-[5fr_7fr]">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700">
-            <Share size={13} aria-hidden /> Community-Marktplatz · kostenlos
+            <Share size={13} aria-hidden /> Kollegial teilen · Marktplatz · kostenlos
           </span>
-          <h2 className="mt-5 text-[34px] font-bold leading-[1.1] tracking-tight text-slate-900">
-            Warum das Rad neu erfinden?
+          <h2 className="mt-5 text-[34px] font-bold leading-[1.1] tracking-tight text-stone-900">
+            Gemeinsam Materialien wachsen lassen
             <br />
-            <span className="text-indigo-600">Du bist nicht allein.</span>
+            <span className="text-indigo-600">statt jedes Mal bei null.</span>
           </h2>
-          <p className="mt-5 text-[15.5px] leading-relaxed text-slate-600">
-            Du erstellst ein Differenzierungs-Set für deine 7c. Eine Kollegin in Hamburg
-            lädt es runter, passt es für ihre 7b an. Ein Kollege in Stuttgart legt seine
-            Lösungs-Variante dazu.
+          <p className="mt-5 text-[15.5px] leading-relaxed text-stone-600">
+            Du erstellst ein Differenzierungs-Set für deine 7c. Eine Kollegin in Hamburg lädt es
+            runter, passt es für ihre 7b an. Ein Kollege in Stuttgart legt seine Lösungs-Variante
+            dazu.
           </p>
-          <p className="mt-3 text-[15.5px] leading-relaxed text-slate-600">
-            Drei Lehrer:innen, ein Nachmittag gespart. Der Marktplatz ist{' '}
-            <span className="font-semibold text-slate-900">kostenlos</span> und bleibt es.
+          <p className="mt-3 text-[15.5px] leading-relaxed text-stone-600">
+            So baut ihr den Unterricht von morgen gemeinsam — der Marktplatz ist{' '}
+            <span className="font-semibold text-stone-900">kostenlos</span> und bleibt es.
           </p>
 
           <dl className="mt-8 grid grid-cols-3 gap-4 border-y border-slate-200 py-6">
@@ -1659,12 +1532,13 @@ const ClosingCtaSection = () => (
       aria-hidden
       className="pointer-events-none absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.18),transparent_55%),radial-gradient(circle_at_80%_70%,rgba(165,180,252,0.25),transparent_55%)]"
     />
-    <div className="relative mx-auto w-full max-w-[1080px] px-12 py-20 text-center">
+    <div className="relative mx-auto w-full max-w-[1080px] px-6 py-20 text-center sm:px-12">
       <h2 className="text-[32px] font-bold leading-[1.15] tracking-tight">
-        Bereit, den nächsten Sonntag zurückzubekommen?
+        Bereit, kreativ zu entwerfen und kollegial zu teilen?
       </h2>
       <p className="mx-auto mt-4 max-w-xl text-[15.5px] leading-relaxed text-indigo-100">
-        14 Tage kostenlos testen. Keine Kreditkarte. Kündbar mit einem Klick.
+        14 Tage kostenlos testen. Keine Kreditkarte. Gemeinsam den Unterricht von morgen bauen —
+        statt allein vorm leeren Blatt.
       </p>
       <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <a

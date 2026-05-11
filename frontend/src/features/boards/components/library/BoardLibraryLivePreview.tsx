@@ -12,6 +12,7 @@ export type BoardLibraryLivePreviewProps = {
   usedDatasets?: DatasetId[];
   shareToolbarAction?: BoardFullscreenPreviewProps['shareToolbarAction'];
   toolbarExtras?: BoardFullscreenPreviewProps['toolbarExtras'];
+  shareOverlayPortalRef?: BoardFullscreenPreviewProps['shareOverlayPortalRef'];
 };
 
 export function BoardLibraryLivePreview({
@@ -24,6 +25,7 @@ export function BoardLibraryLivePreview({
   usedDatasets,
   shareToolbarAction,
   toolbarExtras,
+  shareOverlayPortalRef,
 }: BoardLibraryLivePreviewProps) {
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -42,6 +44,7 @@ export function BoardLibraryLivePreview({
       scriptsEnabled
       shareToolbarAction={shareToolbarAction}
       toolbarExtras={toolbarExtras}
+      shareOverlayPortalRef={shareOverlayPortalRef}
     />
   );
 }

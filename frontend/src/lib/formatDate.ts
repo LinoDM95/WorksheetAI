@@ -31,6 +31,33 @@ export const formatDateTime = (iso: string | Date | null | undefined): string =>
 export const formatLongDate = (date: Date = new Date()): string =>
   date.toLocaleDateString('de-DE', DATE_OPTS_FULL);
 
+/** Countdown bis Ablauf (Schüler-Link / QR): „noch 2 Std. 15 Min.“ / „abgelaufen“. */
+export const formatTimeRemainingUntil = (
+  iso: string | Date | null | undefined,
+  nowMs: number = Date.now(),
+): string => {
+  if (!iso) return '—';
+  try {
+    const end = new Date(iso).getTime();
+    if (Number.isNaN(end)) return '—';
+    const diff = end - nowMs;
+    if (diff <= 0) return 'abgelaufen';
+    const totalMin = Math.floor(diff / 60000);
+    if (totalMin < 1) return 'noch unter 1 Min.';
+    const days = Math.floor(totalMin / (60 * 24));
+    const hours = Math.floor((totalMin % (60 * 24)) / 60);
+    const mins = totalMin % 60;
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} Tag${days === 1 ? '' : 'e'}`);
+    if (hours > 0) parts.push(`${hours} Std.`);
+    if (mins > 0) parts.push(`${mins} Min.`);
+    if (parts.length === 0) return 'noch unter 1 Min.';
+    return `noch ${parts.join(' ')}`;
+  } catch {
+    return '—';
+  }
+};
+
 export const formatRelative = (iso: string | Date | null | undefined): string => {
   if (!iso) return '—';
   try {

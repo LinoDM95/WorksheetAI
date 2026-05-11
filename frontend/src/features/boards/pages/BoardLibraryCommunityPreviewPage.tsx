@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FolderPlus, MessageCircle, ShieldAlert, Star } from 'lucide-react';
@@ -33,7 +33,6 @@ import { BoardLibraryLivePreview } from '../components/library/BoardLibraryLiveP
 import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
 import { needsStudentSharePrep } from '../lib/studentShareFlow';
 import { buildStudentBoardUrl } from '../publicBoardApi';
-import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
 import { useAuth } from '../../../lib/authContext';
 import type { BoardLibraryItem } from '../types';
 
@@ -116,6 +115,7 @@ export function BoardLibraryCommunityPreviewPage() {
     expiresAt: string | null;
     title: string;
   } | null>(null);
+  const librarySharePortalRef = useRef<HTMLDivElement | null>(null);
 
   const board = itemQuery.data;
 
@@ -142,11 +142,8 @@ export function BoardLibraryCommunityPreviewPage() {
   });
 
   const showShareQrModalWithPayload = useCallback((payload: { url: string; expiresAt: string | null; title: string }) => {
-    void (async () => {
-      await exitElementFullscreen();
-      setShareQrPayload(payload);
-      setShareQrOpen(true);
-    })();
+    setShareQrPayload(payload);
+    setShareQrOpen(true);
   }, []);
 
   const openExistingShareQr = useCallback(() => {
@@ -159,14 +156,11 @@ export function BoardLibraryCommunityPreviewPage() {
   }, [board, showShareQrModalWithPayload]);
 
   const handleLibraryShareClick = useCallback(() => {
-    void (async () => {
-      await exitElementFullscreen();
-      if (!board || needsStudentSharePrep(board)) {
-        setSharePrepOpen(true);
-        return;
-      }
-      openExistingShareQr();
-    })();
+    if (!board || needsStudentSharePrep(board)) {
+      setSharePrepOpen(true);
+      return;
+    }
+    openExistingShareQr();
   }, [board, openExistingShareQr]);
 
   const handleConfirmStudentShare = useCallback(
@@ -174,8 +168,7 @@ export function BoardLibraryCommunityPreviewPage() {
       sharePatchMutation.mutate(
         { student_link_enabled: true, student_link_valid_minutes: validMinutes },
         {
-          onSuccess: async (data) => {
-            await exitElementFullscreen();
+          onSuccess: (data) => {
             setSharePrepOpen(false);
             const token = data.share_token ?? board?.share_token ?? null;
             if (token) {
@@ -192,6 +185,23 @@ export function BoardLibraryCommunityPreviewPage() {
     },
     [sharePatchMutation, board?.share_token, board?.title],
   );
+
+  const handleResetStudentLinkValidity = useCallback(
+    (validMinutes: number) => {
+      sharePatchMutation.mutate(
+        { student_link_valid_minutes: validMinutes },
+        {
+          onSuccess: (data) => {
+            setShareQrPayload((prev) =>
+              prev ? { ...prev, expiresAt: data.student_link_expires_at ?? null } : prev,
+            );
+          },
+        },
+      );
+    },
+    [sharePatchMutation],
+  );
+
   const isOwner = Boolean(board?.viewer_is_owner);
   const errStatus = (itemQuery.error as { response?: { status?: number } })?.response?.status;
 
@@ -317,6 +327,7 @@ export function BoardLibraryCommunityPreviewPage() {
               javascript={board.javascript}
               usedLibraries={board.used_libraries ?? []}
               usedDatasets={board.used_datasets}
+              shareOverlayPortalRef={librarySharePortalRef}
               toolbarExtras={
                 !isOwner
                   ? () => (
@@ -519,6 +530,7 @@ export function BoardLibraryCommunityPreviewPage() {
         onClose={() => setSharePrepOpen(false)}
         onConfirm={handleConfirmStudentShare}
         busy={sharePatchMutation.isPending}
+        portalRootRef={librarySharePortalRef}
       />
       <BoardShareQrModal
         open={shareQrOpen && Boolean(shareQrPayload?.url)}
@@ -529,6 +541,9 @@ export function BoardLibraryCommunityPreviewPage() {
         studentUrl={shareQrPayload?.url ?? ''}
         title={shareQrPayload?.title ?? ''}
         expiresAt={shareQrPayload?.expiresAt}
+        onResetValidity={isOwner ? handleResetStudentLinkValidity : undefined}
+        resetBusy={sharePatchMutation.isPending}
+        portalRootRef={librarySharePortalRef}
       />
     </div>
   );
