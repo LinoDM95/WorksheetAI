@@ -25,6 +25,10 @@ _PATCHABLE_CLASSIFICATION_KEYS = frozenset(
 _DURATION_MIN = 5
 _DURATION_MAX = 90
 
+_LIBRARY_LISTING_CATEGORIES = frozenset(
+    {Board.LibraryListingCategory.TASKS, Board.LibraryListingCategory.GAMES, Board.LibraryListingCategory.PRESENTATIONS},
+)
+
 _STUDENT_LINK_MAX_VALID_MINUTES = 60 * 24 * 3
 _STUDENT_LINK_DEFAULT_VALID_MINUTES = 60 * 24 * 3
 
@@ -43,12 +47,22 @@ def patch_board_with_validation(*, request, instance: Board, _partial: bool):
         ld_chk = str(
             body.get('library_listing_description', instance.library_listing_description or '') or '',
         ).strip()
+        cat_chk = str(body.get('library_listing_category', '') or '').strip()
         if not lt_chk or not lk_chk or not ld_chk:
             return response.Response(
                 {
                     'detail': (
                         'Zum Einreichen in die Bibliothek sind ein öffentlicher Titel, '
                         'ein öffentliches Thema und eine öffentliche Beschreibung erforderlich.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if cat_chk not in _LIBRARY_LISTING_CATEGORIES:
+            return response.Response(
+                {
+                    'detail': (
+                        'Bitte wähle eine Bibliotheks-Kategorie: Aufgaben, Spiele oder Präsentation.'
                     ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -243,6 +257,17 @@ def patch_board_with_validation(*, request, instance: Board, _partial: bool):
             instance.library_listing_title = lt[:255]
             instance.library_listing_topic = lk[:220]
             instance.library_listing_description = ld[:8000]
+            cat = str(body.get('library_listing_category', '') or '').strip()
+            if cat not in _LIBRARY_LISTING_CATEGORIES:
+                return response.Response(
+                    {
+                        'detail': (
+                            'Bitte wähle eine Bibliotheks-Kategorie: Aufgaben, Spiele oder Präsentation.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            instance.library_listing_category = cat
             if is_staff:
                 instance.library_moderation_status = MOD.APPROVED
                 instance.library_public = True
@@ -290,6 +315,14 @@ def patch_board_with_validation(*, request, instance: Board, _partial: bool):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             instance.library_listing_description = dv[:8000]
+        if 'library_listing_category' in body:
+            cv = str(body['library_listing_category'] or '').strip()
+            if cv not in _LIBRARY_LISTING_CATEGORIES:
+                return response.Response(
+                    {'detail': 'Ungültige Bibliotheks-Kategorie.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            instance.library_listing_category = cv
 
     snapshot_sync_requested = body.get('library_sync_public_snapshot') is True
     if snapshot_sync_requested:

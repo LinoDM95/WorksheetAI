@@ -76,6 +76,13 @@ class BoardFolder(models.Model):
 class Board(models.Model):
     """Free HTML5 Board — KI erzeugt vollständigen sandboxed HTML/CSS/JS-Code."""
 
+    class LibraryListingCategory(models.TextChoices):
+        """Öffentliche Bibliothek: didaktische Großeinteilung (vom Autor bei Veröffentlichung gewählt)."""
+
+        TASKS = 'tasks', 'Aufgaben'
+        GAMES = 'games', 'Spiele'
+        PRESENTATIONS = 'presentations', 'Präsentation'
+
     class LibraryModerationStatus(models.TextChoices):
         NONE = 'none', 'Nicht eingereicht'
         PENDING = 'pending', 'Freigabe ausstehend'
@@ -170,6 +177,12 @@ class Board(models.Model):
     library_listing_title = models.CharField(max_length=255, blank=True)
     library_listing_topic = models.CharField(max_length=220, blank=True)
     library_listing_description = models.TextField(blank=True)
+    library_listing_category = models.CharField(
+        max_length=20,
+        choices=LibraryListingCategory.choices,
+        blank=True,
+        default='',
+    )
     library_snapshot_html = models.TextField(blank=True)
     library_snapshot_css = models.TextField(blank=True)
     library_snapshot_javascript = models.TextField(blank=True)

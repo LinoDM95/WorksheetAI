@@ -617,9 +617,18 @@ export function WorksheetPage() {
     if (!libraryModalMode || !id) return;
     try {
       if (libraryModalMode === 'publish') {
-        await runLibraryListingPatch({ library_public: true, ...p });
+        await runLibraryListingPatch({
+          library_public: true,
+          library_listing_title: p.library_listing_title,
+          library_listing_topic: p.library_listing_topic,
+          library_listing_description: p.library_listing_description,
+        });
       } else {
-        await runLibraryListingPatch({ ...p });
+        await runLibraryListingPatch({
+          library_listing_title: p.library_listing_title,
+          library_listing_topic: p.library_listing_topic,
+          library_listing_description: p.library_listing_description,
+        });
       }
       setLibraryModalMode(null);
       setLibraryModalError(null);

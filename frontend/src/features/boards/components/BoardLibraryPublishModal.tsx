@@ -3,11 +3,17 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button, Field, IconButton, TextInput, Alert } from '../../../components/ui';
 import { cn } from '../../../lib/cn';
+import {
+  defaultLibraryListingCategoryFromBoardType,
+  type LibraryListingCategory,
+} from '../lib/libraryCatalogFilters';
 
 export type BoardLibraryListingForm = {
   library_listing_title: string;
   library_listing_topic: string;
   library_listing_description: string;
+  /** Nur bei Tafeln (`resourceKind: board`); nicht bei Arbeitsblättern setzen. */
+  library_listing_category?: LibraryListingCategory;
 };
 
 type Props = {
@@ -24,7 +30,15 @@ type Props = {
   moderationRequired?: boolean;
   /** Steuert Hilfstexte (Tafel vs. Arbeitsblatt). */
   resourceKind?: 'board' | 'worksheet';
+  /** Nur Tafeln: für Vorauswahl der Bibliotheks-Art beim ersten Veröffentlichen. */
+  boardTypeHint?: string;
 };
+
+const CATEGORY_OPTIONS: { value: LibraryListingCategory; label: string; hint: string }[] = [
+  { value: 'tasks', label: 'Aufgaben', hint: 'Übungen, Quiz, feste Aufgabenstellungen' },
+  { value: 'games', label: 'Spiele', hint: 'Interaktive Spiele, Entdecken am Smartboard' },
+  { value: 'presentations', label: 'Präsentation', hint: 'Einstieg, Erklärung, Karte, Demonstration' },
+];
 
 export const BoardLibraryPublishModal = ({
   open,
@@ -37,6 +51,7 @@ export const BoardLibraryPublishModal = ({
   onSubmit,
   moderationRequired = true,
   resourceKind = 'board',
+  boardTypeHint,
 }: Props) => {
   const rk = resourceKind;
   const snapshotPossessive = rk === 'worksheet' ? 'deines Arbeitsblatts' : 'deiner Tafel';
@@ -51,6 +66,7 @@ export const BoardLibraryPublishModal = ({
   const [title, setTitle] = useState('');
   const [topic, setTopic] = useState('');
   const [description, setDescription] = useState('');
+  const [listingCategory, setListingCategory] = useState<LibraryListingCategory>('presentations');
 
   useEffect(() => {
     if (!open) return;
@@ -58,12 +74,20 @@ export const BoardLibraryPublishModal = ({
       setTitle(initialListing.library_listing_title);
       setTopic(initialListing.library_listing_topic);
       setDescription(initialListing.library_listing_description);
+      if (rk === 'board' && initialListing.library_listing_category) {
+        setListingCategory(initialListing.library_listing_category);
+      } else if (rk === 'board') {
+        setListingCategory(defaultLibraryListingCategoryFromBoardType(boardTypeHint));
+      }
     } else {
       setTitle('');
       setTopic('');
       setDescription('');
+      if (rk === 'board') {
+        setListingCategory(defaultLibraryListingCategoryFromBoardType(boardTypeHint));
+      }
     }
-  }, [open, initialListing]);
+  }, [open, initialListing, rk, boardTypeHint]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,6 +103,15 @@ export const BoardLibraryPublishModal = ({
     const k = topic.trim();
     const d = description.trim();
     if (!t || !k || !d) return;
+    if (rk === 'board') {
+      onSubmit({
+        library_listing_title: t,
+        library_listing_topic: k,
+        library_listing_description: d,
+        library_listing_category: listingCategory,
+      });
+      return;
+    }
     onSubmit({
       library_listing_title: t,
       library_listing_topic: k,
@@ -90,6 +123,8 @@ export const BoardLibraryPublishModal = ({
 
   const privTitle = privateHints.title?.trim() || 'Ohne Titel';
   const privTopic = privateHints.topic?.trim() || '—';
+  const canSubmit =
+    Boolean(title.trim() && topic.trim() && description.trim()) && (rk === 'worksheet' || Boolean(listingCategory));
 
   return createPortal(
     <div className="fixed inset-0 z-[135] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
@@ -144,6 +179,46 @@ export const BoardLibraryPublishModal = ({
             </p>
           ) : null}
 
+          {rk === 'board' ? (
+            <fieldset className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+              <legend className="px-0.5 text-xs font-semibold text-slate-800">Art in der Bibliothek</legend>
+              <p className="text-[11px] leading-snug text-slate-500">
+                So erscheint dein Board unter Aufgaben, Spiele oder Präsentation in der öffentlichen Bibliothek.
+              </p>
+              <div className="space-y-2" role="radiogroup" aria-label="Bibliotheks-Art">
+                {CATEGORY_OPTIONS.map(({ value, label, hint }) => {
+                  const id = `lib-listing-cat-${value}`;
+                  return (
+                    <label
+                      key={value}
+                      htmlFor={id}
+                      className={cn(
+                        'flex cursor-pointer gap-3 rounded-lg border px-3 py-2 transition',
+                        listingCategory === value
+                          ? 'border-indigo-300 bg-white shadow-sm ring-1 ring-indigo-100'
+                          : 'border-slate-200 bg-white/80 hover:border-slate-300',
+                      )}
+                    >
+                      <input
+                        id={id}
+                        name="library_listing_category"
+                        type="radio"
+                        className="mt-1 h-4 w-4 shrink-0 accent-indigo-600"
+                        checked={listingCategory === value}
+                        disabled={busy}
+                        onChange={() => setListingCategory(value)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-slate-900">{label}</span>
+                        <span className="block text-[11px] text-slate-500">{hint}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ) : null}
+
           <Field label="Öffentlicher Titel" htmlFor="lib-pub-title" help="Wird in der Bibliothek angezeigt.">
             <TextInput
               id="lib-pub-title"
@@ -188,7 +263,7 @@ export const BoardLibraryPublishModal = ({
           <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
             Abbrechen
           </Button>
-          <Button type="button" loading={busy} onClick={handleSubmit} disabled={!title.trim() || !topic.trim() || !description.trim()}>
+          <Button type="button" loading={busy} onClick={handleSubmit} disabled={!canSubmit}>
             {mode === 'publish'
               ? moderationRequired
                 ? 'Zur Freigabe einreichen'

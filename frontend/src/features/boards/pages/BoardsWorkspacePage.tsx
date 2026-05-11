@@ -333,6 +333,7 @@ export function BoardsWorkspacePage() {
         variables.library_listing_title !== undefined ||
         variables.library_listing_topic !== undefined ||
         variables.library_listing_description !== undefined ||
+        variables.library_listing_category !== undefined ||
         variables.library_sync_public_snapshot;
       if (affectsLibrary) {
         queryClient.invalidateQueries({ queryKey: ['boards', 'library'] });
@@ -812,6 +813,7 @@ export function BoardsWorkspacePage() {
           title: libraryPublishTarget?.title ?? '',
           topic: libraryPublishTarget?.topic ?? '',
         }}
+        boardTypeHint={libraryPublishTarget?.board_type}
         onSubmit={(p) => {
           const t = libraryPublishTarget;
           if (!t) return;

@@ -249,6 +249,8 @@ export type BoardDetail = {
   library_listing_title?: string;
   library_listing_topic?: string;
   library_listing_description?: string;
+  /** Öffentliche Bibliothek: Aufgaben, Spiele oder Präsentation (vom Autor gewählt). */
+  library_listing_category?: '' | 'tasks' | 'games' | 'presentations';
   library_snapshot_at?: string | null;
   library_public_live_differs?: boolean;
   source_board: string | null;
@@ -378,6 +380,7 @@ export type BoardCodeUpdate = {
   library_listing_title?: string;
   library_listing_topic?: string;
   library_listing_description?: string;
+  library_listing_category?: '' | 'tasks' | 'games' | 'presentations';
   library_sync_public_snapshot?: boolean;
   /** Private Arbeitskopie — öffentliche Karte folgt erst nach Freigabe / Snapshot (s. Backend). */
   subject?: string;
@@ -421,6 +424,7 @@ export type BoardLibraryItem = {
   student_link_expires_at?: string | null;
   /** Aus `generation_input.duration_minutes` bei freier Smartboard-Generierung; sonst `null`. */
   planned_duration_minutes?: number | null;
+  library_listing_category?: '' | 'tasks' | 'games' | 'presentations';
 };
 
 export type BoardLibraryCommentDto = {

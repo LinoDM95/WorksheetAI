@@ -25,6 +25,7 @@ import { BoardShareQrModal } from '../components/BoardShareQrModal';
 import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import type { BoardCodeUpdate, BoardDetail, BoardRevision, RevisionMode } from '../types';
 import { clearPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
+import { defaultLibraryListingCategoryFromBoardType, type LibraryListingCategory } from '../lib/libraryCatalogFilters';
 import { needsStudentSharePrep } from '../lib/studentShareFlow';
 import { buildStudentBoardUrl } from '../publicBoardApi';
 import { exitElementFullscreen } from '../../../lib/requestDocumentFullscreen';
@@ -287,6 +288,7 @@ export function BoardDetailPage() {
         variables.library_listing_title !== undefined ||
         variables.library_listing_topic !== undefined ||
         variables.library_listing_description !== undefined ||
+        variables.library_listing_category !== undefined ||
         variables.library_sync_public_snapshot ||
         variables.subject !== undefined ||
         variables.topic !== undefined ||
@@ -685,13 +687,22 @@ export function BoardDetailPage() {
           busy={patchMutation.isPending}
           error={libraryModalError}
           privateHints={{ title: board.title, topic: board.topic }}
+          boardTypeHint={board.board_type}
           initialListing={
             libraryModalMode === 'edit_listing'
-              ? {
-                  library_listing_title: board.library_listing_title ?? '',
-                  library_listing_topic: board.library_listing_topic ?? '',
-                  library_listing_description: board.library_listing_description ?? '',
-                }
+              ? (() => {
+                  const raw = board.library_listing_category;
+                  const listingCategory: LibraryListingCategory =
+                    raw === 'tasks' || raw === 'games' || raw === 'presentations'
+                      ? raw
+                      : defaultLibraryListingCategoryFromBoardType(board.board_type);
+                  return {
+                    library_listing_title: board.library_listing_title ?? '',
+                    library_listing_topic: board.library_listing_topic ?? '',
+                    library_listing_description: board.library_listing_description ?? '',
+                    library_listing_category: listingCategory,
+                  };
+                })()
               : undefined
           }
           onSubmit={(p) => {

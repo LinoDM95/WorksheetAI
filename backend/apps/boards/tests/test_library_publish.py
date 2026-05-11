@@ -48,6 +48,7 @@ class BoardLibraryPublishTests(TestCase):
                 'library_listing_title': 'Öffentlich Titel',
                 'library_listing_topic': 'Öffentlich Thema',
                 'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+                'library_listing_category': 'games',
             },
             format='json',
         )
@@ -55,8 +56,36 @@ class BoardLibraryPublishTests(TestCase):
         self.board.refresh_from_db()
         self.assertFalse(self.board.library_public)
         self.assertEqual(self.board.library_moderation_status, Board.LibraryModerationStatus.PENDING)
+        self.assertEqual(self.board.library_listing_category, Board.LibraryListingCategory.GAMES)
         lib = self.client.get('/api/boards/library/').data
         self.assertFalse(any(x['id'] == str(self.board.id) for x in lib))
+
+    def test_first_publish_without_category_returns_400(self) -> None:
+        r = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {
+                'library_public': True,
+                'library_listing_title': 'Öffentlich Titel',
+                'library_listing_topic': 'Öffentlich Thema',
+                'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_first_publish_invalid_category_returns_400(self) -> None:
+        r = self.client.patch(
+            f'/api/boards/{self.board.id}/',
+            {
+                'library_public': True,
+                'library_listing_title': 'Öffentlich Titel',
+                'library_listing_topic': 'Öffentlich Thema',
+                'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+                'library_listing_category': 'quiz',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, 400)
 
     def test_publish_creates_snapshot_then_live_edit_does_not_change_preview(self) -> None:
         self.user.is_staff = True
@@ -68,6 +97,7 @@ class BoardLibraryPublishTests(TestCase):
                 'library_listing_title': 'Öffentlich Titel',
                 'library_listing_topic': 'Öffentlich Thema',
                 'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+                'library_listing_category': 'games',
             },
             format='json',
         )
@@ -81,6 +111,7 @@ class BoardLibraryPublishTests(TestCase):
         self.assertEqual(entry['title'], 'Öffentlich Titel')
         self.assertEqual(entry['topic'], 'Öffentlich Thema')
         self.assertEqual(entry['description'], 'Kurzbeschreibung für die Bibliothek.')
+        self.assertEqual(entry['library_listing_category'], Board.LibraryListingCategory.GAMES)
 
         r2 = self.client.patch(
             f'/api/boards/{self.board.id}/',
@@ -116,6 +147,7 @@ class BoardLibraryPublishTests(TestCase):
                 'library_listing_title': 'Öffentlich Titel',
                 'library_listing_topic': 'Öffentlich Thema',
                 'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+                'library_listing_category': 'games',
             },
             format='json',
         )
@@ -146,6 +178,7 @@ class BoardLibraryPublishTests(TestCase):
                 'library_listing_title': 'Öffentlich Titel',
                 'library_listing_topic': 'Öffentlich Thema',
                 'library_listing_description': 'Kurzbeschreibung für die Bibliothek.',
+                'library_listing_category': 'games',
             },
             format='json',
         )

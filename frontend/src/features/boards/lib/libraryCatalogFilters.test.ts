@@ -64,12 +64,21 @@ describe('libraryCatalogFilters', () => {
     ]);
   });
 
-  it('matchesLibraryPurpose maps board types', () => {
+  it('matchesLibraryPurpose uses listing category when set', () => {
+    expect(matchesLibraryPurpose('interactive_board', 'tasks', 'tasks')).toBe(true);
+    expect(matchesLibraryPurpose('practice_board', 'games', 'games')).toBe(true);
+    expect(matchesLibraryPurpose('lesson_intro', 'presentations', 'presentations')).toBe(true);
+    expect(matchesLibraryPurpose('interactive_board', 'tasks', 'games')).toBe(false);
+  });
+
+  it('matchesLibraryPurpose falls back to board type when category missing', () => {
     expect(matchesLibraryPurpose('quiz_board', 'tasks')).toBe(true);
     expect(matchesLibraryPurpose('lesson_intro', 'presentations')).toBe(true);
-    expect(matchesLibraryPurpose('interactive_board', 'tasks')).toBe(true);
+    expect(matchesLibraryPurpose('interactive_board', 'games')).toBe(true);
+    expect(matchesLibraryPurpose('interactive_board', 'tasks')).toBe(false);
     expect(matchesLibraryPurpose('interactive_board', 'presentations')).toBe(false);
-    expect(matchesLibraryPurpose(undefined, 'tasks')).toBe(true);
+    expect(matchesLibraryPurpose(undefined, 'presentations')).toBe(true);
+    expect(matchesLibraryPurpose(undefined, 'tasks')).toBe(false);
     expect(matchesLibraryPurpose('', '')).toBe(true);
   });
 

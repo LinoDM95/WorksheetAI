@@ -341,7 +341,7 @@ export function BoardLibraryListPage() {
           const hay = `${b.title} ${b.subject} ${b.topic}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
-        if (purposeFilter && !matchesLibraryPurpose(b.board_type, purposeFilter)) return false;
+        if (purposeFilter && !matchesLibraryPurpose(b.board_type, purposeFilter, b.library_listing_category)) return false;
         if (subjectFilter && !matchesLibrarySubjectFilter(b.subject, subjectFilter)) return false;
         if (gradeFilter && !matchesLibraryGradeFilter(b.grade, gradeFilter, b.grade_from, b.grade_to)) return false;
         if (techFilter && !(b.used_libraries ?? []).includes(techFilter as LibraryId)) return false;
@@ -521,7 +521,8 @@ export function BoardLibraryListPage() {
               </div>
 
               <p className="sr-only">
-                Filter nach Inhaltstyp (Boards oder Arbeitsblätter) und nach Board-Art (Aufgaben oder Präsentationen).
+                Filter nach Inhaltstyp (Boards oder Arbeitsblätter) und nach Board-Art (Aufgaben, Spiele oder
+                Präsentationen).
               </p>
 
               <div className="flex min-w-0 shrink-0 flex-col gap-1.5 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:gap-2 sm:border-t-0 sm:pt-0 xl:border-l xl:border-slate-100 xl:pl-3">
@@ -565,6 +566,7 @@ export function BoardLibraryListPage() {
                     [
                       { v: '' as const, label: 'Alle' },
                       { v: 'tasks' as const, label: 'Aufgaben' },
+                      { v: 'games' as const, label: 'Spiele' },
                       { v: 'presentations' as const, label: 'Präsentationen' },
                     ] as const
                   ).map(({ v, label }) => (

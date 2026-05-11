@@ -3,10 +3,12 @@
  * Fächerliste inkl. typischer Oberstufen-Fächer (Sek II / EF–Q); Zuordnung per Heuristik aus subject / grade / board_type.
  */
 
-export type LibraryPurposeFilter = '' | 'tasks' | 'presentations';
+export type LibraryPurposeFilter = '' | 'tasks' | 'games' | 'presentations';
 
-/** Board-Typen: Übungs- und Quiz-Tafeln sowie generische interaktive Boards. */
-const TASK_BOARD_TYPES = new Set(['practice_board', 'quiz_board', 'interactive_board']);
+export type LibraryListingCategory = Exclude<LibraryPurposeFilter, ''>;
+
+/** Board-Typen: Übungs- und Quiz-Tafeln. */
+const TASK_BOARD_TYPES = new Set(['practice_board', 'quiz_board']);
 
 /** Board-Typen: eher Lehr-/Präsentationskontext (Einstieg, Erklärung, Karte, Simulation). */
 const PRESENTATION_BOARD_TYPES = new Set([
@@ -235,9 +237,26 @@ export function matchesLibraryGradeFilter(
   return step === filterStep;
 }
 
-export function matchesLibraryPurpose(boardType: string | undefined, purpose: LibraryPurposeFilter): boolean {
+const LISTING_CATEGORY_SET = new Set<string>(['tasks', 'games', 'presentations']);
+
+/** Heuristik wie Backend-Migration: ohne gespeicherte Kategorie aus `board_type` ableiten. */
+export function defaultLibraryListingCategoryFromBoardType(boardType: string | undefined): LibraryListingCategory {
+  const t = (boardType ?? '').trim();
+  if (TASK_BOARD_TYPES.has(t)) return 'tasks';
+  if (t === 'interactive_board') return 'games';
+  if (PRESENTATION_BOARD_TYPES.has(t)) return 'presentations';
+  return 'presentations';
+}
+
+export function matchesLibraryPurpose(
+  boardType: string | undefined,
+  purpose: LibraryPurposeFilter,
+  libraryListingCategory?: string | null,
+): boolean {
   if (!purpose) return true;
-  const t = (boardType || 'interactive_board').trim();
-  if (purpose === 'tasks') return TASK_BOARD_TYPES.has(t);
-  return PRESENTATION_BOARD_TYPES.has(t);
+  const cat = (libraryListingCategory ?? '').trim();
+  if (LISTING_CATEGORY_SET.has(cat)) {
+    return cat === purpose;
+  }
+  return defaultLibraryListingCategoryFromBoardType(boardType) === purpose;
 }
