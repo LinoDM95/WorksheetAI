@@ -15,7 +15,6 @@ import {
   fetchPublicBoardByToken,
   getOrCreateStudentPresenceClientId,
   postStudentPresence,
-  postStudentPresenceLeaveBeacon,
   type PublicBoardPayload,
 } from '../publicBoardApi';
 import type { DatasetId, LibraryId } from '../types';
@@ -70,14 +69,14 @@ export function StudentBoardPage() {
       void postStudentPresence(token, clientId, 'touch').catch(() => {});
     };
     touch();
-    const intervalId = window.setInterval(touch, 45_000);
-    const onPageHide = () => {
-      postStudentPresenceLeaveBeacon(token, clientId);
+    const intervalId = window.setInterval(touch, 25_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') touch();
     };
-    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
       void postStudentPresence(token, clientId, 'leave').catch(() => {});
     };
   }, [token, data]);
