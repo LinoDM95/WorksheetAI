@@ -3,11 +3,7 @@ import { FileText } from 'lucide-react';
 import { A4WorksheetRenderer } from './A4WorksheetRenderer';
 import type { PageSetup, Worksheet } from '../../types';
 import { cn } from '../../lib/cn';
-import {
-  boardStageClipBoxStyle,
-  boardStageScaledInnerStyle,
-  useBoardStageScale,
-} from '../boards/boardStageLayout';
+import { boardStageThumbnailCoverStyle, useBoardStageScale } from '../boards/boardStageLayout';
 
 const MM_TO_PX = 96 / 25.4;
 
@@ -110,11 +106,9 @@ export function WorksheetCardThumbnail({
           <FileText className="h-12 w-12 text-slate-300" strokeWidth={1.25} aria-hidden />
         </div>
       ) : (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white">
-          <div className="bg-transparent" style={boardStageClipBoxStyle(stageScale, baseW, baseH)}>
-            <div style={boardStageScaledInnerStyle(stageScale, baseW, baseH)}>
-              <A4WorksheetRenderer worksheet={thumbWorksheet} showGuide={false} />
-            </div>
+        <div className="pointer-events-none absolute inset-0 overflow-hidden bg-white">
+          <div className="bg-transparent" style={boardStageThumbnailCoverStyle(stageScale, baseW, baseH)}>
+            <A4WorksheetRenderer worksheet={thumbWorksheet} showGuide={false} />
           </div>
         </div>
       )}

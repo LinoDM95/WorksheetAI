@@ -244,6 +244,10 @@ BOARDS_FREE_HTML_REPAIR_TEMPERATURE = env.float('BOARDS_FREE_HTML_REPAIR_TEMPERA
 BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=1)
 # Pro HTML-/CSS-/JS-Block im Nachprompt (`build_free_html_revision_prompt`); zu klein → Slides am Ende „verschwinden“.
 AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS = env.int('AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', default=200_000)
+# Revision/Repair: Auszug aus generation_prompt im KI-Prompt (vollständiger Text bleibt am Board-Modell).
+AI_BOARD_REVISION_DIDACTIC_MAX_CHARS = env.int('AI_BOARD_REVISION_DIDACTIC_MAX_CHARS', default=6000)
+# Nutzer-Hinweis + ggf. didaktischer Block im RepairAgent (vorher 600 — zu klein für lange Wünsche).
+AI_BOARD_REPAIR_CONTEXT_HINT_MAX_CHARS = env.int('AI_BOARD_REPAIR_CONTEXT_HINT_MAX_CHARS', default=12000)
 # Visuelle QA (Playwright/Chromium): URL des Frontends, damit <base href> /board-libs und /board-assets auflöst.
 BOARDS_VISUAL_QA_DOCUMENT_BASE = env('BOARDS_VISUAL_QA_DOCUMENT_BASE', default='http://127.0.0.1:5173/')
 # Visuelle Layout-QA (Playwright): bei True läuft sie bei jeder Board-Erzeugung und -Revision

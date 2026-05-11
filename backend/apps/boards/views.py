@@ -26,6 +26,7 @@ from .serializers import (
 from .services.free_html_generation import (
     FreeHtmlBoardGenerationService,
     FreeHtmlBoardRevisionService,
+    board_didactic_ai_payload,
     validate_free_html_code,
 )
 from .services.free_html_block_generation import FreeHtmlBlockBoardGenerationService
@@ -378,13 +379,16 @@ class BoardViewSet(viewsets.ModelViewSet):
         enforce_positive_ai_credits_balance(request.user)
         from .services.pipeline_ai_meter import generation_meter_context
 
+        hint_max = max(2_000, int(getattr(settings, 'AI_BOARD_REPAIR_CONTEXT_HINT_MAX_CHARS', 12_000)))
+        didactic = board_didactic_ai_payload(board)
         try:
             agent = RepairAgent(
                 provider=provider,
                 style_dna=board.style_dna or {},
                 creative_brief=board.creative_brief or {},
                 risk_analysis=board.risk_analysis or {},
-                context_hint=str(body.get('hint') or '')[:600],
+                board_didactic=didactic,
+                context_hint=str(body.get('hint') or '')[:hint_max],
                 run_visual_qa=getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True),
                 run_touch_audit=getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True),
             )

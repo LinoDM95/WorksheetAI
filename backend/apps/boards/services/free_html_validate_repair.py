@@ -46,6 +46,7 @@ def run_validation_repairs(
     initial_raw: dict[str, Any],
     resource_ctx: dict[str, Any],
     context_hint: str = '',
+    board_didactic: dict[str, str] | None = None,
     max_repairs: int | None = None,
     visual_qa: bool = False,
     document_base_href: str | None = None,
@@ -59,8 +60,9 @@ def run_validation_repairs(
         Rohes Modell-JSON (oder Teil davon); wird wie bei der Erstellung über ``sanitize_payload`` geführt.
     resource_ctx :
         Kontext für den Repair-Prompt (z. B. ``libraries_summary`` …), unverändert durchreichen.
-    context_hint :
-        Kurzer Freitext (Thema/Prompt-Auszug) — nur Orientierung, keine neue Aufgabenstellung.
+    board_didactic :
+        Optional ``board_subject`` / ``board_grade`` / ``board_topic`` /
+        ``board_generation_prompt`` für ``build_free_html_repair_prompt``.
     max_repairs :
         Optionaler Override; Standard aus ``BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS``.
     visual_qa :
@@ -125,6 +127,7 @@ def run_validation_repairs(
         )
         payload = {
             **resource_ctx,
+            **(board_didactic or {}),
             'html': bundle.get('html') or '',
             'css': bundle.get('css') or '',
             'javascript': bundle.get('javascript') or '',

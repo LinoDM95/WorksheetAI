@@ -280,6 +280,54 @@ def _truncate_block(s: str, max_chars: int = 14_000) -> str:
     return t[:max_chars] + '\n\n… (gekürzt für Prompt-Länge)'
 
 
+def _revision_board_generation_prompt_excerpt(payload: dict) -> str:
+    """Auszug der gespeicherten Lehrer-Beschreibung für Revision/Repair (Länge begrenzt)."""
+    gp = str(payload.get('board_generation_prompt') or '').strip()
+    cap = max(500, int(getattr(settings, 'AI_BOARD_REVISION_DIDACTIC_MAX_CHARS', 6000)))
+    if not gp:
+        return (
+            '*(Keine gespeicherte ausführliche Beschreibung — nutze Fach/Thema oben und den '
+            'vorhandenen Code.)*'
+        )
+    if len(gp) > cap:
+        return gp[:cap] + '\n\n… (gekürzt für Prompt-Länge)'
+    return gp
+
+
+def _board_didactic_markdown_block(payload: dict) -> str:
+    """Optionaler Markdown-Block: didaktischer Ursprung (RepairAgent / klassischer Repair)."""
+    sub = str(payload.get('board_subject') or '').strip()
+    grade = str(payload.get('board_grade') or '').strip()
+    topic = str(payload.get('board_topic') or '').strip()
+    gp_raw = str(payload.get('board_generation_prompt') or '').strip()
+    if not sub and not grade and not topic and not gp_raw:
+        return ''
+    cap = max(500, int(getattr(settings, 'AI_BOARD_REVISION_DIDACTIC_MAX_CHARS', 6000)))
+    if gp_raw and len(gp_raw) > cap:
+        gp_excerpt = gp_raw[:cap] + '\n\n… (gekürzt für Prompt-Länge)'
+    else:
+        gp_excerpt = gp_raw
+    if not gp_excerpt:
+        gp_excerpt = (
+            '*(Keine gespeicherte Beschreibung — nutze Fach/Thema und den bestehenden Code.)*'
+        )
+    lines = [
+        '## Ursprünglicher didaktischer Kontext',
+        '',
+        '**Richtlinie:** Inhaltlich beim **gleichen** Auftrag bleiben (Fach/Thema). Kein '
+        'Themenwechsel — nur Reparatur oder das, was der Zusatzkontext ausdrücklich verlangt.',
+        '',
+        f'- **Fach:** {sub or "— nicht angegeben —"}',
+        f'- **Klassenstufe:** {grade or "— nicht angegeben —"}',
+        f'- **Thema:** {topic or "— nicht angegeben —"}',
+        '',
+        '**Ursprüngliche Lehrer-Beschreibung:**',
+        gp_excerpt,
+        '',
+    ]
+    return '\n'.join(lines)
+
+
 def build_block_filling_page_prompt(payload: dict) -> str:
     """Prompt für eine einzelne Board-Seite: Slots mit Stichpunkten → JSON contents."""
     md = (_board_format_dir() / 'blocks_filling.md').read_text(encoding='utf-8')
@@ -384,6 +432,7 @@ def build_free_html_revision_prompt(payload: dict) -> str:
     md = (_board_format_dir() / 'free_html_revision.md').read_text(encoding='utf-8')
     user_prompt = (payload.get('user_prompt') or '').strip() or '*(Kein Änderungswunsch.)*'
     cap = max(1_000, int(getattr(settings, 'AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', 200_000)))
+    gp_block = _revision_board_generation_prompt_excerpt(payload)
     filled = (
         md.replace('{{ html }}', _truncate_block(str(payload.get('html') or ''), cap))
         .replace('{{ css }}', _truncate_block(str(payload.get('css') or ''), cap))
@@ -392,6 +441,10 @@ def build_free_html_revision_prompt(payload: dict) -> str:
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
         .replace('{{ prompt }}', user_prompt)
+        .replace('{{ board_subject }}', str(payload.get('board_subject') or '— nicht angegeben —'))
+        .replace('{{ board_grade }}', str(payload.get('board_grade') or '— nicht angegeben —'))
+        .replace('{{ board_topic }}', str(payload.get('board_topic') or '— nicht angegeben —'))
+        .replace('{{ board_generation_prompt }}', gp_block)
     )
     return _append_teacher_visual_quality_supplement(filled)
 
@@ -418,7 +471,9 @@ def build_free_html_repair_prompt(payload: dict) -> str:
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
     )
-    return _append_teacher_visual_quality_supplement(filled)
+    didactic = _board_didactic_markdown_block(payload)
+    merged = didactic + _append_teacher_visual_quality_supplement(filled)
+    return merged
 
 
 def build_intent_router_prompt(payload: dict) -> str:
@@ -506,7 +561,8 @@ def build_repair_mode_prompt(mode: str, payload: dict) -> str:
         .replace('{{ touch_audit }}', _json_block(payload.get('touch_audit') or {}))
         .replace('{{ screenshot_quality }}', _json_block(payload.get('screenshot_quality') or {}))
     )
-    return _REPAIR_CONTENT_PRESERVATION_PREAMBLE + _append_teacher_visual_quality_supplement(body)
+    didactic = _board_didactic_markdown_block(payload)
+    return _REPAIR_CONTENT_PRESERVATION_PREAMBLE + didactic + _append_teacher_visual_quality_supplement(body)
 
 
 def build_screenshot_judge_prompt(payload: dict) -> str:

@@ -2,6 +2,20 @@
 
 Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselben Sicherheits- und Sandbox-Regeln wie bei der Erstgenerierung gültig.
 
+## Ursprünglicher didaktischer Kontext
+
+**Wichtig:** Der Inhalt soll **thematisch und fachlich** zu diesem Auftrag **passen**. Ändere nur im Sinne des Änderungswunschs weiter unten — **kein** Themenwechsel, keine anderen Fächer, keine völlig neue Unterrichtseinheit, es sei denn, die Lehrkraft fordert das ausdrücklich.
+
+- **Fach:** {{ board_subject }}
+- **Klassenstufe:** {{ board_grade }}
+- **Thema:** {{ board_topic }}
+
+**Ursprüngliche Lehrer-Beschreibung** (Kontext beibehalten; bei Reparaturen möglichst minimal-invasiv):
+
+{{ board_generation_prompt }}
+
+---
+
 ## Zwei Antwort-Wege (wähle den passenden)
 
 1. **`revision_kind`: `"surgical"`** — **bevorzugt für kleine, lokale Änderungen** (ein Wort, eine Zeile, ein Block, eine Regel, eine Funktion): Du listest **`surgical_edits`**: mehrere Einträge mit **`target`** (`html`, `css` oder `javascript`), **`old_text`** (exakter Ausschnitt aus dem **aktuellen** Code oben — Zeichen für Zeichen kopieren) und **`new_text`** (Ersatz). Der Server wendet die Ersetzungen **der Reihe nach** an. **`old_text` muss in der betreffenden Datei genau einmal vorkommen** — wähle einen etwas längeren, eindeutigen Kontext, nie nur ein einzelnes Zeichen. Nach den Edits kannst du **`html`**, **`css`**, **`javascript`** als **leere Strings** `""` lassen, um Ausgabe zu sparen. Metadaten (`title`, `teacher_notes`, …) wie gewohnt füllen.

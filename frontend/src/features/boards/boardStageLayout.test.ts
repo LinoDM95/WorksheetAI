@@ -7,6 +7,7 @@ import {
   STAGE_BASE_W,
   boardStageClipBoxStyle,
   boardStageScaledInnerStyle,
+  boardStageThumbnailCoverStyle,
 } from './boardStageLayout';
 
 describe('boardStageLayout — Konstanten', () => {
@@ -34,6 +35,26 @@ describe('boardStageClipBoxStyle', () => {
     const s = boardStageClipBoxStyle(1);
     expect(s.width).toBe(STAGE_BASE_W);
     expect(s.height).toBe(STAGE_BASE_H);
+  });
+});
+
+describe('boardStageThumbnailCoverStyle', () => {
+  it('zentriert per translate und skaliert von der Mitte', () => {
+    const s = boardStageThumbnailCoverStyle(0.4);
+    expect(s.position).toBe('absolute');
+    expect(s.left).toBe('50%');
+    expect(s.top).toBe('50%');
+    expect(s.width).toBe(STAGE_BASE_W);
+    expect(s.height).toBe(STAGE_BASE_H);
+    expect(s.transform).toBe('translate(-50%, -50%) scale(0.4)');
+    expect(s.transformOrigin).toBe('center center');
+  });
+
+  it('akzeptiert abweichende Basismaße (z. B. A4-Thumbnails)', () => {
+    const s = boardStageThumbnailCoverStyle(0.2, 100, 200);
+    expect(s.width).toBe(100);
+    expect(s.height).toBe(200);
+    expect(s.transform).toBe('translate(-50%, -50%) scale(0.2)');
   });
 });
 

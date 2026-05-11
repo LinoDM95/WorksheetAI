@@ -111,6 +111,24 @@ class PromptLoaderBoardTests(SimpleTestCase):
         self.assertIn('gekürzt', p)
         self.assertLess(len(p), len(huge) + 5000)
 
+    def test_free_html_revision_substitutes_didactic_fields(self) -> None:
+        p = build_free_html_revision_prompt(
+            {
+                'html': '<div>x</div>',
+                'css': '',
+                'javascript': '',
+                'user_prompt': 'mehr Kontrast',
+                'board_subject': 'Mathe',
+                'board_grade': '5',
+                'board_topic': 'Brüche',
+                'board_generation_prompt': 'Interaktive Übung zu Äquivalenz',
+            },
+        )
+        self.assertIn('Mathe', p)
+        self.assertIn('Brüche', p)
+        self.assertIn('Äquivalenz', p)
+        self.assertIn('mehr Kontrast', p)
+
     def test_repair_mode_prompt_includes_content_preservation(self) -> None:
         p = build_repair_mode_prompt(
             'simplify',
@@ -119,11 +137,40 @@ class PromptLoaderBoardTests(SimpleTestCase):
         self.assertIn('Kein unkontrolliertes Kürzen', p)
         self.assertIn('nur Button größer', p)
 
+    def test_repair_mode_prompt_includes_didactic_block_when_set(self) -> None:
+        p = build_repair_mode_prompt(
+            'bug_fix',
+            {
+                'html': '<div>a</div>',
+                'css': '',
+                'javascript': '',
+                'context_hint': 'fix',
+                'board_subject': 'Bio',
+                'board_topic': 'Zelle',
+                'board_generation_prompt': 'Organelle benennen',
+            },
+        )
+        self.assertIn('Ursprünglicher didaktischer Kontext', p)
+        self.assertIn('Bio', p)
+        self.assertIn('Organelle', p)
+
     def test_free_html_repair_lists_errors(self) -> None:
         p = build_free_html_repair_prompt({'validation_errors': ['a', 'b'], 'repair_attempt': 2})
         self.assertIn('1.', p)
         self.assertIn('2.', p)
         self.assertIn('2', p)
+
+    def test_free_html_repair_prepends_didactic_when_set(self) -> None:
+        p = build_free_html_repair_prompt(
+            {
+                'validation_errors': ['x'],
+                'repair_attempt': 1,
+                'board_subject': 'Chemie',
+                'board_generation_prompt': 'Säuren und Basen',
+            },
+        )
+        self.assertIn('Ursprünglicher didaktischer Kontext', p)
+        self.assertIn('Chemie', p)
 
 
 @override_settings(AI_PROVIDER='mock')

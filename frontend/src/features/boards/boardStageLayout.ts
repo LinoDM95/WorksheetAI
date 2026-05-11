@@ -56,3 +56,24 @@ export function boardStageScaledInnerStyle(scale: number, baseW = STAGE_BASE_W, 
     marginBottom: -baseH * (1 - scale),
   };
 }
+
+/**
+ * Cover-Skalierung für Thumbnails: Bühne mittig im übergeordneten `overflow:hidden`-Rechteck,
+ * `scale` wie bei `useBoardStageScale(…, 'cover')`. Vermeidet die Flex+Margin-Kombination,
+ * die bei Rundungsfehlern leicht seitlich versetzt wirken kann.
+ */
+export function boardStageThumbnailCoverStyle(
+  scale: number,
+  baseW = STAGE_BASE_W,
+  baseH = STAGE_BASE_H,
+): CSSProperties {
+  return {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: baseW,
+    height: baseH,
+    transform: `translate(-50%, -50%) scale(${scale})`,
+    transformOrigin: 'center center',
+  };
+}

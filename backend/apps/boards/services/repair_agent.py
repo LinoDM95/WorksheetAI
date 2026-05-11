@@ -78,6 +78,7 @@ class RepairAgent:
         style_dna: dict | None = None,
         creative_brief: dict | None = None,
         risk_analysis: dict | None = None,
+        board_didactic: dict[str, str] | None = None,
         context_hint: str = '',
         run_visual_qa: bool = False,
         run_touch_audit: bool = True,
@@ -87,7 +88,9 @@ class RepairAgent:
         self._style_dna = style_dna or {}
         self._brief = creative_brief or {}
         self._risk = risk_analysis or {}
-        self._context_hint = (context_hint or '').strip()[:600]
+        self._board_didactic = dict(board_didactic) if board_didactic else {}
+        hint_cap = max(2_000, int(getattr(settings, 'AI_BOARD_REPAIR_CONTEXT_HINT_MAX_CHARS', 12_000)))
+        self._context_hint = (context_hint or '').strip()[:hint_cap]
         self._run_visual_qa = bool(run_visual_qa)
         self._run_touch_audit = bool(run_touch_audit)
 
@@ -185,6 +188,7 @@ class RepairAgent:
 
             payload = {
                 **ctx,
+                **self._board_didactic,
                 'html': sanitized.get('html') or '',
                 'css': sanitized.get('css') or '',
                 'javascript': sanitized.get('javascript') or '',

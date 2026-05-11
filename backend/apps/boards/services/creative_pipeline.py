@@ -22,7 +22,11 @@ from ..models import Board
 from ..grade_bounds import resolve_board_grade_fields
 from ..owner import resolve_board_owner
 from .board_revision_head import create_initial_revision_if_absent
-from .free_html_generation import FreeHtmlBoardGenerationService, _select_provider
+from .free_html_generation import (
+    FreeHtmlBoardGenerationService,
+    _select_provider,
+    board_didactic_from_generation_payload,
+)
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import validate_free_html_bundle
 from .free_html_validate_repair import run_validation_repairs
@@ -185,6 +189,7 @@ class SmartboardCreativePipeline:
             initial_raw=raw,
             resource_ctx=ctx,
             context_hint=context_hint,
+            board_didactic=board_didactic_from_generation_payload(self.payload),
             visual_qa=visual_qa_enabled,
             document_base_href=None,
         )

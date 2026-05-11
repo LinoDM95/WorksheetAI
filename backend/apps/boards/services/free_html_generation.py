@@ -31,6 +31,28 @@ from .visual_resource_registry import (
 logger = logging.getLogger(__name__)
 
 
+def board_didactic_ai_payload(board: Board) -> dict[str, str]:
+    """Fach/Thema und gespeicherte Lehrer-Beschreibung für Revision- und Repair-Prompts."""
+    return {
+        'board_subject': (board.subject or '').strip(),
+        'board_grade': (board.grade or '').strip(),
+        'board_topic': (board.topic or '').strip(),
+        'board_generation_prompt': (board.generation_prompt or '').strip(),
+    }
+
+
+def board_didactic_from_generation_payload(payload: dict[str, Any]) -> dict[str, str]:
+    """Gleiche Keys wie ``board_didactic_ai_payload`` für die Erstgenerierung (noch kein Board)."""
+    p = payload or {}
+    _, _, g_label = resolve_board_grade_fields(p)
+    return {
+        'board_subject': str(p.get('subject') or '').strip(),
+        'board_grade': (g_label or str(p.get('grade') or '')).strip(),
+        'board_topic': str(p.get('topic') or '').strip(),
+        'board_generation_prompt': str(p.get('prompt') or '').strip(),
+    }
+
+
 def _visual_qa_for_pipeline() -> bool:
     """Headless-Visuelle QA in Generierung/Revision: immer an, sofern nicht serverseitig deaktiviert."""
     return bool(getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True))
@@ -129,11 +151,13 @@ class FreeHtmlBoardGenerationService:
                 f'Thema: {self.payload.get("topic") or "—"}\n'
                 f'Auftrag (Auszug): {str(self.payload.get("prompt") or "")[:500]}'
             )
+            didactic = board_didactic_from_generation_payload(self.payload)
             last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
                 provider,
                 initial_raw=raw,
                 resource_ctx=ctx,
                 context_hint=context_hint,
+                board_didactic=didactic,
                 visual_qa=_visual_qa_for_pipeline(),
                 document_base_href=None,
             )
@@ -215,11 +239,13 @@ class FreeHtmlBoardGenerationService:
                 f'Thema: {self.payload.get("topic") or "—"}\n'
                 f'Auftrag (Auszug): {str(self.payload.get("prompt") or "")[:500]}'
             )
+            didactic = board_didactic_from_generation_payload(self.payload)
             last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
                 provider,
                 initial_raw=raw,
                 resource_ctx=ctx,
                 context_hint=context_hint,
+                board_didactic=didactic,
                 visual_qa=_visual_qa_for_pipeline(),
                 document_base_href=None,
             )
@@ -328,13 +354,21 @@ class FreeHtmlBoardRevisionService:
 
         provider = _select_provider(ai_quality_tier=self._ai_quality_tier)
         prev_meta = _board_metadata(self.board)
+        didactic = board_didactic_ai_payload(self.board)
+        hint_max = max(2_000, int(getattr(settings, 'AI_BOARD_REPAIR_CONTEXT_HINT_MAX_CHARS', 12000)))
 
         with generation_meter_context(user=self.user) as meter:
-            revision = self._run_revision_body(provider, prev_meta)
+            revision = self._run_revision_body(provider, prev_meta, didactic, hint_max)
             meter.flush_logs_to_board(self.board)
             return revision
 
-    def _run_revision_body(self, provider, prev_meta: dict[str, Any]) -> BoardRevision:
+    def _run_revision_body(
+        self,
+        provider,
+        prev_meta: dict[str, Any],
+        didactic: dict[str, str],
+        hint_max: int,
+    ) -> BoardRevision:
         # Spezialisierte Modi → RepairAgent (mode-spezifischer Prompt).
         if self._revision_mode != 'general':
             from .repair_agent import MODE_TO_PROMPT_KEY, RepairAgent
@@ -355,7 +389,8 @@ class FreeHtmlBoardRevisionService:
                 style_dna=self.board.style_dna or {},
                 creative_brief=self.board.creative_brief or {},
                 risk_analysis=self.board.risk_analysis or {},
-                context_hint=f'Nutzer-Änderungswunsch:\n{self.user_prompt}',
+                board_didactic=didactic,
+                context_hint=f'Nutzer-Änderungswunsch:\n{self.user_prompt}'[:hint_max],
                 run_visual_qa=_visual_qa_for_pipeline(),
                 run_touch_audit=bool(getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True)),
             )
@@ -381,6 +416,7 @@ class FreeHtmlBoardRevisionService:
                         'used_assets': list(self.board.used_assets or []),
                         'used_datasets': list(self.board.used_datasets or []),
                         'user_prompt': self.user_prompt,
+                        **didactic,
                     },
                 )
             except Exception:
@@ -410,12 +446,13 @@ class FreeHtmlBoardRevisionService:
             }
             merged = {**defaults, **{k: v for k, v in raw.items() if v is not None}}
             ctx = build_resource_context()
-            hint = self.user_prompt.strip()[:600]
+            hint = self.user_prompt.strip()[:hint_max]
             last_raw, bundle, ok, verrs, vwarns, repair_trace = run_validation_repairs(
                 provider,
                 initial_raw=merged,
                 resource_ctx=ctx,
                 context_hint=f'Nutzer-Änderungswunsch:\n{hint}',
+                board_didactic=didactic,
                 visual_qa=_visual_qa_for_pipeline(),
                 document_base_href=None,
             )
