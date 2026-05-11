@@ -216,13 +216,10 @@ export function BoardPlayPage() {
           <span className="hidden sm:inline">Zurück</span>
         </Button>
 
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-1 sm:justify-start">
+        <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:justify-start">
           <h1 className="min-w-0 truncate text-center text-sm font-semibold sm:text-left sm:text-base">
             {board.title}
           </h1>
-          {isStudentShareLinkActive(board) ? (
-            <BoardStudentPresenceBadge boardId={board.id} enabled variant="dark" className="shrink-0" />
-          ) : null}
         </div>
 
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
@@ -241,15 +238,20 @@ export function BoardPlayPage() {
                 />
                 JavaScript / Skripte
               </label>
-              <Button
-                variant="secondary"
-                size="lg"
-                className="w-full justify-center"
-                onClick={() => setReloadKey((k) => k + 1)}
-                leftIcon={<RotateCw size={18} aria-hidden />}
-              >
-                Neu laden
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {isStudentShareLinkActive(board) ? (
+                  <BoardStudentPresenceBadge boardId={board.id} enabled variant="dark" className="shrink-0" />
+                ) : null}
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="min-w-0 flex-1 justify-center sm:flex-initial"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                  leftIcon={<RotateCw size={18} aria-hidden />}
+                >
+                  Neu laden
+                </Button>
+              </div>
               <Button
                 variant="secondary"
                 size="lg"
@@ -284,14 +286,19 @@ export function BoardPlayPage() {
               />
               Skripte
             </label>
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={() => setReloadKey((k) => k + 1)}
-              leftIcon={<RotateCw size={18} aria-hidden />}
-            >
-              Neu laden
-            </Button>
+            <div className="inline-flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => setReloadKey((k) => k + 1)}
+                leftIcon={<RotateCw size={18} aria-hidden />}
+              >
+                Neu laden
+              </Button>
+              {isStudentShareLinkActive(board) ? (
+                <BoardStudentPresenceBadge boardId={board.id} enabled variant="dark" className="shrink-0" />
+              ) : null}
+            </div>
             <Button
               variant="secondary"
               size="lg"

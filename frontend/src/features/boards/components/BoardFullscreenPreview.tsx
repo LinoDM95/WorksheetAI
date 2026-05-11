@@ -59,6 +59,7 @@ export type BoardFullscreenPreviewProps = {
   viewTransitionGroupName: string;
   eyebrowTitle?: string;
   eyebrowSubtitle?: string;
+  /** Zusätzliche Toolbar-Inhalte direkt neben „Neu laden“ (z. B. Live-Badge). */
   toolbarExtras?: ReactNode | ((ctx: BoardFullscreenToolbarContext) => ReactNode);
   reloadKey: number;
   onReload: () => void;
@@ -71,7 +72,6 @@ export type BoardFullscreenPreviewProps = {
   scriptsEnabled?: boolean;
   showScriptsToggle?: boolean;
   onScriptsEnabledChange?: (enabled: boolean) => void;
-  /** Teilen (QR/Link): erscheint direkt vor „Neu laden“. */
   shareToolbarAction?: {
     onClick: () => void;
     disabled?: boolean;
@@ -470,9 +470,11 @@ export function BoardFullscreenPreview({
                 <span className="hidden sm:inline">Skripte</span>
               </label>
             ) : null}
-            {reloadPlacedEarly ? reloadIconButton : null}
-            {!reloadPlacedEarly && showReloadButton ? reloadIconButton : null}
-            {toolbarResolved}
+            <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+              {reloadPlacedEarly ? reloadIconButton : null}
+              {!reloadPlacedEarly && showReloadButton ? reloadIconButton : null}
+              {toolbarResolved}
+            </span>
             {!minimalToolbar && shareToolbarAction ? (
               <Button
                 type="button"

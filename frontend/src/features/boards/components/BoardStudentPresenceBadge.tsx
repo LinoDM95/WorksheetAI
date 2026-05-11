@@ -1,8 +1,12 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { fetchBoardStudentPresence } from '../boardsApi';
 import { BOARDS_STUDENT_PRESENCE_QUERY_KEY } from '../../../lib/listQueries';
 import { cn } from '../../../lib/cn';
+
+/** Kurze Verzögerung bevor ein Sinken der Zahl angezeigt wird — mindert Flackern bei Lastspitzen / Heartbeat-Jitter. */
+const DISPLAY_DECAY_MS = 8500;
 
 type BoardStudentPresenceBadgeProps = {
   boardId: string;
@@ -22,13 +26,42 @@ export const BoardStudentPresenceBadge = ({
     queryKey: BOARDS_STUDENT_PRESENCE_QUERY_KEY(boardId),
     queryFn: () => fetchBoardStudentPresence(boardId),
     enabled: enabled && Boolean(boardId),
-    refetchInterval: enabled ? 3000 : false,
+    refetchInterval: enabled ? 4500 : false,
     placeholderData: (previousData) => previousData,
   });
 
+  const raw = data?.connected ?? 0;
+  const [smooth, setSmooth] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSmooth(null);
+  }, [boardId]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setSmooth(null);
+      return;
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    setSmooth((prev) => {
+      if (prev === null) return raw;
+      return raw >= prev ? raw : prev;
+    });
+  }, [raw, enabled]);
+
+  useEffect(() => {
+    if (!enabled || smooth === null || raw >= smooth) return;
+    const id = window.setTimeout(() => setSmooth(raw), DISPLAY_DECAY_MS);
+    return () => window.clearTimeout(id);
+  }, [raw, smooth, enabled]);
+
+  const n = enabled ? (smooth ?? raw) : 0;
+
   if (!enabled || isError) return null;
 
-  const n = data?.connected ?? 0;
   const label =
     n === 0
       ? 'Geschätzte Geräte mit offenem Link — Zahl wird live aktualisiert'

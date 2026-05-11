@@ -69,7 +69,7 @@ export function StudentBoardPage() {
       void postStudentPresence(token, clientId, 'touch').catch(() => {});
     };
     touch();
-    const intervalId = window.setInterval(touch, 25_000);
+    const intervalId = window.setInterval(touch, 18_000);
     const onVisibility = () => {
       if (document.visibilityState === 'visible') touch();
     };

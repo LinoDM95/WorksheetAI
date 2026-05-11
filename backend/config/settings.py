@@ -111,7 +111,10 @@ if not DISABLE_API_THROTTLE:
     }
 
 _board_presence_rates = dict(REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES') or {})
-_board_presence_rates['student_presence'] = env.str('BOARD_STUDENT_PRESENCE_THROTTLE', default='120/minute')
+_board_presence_rates['student_presence'] = env.str(
+    'BOARD_STUDENT_PRESENCE_THROTTLE',
+    default='800/minute',
+)
 REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = _board_presence_rates
 
 JWT_ACCESS_TOKEN_LIFETIME_MINUTES = env.int(

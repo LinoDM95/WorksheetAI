@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 PREFIX = 'board:stdpresence:v1'
-STALE_SEC = 90
+STALE_SEC = 120
 BUCKET_TTL_SEC = 180
 MAX_CLIENT_ID_LEN = 128
 
