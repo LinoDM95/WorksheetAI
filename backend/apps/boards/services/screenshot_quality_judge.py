@@ -42,6 +42,12 @@ _LAYOUT_METRICS_JS = r"""
   });
   const all = root.querySelectorAll('*');
   const text = (root.innerText || '').trim();
+  const mediaEls = Array.from(
+    root.querySelectorAll('img, canvas, svg, video'),
+  ).filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.width >= 2 && r.height >= 2;
+  });
   const rootRect = root.getBoundingClientRect();
   const aspect = rootRect.height ? rootRect.width / rootRect.height : 0;
   let avgBtnArea = 0;
@@ -55,6 +61,7 @@ _LAYOUT_METRICS_JS = r"""
   }
   return {
     element_count: all.length,
+    visible_media_count: mediaEls.length,
     interactive_count: interactive.length,
     average_button_area_px2: avgBtnArea,
     text_char_count: text.length,
@@ -154,6 +161,16 @@ def _take_screenshot_and_metrics(bundle: dict, *, document_base_href: str, board
     return target, metrics if isinstance(metrics, dict) else {}
 
 
+def capture_board_stage_visuals(bundle: dict, *, board_id: str | None = None) -> tuple[Path | None, dict]:
+    """Öffentliche Hilfsfunktion: gleicher Playwright-Pfad wie Screenshot-Judge (Metriken + PNG)."""
+    href = default_visual_qa_document_base()
+    if not href or not getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True):
+        return None, {}
+    if not visual_qa_playwright_available():
+        return None, {}
+    return _take_screenshot_and_metrics(bundle, document_base_href=href, board_id=board_id)
+
+
 _JUDGE_SCHEMA = {
     'type': 'OBJECT',
     'properties': {
@@ -222,10 +239,21 @@ class ScreenshotQualityJudge:
 
         # Strukturierte Bewertung über kleines Modell
         fallback = _heuristic_scores(metrics, self._dna)
+        from .board_stage_blank_check import analyze_blank_stage
+
+        blank_stage = analyze_blank_stage(
+            layout_metrics=metrics,
+            screenshot_path=screenshot_path,
+        )
         if self._router is None:
-            return {**fallback, 'ran': True, 'mode': 'heuristic',
+            base = {**fallback, 'ran': True, 'mode': 'heuristic',
                     'screenshot_path': str(screenshot_path) if screenshot_path else '',
-                    'metrics': metrics}
+                    'metrics': metrics, 'blank_stage': blank_stage}
+            if blank_stage.get('appears_blank'):
+                issues = list(base.get('issues') or [])
+                issues.insert(0, 'Bühne wirkt leer oder durchgehend weiß.')
+                base['issues'] = issues[:8]
+            return base
 
         prompt = build_screenshot_judge_prompt({
             **self._meta,
@@ -236,14 +264,20 @@ class ScreenshotQualityJudge:
             'screenshot_judge', prompt, response_schema=_JUDGE_SCHEMA, temperature=0.2,
         )
         if not isinstance(ai, dict) or not ai:
-            return {**fallback, 'ran': True, 'mode': 'heuristic',
+            base = {**fallback, 'ran': True, 'mode': 'heuristic',
                     'screenshot_path': str(screenshot_path) if screenshot_path else '',
-                    'metrics': metrics}
+                    'metrics': metrics, 'blank_stage': blank_stage}
+            if blank_stage.get('appears_blank'):
+                issues = list(base.get('issues') or [])
+                issues.insert(0, 'Bühne wirkt leer oder durchgehend weiß.')
+                base['issues'] = issues[:8]
+            return base
 
         result = {
             'ran': True, 'mode': 'structured',
             'screenshot_path': str(screenshot_path) if screenshot_path else '',
             'metrics': metrics,
+            'blank_stage': blank_stage,
             'overall_score': int(ai.get('overall_score') or fallback['overall_score']),
             'scores': {**fallback['scores'], **(ai.get('scores') or {})},
             'issues': [str(x).strip()[:240] for x in (ai.get('issues') or []) if str(x).strip()][:6],
@@ -258,6 +292,11 @@ class ScreenshotQualityJudge:
             except (TypeError, ValueError):
                 result['scores'][key] = fallback['scores'].get(key, 5)
         result['overall_score'] = max(0, min(100, result['overall_score']))
+        if blank_stage.get('appears_blank'):
+            issues = list(result.get('issues') or [])
+            issues.insert(0, 'Bühne wirkt leer oder durchgehend weiß.')
+            result['issues'] = issues[:8]
+            result['overall_score'] = min(result['overall_score'], 45)
         return result
 
     # ------------------------------------------------------------------

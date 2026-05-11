@@ -398,6 +398,7 @@ class BoardViewSet(viewsets.ModelViewSet):
                         bundle, mode=mode,
                         touch_audit_result=board.touch_audit_result or {},
                         screenshot_quality_result=board.screenshot_quality_result or {},
+                        board_id=str(board.id),
                     )
                 finally:
                     meter.flush_logs_to_board(board)

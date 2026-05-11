@@ -7,7 +7,16 @@ import { useAiGenerationJobs } from './AiGenerationJobsContext';
 import type { AiGenerationJob } from './aiGenerationTypes';
 
 const AUTO_COLLAPSE_MS = 3200;
-const PANEL_MAX_H = 'min(70vh, 22rem)';
+const PANEL_MAX_H = 'min(80vh, 28rem)';
+
+export function sortJobsForDisplay(jobs: AiGenerationJob[]): AiGenerationJob[] {
+  const rank = (s: AiGenerationJob['status']) =>
+    s === 'running' ? 0 : s === 'queued' ? 1 : 2;
+  return [...jobs].sort((a, b) => {
+    const d = rank(a.status) - rank(b.status);
+    return d !== 0 ? d : 0;
+  });
+}
 
 function JobCard({ job, onDismiss }: { job: AiGenerationJob; onDismiss: () => void }) {
   const isRunning = job.status === 'running';
@@ -122,6 +131,8 @@ export function AiGenerationStatusDock() {
   const panelRef = useRef<HTMLDivElement>(null);
   const [panelMaxH, setPanelMaxH] = useState(PANEL_MAX_H);
 
+  const jobsSortKey = jobs.map((j) => `${j.id}:${j.status}`).join('|');
+
   useLayoutEffect(() => {
     if (collapsed || typeof window === 'undefined') return;
     const clamp = () => {
@@ -131,16 +142,19 @@ export function AiGenerationStatusDock() {
       const bottom = el.getBoundingClientRect().bottom;
       const space = window.innerHeight - bottom - margin;
       if (space < 0) {
-        const next = Math.max(140, el.offsetHeight + space);
+        const next = Math.max(160, el.getBoundingClientRect().height + space);
         setPanelMaxH(`${next}px`);
         return;
       }
       setPanelMaxH(PANEL_MAX_H);
     };
-    clamp();
+    const id = window.requestAnimationFrame(() => clamp());
     window.addEventListener('resize', clamp);
-    return () => window.removeEventListener('resize', clamp);
-  }, [collapsed, jobs.length]);
+    return () => {
+      window.cancelAnimationFrame(id);
+      window.removeEventListener('resize', clamp);
+    };
+  }, [collapsed, jobs.length, jobsSortKey]);
 
   const runningCount = jobs.filter((j) => j.status === 'running').length;
   const queuedCount = jobs.filter((j) => j.status === 'queued').length;
@@ -223,6 +237,8 @@ export function AiGenerationStatusDock() {
 
   if (jobs.length === 0) return null;
 
+  const displayJobs = sortJobsForDisplay(jobs);
+
   const dotClass =
     runningCount > 0
       ? 'bg-[var(--color-primary-500)] shadow-[0_0_0_3px_rgba(99,102,241,0.25)]'
@@ -303,17 +319,24 @@ export function AiGenerationStatusDock() {
               exit={{ opacity: 0, y: -4, scale: 0.99 }}
               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               className={cn(
-                'absolute right-0 top-[calc(100%+0.25rem)] z-[70] flex w-[min(calc(100vw-1rem),18.5rem)] flex-col gap-2 overflow-y-auto rounded-[var(--radius-xl)]',
-                'border border-[var(--color-border)] bg-[var(--color-bg-card)]/98 p-2.5 shadow-[var(--shadow-paper)] backdrop-blur-md',
+                'absolute right-0 top-[calc(100%+0.25rem)] z-[70] w-[min(calc(100vw-1rem),18.5rem)] overflow-hidden rounded-[var(--radius-xl)]',
+                'border border-[var(--color-border)] bg-[var(--color-bg-card)]/98 shadow-[var(--shadow-paper)] backdrop-blur-md',
               )}
               style={{ maxHeight: panelMaxH }}
             >
-              <p className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-400)]">
-                Übersicht
-              </p>
-              {jobs.map((job) => (
-                <JobCard key={job.id} job={job} onDismiss={() => dismissJob(job.id)} />
-              ))}
+              <div
+                className="overflow-y-auto overscroll-contain p-2.5 [-webkit-overflow-scrolling:touch]"
+                style={{ maxHeight: panelMaxH }}
+              >
+                <div className="flex flex-col gap-2">
+                  <p className="px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-400)]">
+                    Übersicht
+                  </p>
+                  {displayJobs.map((job) => (
+                    <JobCard key={job.id} job={job} onDismiss={() => dismissJob(job.id)} />
+                  ))}
+                </div>
+              </div>
             </motion.div>
           ) : null}
         </AnimatePresence>

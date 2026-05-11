@@ -26,6 +26,7 @@ from .free_html_generation import (
     FreeHtmlBoardGenerationService,
     _select_provider,
     board_didactic_from_generation_payload,
+    resolve_board_title_from_generation,
 )
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import validate_free_html_bundle
@@ -311,7 +312,7 @@ class SmartboardCreativePipeline:
             style_dna={},
         )
 
-        title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
+        title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
         desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
         gf, gt, g_label = resolve_board_grade_fields(self.payload)
@@ -405,7 +406,8 @@ class SmartboardCreativePipeline:
 
     def _sanitized_input(self) -> dict:
         keep = (
-            'prompt', 'subject', 'grade', 'grade_from', 'grade_to', 'topic', 'board_type', 'duration_minutes',
+            'prompt', 'subject', 'grade', 'grade_from', 'grade_to', 'topic', 'title', 'board_type',
+            'duration_minutes',
             'creativity', 'visual_style', 'target_device', 'ai_quality_tier',
         )
         base = {k: self.payload.get(k) for k in keep if k in self.payload}

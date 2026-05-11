@@ -34,6 +34,7 @@ import { BoardDetailPageHeader } from './boardDetail/BoardDetailPageHeader';
 import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
 import { BoardShellModal } from './boardDetail/BoardShellModal';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
 import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 export function BoardDetailPage() {
@@ -209,6 +210,10 @@ export function BoardDetailPage() {
       subtitle: board?.title?.trim() || undefined,
       resourceId: id,
     });
+    if (!jid) {
+      setReviseError(AI_GENERATION_QUEUE_FULL_MESSAGE);
+      return;
+    }
     setReviseOpen(false);
     void runSerialized(jid, async () => {
       try {

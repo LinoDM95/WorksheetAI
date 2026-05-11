@@ -17,6 +17,7 @@ import { cn } from '../../../lib/cn';
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_GRADE_STEPS, LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
 import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
@@ -54,6 +55,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
   const [gradeFrom, setGradeFrom] = useState('');
   const [gradeTo, setGradeTo] = useState('');
   const [topic, setTopic] = useState('');
+  const [boardTitle, setBoardTitle] = useState('');
   const [durationStr, setDurationStr] = useState('');
   const [visualStyle, setVisualStyle] = useState<VisualStyleId>('auto');
   const [prompt, setPrompt] = useState('');
@@ -70,6 +72,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
     setGradeFrom('');
     setGradeTo('');
     setTopic('');
+    setBoardTitle('');
     setDurationStr('');
     setPrompt('');
     setError(null);
@@ -122,12 +125,17 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       duration_minutes: d,
       creativity: 'experimentell',
       visual_style: visualStyle,
+      ...(boardTitle.trim() ? { title: boardTitle.trim().slice(0, 255) } : {}),
     };
     const jid = startJob({
       kind: 'board-creative',
       title: 'Board wird erstellt',
-      subtitle: payload.topic.trim() || undefined,
+      subtitle: boardTitle.trim() || payload.topic.trim() || undefined,
     });
+    if (!jid) {
+      setError(AI_GENERATION_QUEUE_FULL_MESSAGE);
+      return;
+    }
     sessionCreativeJobIdsRef.current.add(jid);
     void runSerialized(jid, async () => {
       try {
@@ -276,6 +284,21 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="z. B. Wasserkreislauf"
                   aria-required
+                />
+              </Field>
+
+              <Field
+                label="Titel in deiner Galerie"
+                htmlFor="b-board-title-modal"
+                help="Optional. Ohne Eintrag wird ein KI-Vorschlag oder das Thema als Titel verwendet. Später jederzeit unter Board-Details änderbar."
+              >
+                <TextInput
+                  id="b-board-title-modal"
+                  value={boardTitle}
+                  onChange={(e) => setBoardTitle(e.target.value)}
+                  placeholder="z. B. Wasserkreislauf: Übung Stunde 3"
+                  maxLength={255}
+                  autoComplete="off"
                 />
               </Field>
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from django.test import SimpleTestCase
 
+from apps.boards.services.board_stage_blank_check import analyze_blank_stage
 from apps.boards.services.creative_brief import CreativeBriefService
 from apps.boards.services.intent_router import IntentRouter
 from apps.boards.services.quality_report import build_quality_report
@@ -165,6 +166,17 @@ class QualityReportTests(SimpleTestCase):
         self.assertIn('Touch verbessern (Touchflächen ≥ 56 px, Pointer-Events).',
                        report['suggested_next_actions'])
 
+    def test_blank_stage_lowers_design_and_summary(self):
+        report = build_quality_report(
+            validation_errors=[], validation_warnings=[],
+            screenshot_quality_result={
+                'ran': True, 'overall_score': 88,
+                'issues': [], 'blank_stage': {'appears_blank': True, 'reasons': ['test']},
+            },
+        )
+        self.assertEqual(report['sections']['design']['status'], 'failed')
+        self.assertIn('Leere Bühne', report['teacher_facing_summary'])
+
 
 class SnippetLibraryTests(SimpleTestCase):
     def test_drag_drop_intent_returns_drag_pattern(self):
@@ -199,3 +211,38 @@ class RepairAgentDispatchTests(SimpleTestCase):
             validation_errors=[], touch_audit={'passed': True},
             screenshot_quality={'overall_score': 40},
         ))
+        self.assertTrue(RepairAgent.needs_repair(
+            validation_errors=[], touch_audit={'passed': True},
+            screenshot_quality={'overall_score': 88, 'blank_stage': {'appears_blank': True}},
+        ))
+
+
+class BoardStageBlankCheckTests(SimpleTestCase):
+    def test_analyze_blank_with_text_not_blank_without_screenshot(self):
+        out = analyze_blank_stage(
+            layout_metrics={
+                'element_count': 30,
+                'text_char_count': 40,
+                'interactive_count': 0,
+                'visible_media_count': 0,
+            },
+            screenshot_path=None,
+        )
+        self.assertFalse(out['appears_blank'])
+
+    def test_analyze_blank_sparse_dom_no_shot_is_blank(self):
+        out = analyze_blank_stage(
+            layout_metrics={
+                'element_count': 10,
+                'text_char_count': 2,
+                'interactive_count': 0,
+                'visible_media_count': 0,
+            },
+            screenshot_path=None,
+        )
+        self.assertTrue(out['appears_blank'])
+
+    def test_analyze_blank_no_metrics_no_file_is_inconclusive(self):
+        out = analyze_blank_stage(layout_metrics={}, screenshot_path=None)
+        self.assertFalse(out['appears_blank'])
+        self.assertFalse(out['ran'])

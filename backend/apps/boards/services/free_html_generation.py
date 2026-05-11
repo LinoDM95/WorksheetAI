@@ -96,6 +96,23 @@ def _normalize_used_lists(raw: dict[str, Any]) -> dict[str, list[str]]:
     }
 
 
+def resolve_board_title_from_generation(
+    payload: dict[str, Any],
+    *,
+    last_raw: dict[str, Any] | None,
+    initial_raw: dict[str, Any] | None,
+) -> str:
+    """Titel für ``Board``: optionaler Lehrkraft-``title`` schlägt KI-Titel und Thema."""
+    p = payload or {}
+    custom = str(p.get('title') or '').strip()
+    if custom:
+        return custom[:255]
+    lr = last_raw if isinstance(last_raw, dict) else {}
+    ir = initial_raw if isinstance(initial_raw, dict) else {}
+    top = str(p.get('topic') or '').strip()
+    return str(lr.get('title') or ir.get('title') or top or 'Board')[:255]
+
+
 def validate_free_html_code(html: str, css: str, javascript: str) -> tuple[bool, list[str], list[str]]:
     """Reine Pipeline-Funktion: nimmt Roh-Code, sanitisiert und validiert."""
     bundle = sanitize_free_html_bundle({
@@ -162,7 +179,7 @@ class FreeHtmlBoardGenerationService:
                 document_base_href=None,
             )
 
-            title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
+            title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
             gf, gt, g_label = resolve_board_grade_fields(self.payload)
@@ -250,7 +267,7 @@ class FreeHtmlBoardGenerationService:
                 document_base_href=None,
             )
 
-            title = str(last_raw.get('title') or raw.get('title') or self.payload.get('topic') or 'Board')[:255]
+            title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
 
             gf, gt, g_label = resolve_board_grade_fields(self.payload)
@@ -312,7 +329,8 @@ class FreeHtmlBoardGenerationService:
 
     def _sanitized_input(self) -> dict[str, Any]:
         keep = (
-            'prompt', 'subject', 'grade', 'grade_from', 'grade_to', 'topic', 'board_type', 'duration_minutes',
+            'prompt', 'subject', 'grade', 'grade_from', 'grade_to', 'topic', 'title', 'board_type',
+            'duration_minutes',
             'creativity', 'visual_style', 'target_device', 'ai_quality_tier',
         )
         return {k: self.payload.get(k) for k in keep if k in self.payload}
@@ -395,7 +413,7 @@ class FreeHtmlBoardRevisionService:
                 run_touch_audit=bool(getattr(settings, 'SMARTBOARD_ENABLE_TOUCH_AUDIT', True)),
             )
             mode_key = MODE_TO_PROMPT_KEY.get(self._revision_mode, 'general_repair')
-            result = agent.run(current_bundle, mode=mode_key)
+            result = agent.run(current_bundle, mode=mode_key, board_id=str(self.board.id))
             bundle = result.get('bundle') or current_bundle
             ok = bool(result.get('ok'))
             verrs = list(result.get('errors') or [])

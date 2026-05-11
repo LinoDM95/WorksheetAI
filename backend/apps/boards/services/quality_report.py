@@ -70,7 +70,15 @@ def _score_design(screenshot: dict | None) -> tuple[int, list[str]]:
         return 70, [screenshot.get('reason') or 'Screenshot-Judge nicht aktiv.']
     score = int(screenshot.get('overall_score') or 70)
     issues = screenshot.get('issues') or []
-    return max(0, min(100, score)), _shorten(issues)
+    msgs = list(issues)
+    blank = (screenshot or {}).get('blank_stage') or {}
+    if blank.get('appears_blank'):
+        score = min(score, 35)
+        for r in (blank.get('reasons') or []):
+            if str(r).strip():
+                msgs.append(str(r).strip())
+        msgs.insert(0, 'Bühne wirkt leer oder durchgehend weiß.')
+    return max(0, min(100, score)), _shorten(msgs)
 
 
 def _score_content(risk: dict | None) -> tuple[int, list[str]]:
@@ -169,6 +177,8 @@ def build_quality_report(
         summary_bits.append('Touch-Probleme')
     if screenshot_quality_result and (screenshot_quality_result.get('overall_score') or 100) < 75:
         summary_bits.append('Designhinweise')
+    if (screenshot_quality_result or {}).get('blank_stage', {}).get('appears_blank'):
+        summary_bits.append('Leere Bühne')
     if not summary_bits:
         summary_bits.append('keine wesentlichen Probleme')
     teacher_summary = 'Geprüft: ' + ', '.join(summary_bits) + '.'

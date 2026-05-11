@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
+import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../components/ai-generation/aiGenerationTypes';
 import axios from 'axios';
 import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
 import { cn } from '../../lib/cn';
@@ -422,6 +423,10 @@ export function WorksheetPage() {
         resourceId: targetWorksheetId,
         pageIndex,
       });
+      if (!jid) {
+        setErr(AI_GENERATION_QUEUE_FULL_MESSAGE);
+        return;
+      }
 
       await runSerialized(jid, async () => {
         updateJob(jid, { phaseLabel: 'KI überarbeitet die Seite …', progressPercent: 8 });

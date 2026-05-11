@@ -39,7 +39,7 @@ export function BoardDetailMetaPanel({
   savePending: boolean;
 }) {
   return (
-    <details className="bd-meta-panel group/meta shrink-0 border-b border-slate-200/80 bg-white/90 open:bg-slate-50/50">
+    <details className="bd-meta-panel group/meta shrink-0 border-b border-slate-200/80 bg-white/90 open:bg-slate-50/50" open>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1 sm:px-3 [&::-webkit-details-marker]:hidden">
         <ChevronDown
           size={14}
@@ -184,7 +184,8 @@ export function BoardDetailMetaPanel({
           </p>
         ) : (
           <p className="mt-1.5 text-[10px] leading-snug text-slate-400">
-            Öffentliche Bibliothekskarte erst nach Freigabe; privater Titel hier.
+            Privat: Titel, Fach, Thema, Stufe und Dauer für deine Galerie — wie in der Liste und in
+            Vorschaueinträgen. Öffentliche Bibliothekstexte legst du separat fest.
           </p>
         )}
       </div>

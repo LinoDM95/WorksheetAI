@@ -14,6 +14,7 @@ import { PagesRail } from './PagesRail';
 import { LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 import { cn } from '../../../lib/cn';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
+import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
 import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
 
 type Props = {
@@ -136,6 +137,10 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
       title: 'Board aus Bausteinen wird erstellt',
       subtitle: payload.title.trim() || payload.topic.trim() || undefined,
     });
+    if (!jid) {
+      setBlocksGenerateError(AI_GENERATION_QUEUE_FULL_MESSAGE);
+      return;
+    }
     sessionBlocksJobIdsRef.current.add(jid);
     setBlocksGenerateError(null);
     void runSerialized(jid, async () => {

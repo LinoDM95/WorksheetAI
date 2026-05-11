@@ -8,7 +8,7 @@
  *     interactjs, confetti, howler je nach usedLibraries
  *  4. on-demand topojson, turf, leaflet
  *  5. BOARD_DATASETS-Injection (JSON → globales Objekt)
- *  6. Globaler Error-Handler
+ *  6. Globaler Error-Handler (window error + unhandledrejection)
  *  7. injected User-CSS (mit </style>-Escape)
  *  8. Body: #wa-viewport → #wa-clip → #wa-scale-inner → #board-root (User-HTML)
  *  9. Sandbox-Bootstrap: einheitlich skalieren (gleiches Verhältnis wie Host `boardStageLayout`)
@@ -372,14 +372,28 @@ const buildFrozenThumbFreezeScript = (delayMs: number): string => {
 };
 
 const errorOverlayScript = `
+  function boardAppendScriptErrorOverlay(prefix, msg) {
+    try {
+      var pre = document.createElement('pre');
+      pre.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;max-height:30%;overflow:auto;background:#fee2e2;color:#7f1d1d;padding:10px 14px;font-size:12px;line-height:1.4;z-index:2147483647;border-top:1px solid #fecaca;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;');
+      pre.textContent = prefix + ': ' + msg;
+      document.body.appendChild(pre);
+    } catch (_) { /* swallow */ }
+  }
   window.addEventListener('error', function (event) {
     try {
       var msg = event && event.message ? event.message : String(event);
       var line = event && event.lineno != null ? ' (Zeile ' + event.lineno + ')' : '';
-      var pre = document.createElement('pre');
-      pre.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;max-height:30%;overflow:auto;background:#fee2e2;color:#7f1d1d;padding:10px 14px;font-size:12px;line-height:1.4;z-index:2147483647;border-top:1px solid #fecaca;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;');
-      pre.textContent = 'Skriptfehler: ' + msg + line;
-      document.body.appendChild(pre);
+      boardAppendScriptErrorOverlay('Skriptfehler', msg + line);
+    } catch (_) { /* swallow */ }
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    try {
+      var reason = event && event.reason;
+      var msg = reason != null && typeof reason === 'object' && 'message' in reason
+        ? String(reason.message)
+        : String(reason);
+      boardAppendScriptErrorOverlay('Unbehandelte Promise-Ablehnung', msg);
     } catch (_) { /* swallow */ }
   });
 `;

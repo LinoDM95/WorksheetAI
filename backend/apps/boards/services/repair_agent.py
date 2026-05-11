@@ -7,6 +7,7 @@ mit größerem Spielraum). Antworten können ``revision_kind`` / ``surgical_edit
 - ``sanitize_payload`` → ``validate_free_html_bundle``
 - optionales ``run_visual_layout_qa`` (Playwright)
 - optionales ``TouchAuditService``
+- als letzter Gate: ``run_blank_stage_check`` (Screenshot + DOM-Metriken, leere/weiße Bühne)
 
 Bricht ab, wenn alle Prüfungen passen oder der Cap erreicht ist.
 """
@@ -103,6 +104,9 @@ class RepairAgent:
             return True
         if screenshot_quality and screenshot_quality.get('overall_score', 100) < 60:
             return True
+        blank = (screenshot_quality or {}).get('blank_stage') or {}
+        if blank.get('appears_blank'):
+            return True
         return False
 
     def run(
@@ -113,6 +117,7 @@ class RepairAgent:
         max_rounds: int | None = None,
         touch_audit_result: dict | None = None,
         screenshot_quality_result: dict | None = None,
+        board_id: str | None = None,
     ) -> dict[str, Any]:
         cap = _max_repair_rounds(max_rounds)
         prompt_key = MODE_TO_PROMPT_KEY.get(mode, 'general_repair')
@@ -129,7 +134,8 @@ class RepairAgent:
 
         # Audit-Resultate als JSON für den Prompt aufbereiten (kompakt).
         last_touch = touch_audit_result or {}
-        last_screen = screenshot_quality_result or {}
+        last_screen = dict(screenshot_quality_result or {})
+        last_blank_stage: dict[str, Any] | None = None
 
         for round_idx in range(cap + 1):
             sanitized, ok, errs, warns = _sanitize_validate(current)
@@ -150,6 +156,28 @@ class RepairAgent:
                     logger.exception('RepairAgent: TouchAudit fehlgeschlagen')
 
             touch_blocking = bool(touch_audit_now and not touch_audit_now.get('passed', True))
+
+            blank_stage_now: dict[str, Any] | None = None
+            preliminary_ok = ok and not all_errs and not touch_blocking
+            if preliminary_ok and getattr(settings, 'SMARTBOARD_ENABLE_BLANK_STAGE_CHECK', True):
+                try:
+                    from .board_stage_blank_check import run_blank_stage_check
+
+                    blank_stage_now = run_blank_stage_check(sanitized, board_id=board_id)
+                    last_blank_stage = blank_stage_now
+                    if blank_stage_now.get('appears_blank'):
+                        all_errs = list(all_errs) + [
+                            '[Visuell] Die Bühne wirkt leer oder durchgehend weiß — '
+                            'sichtbaren Inhalt (Text, Bedienflächen oder Medien) herstellen.',
+                        ]
+                except Exception:  # noqa: BLE001
+                    logger.exception('RepairAgent: Blank-Stage-Check fehlgeschlagen')
+                    blank_stage_now = {'ran': False, 'appears_blank': False, 'reasons': ['check_failed']}
+                    last_blank_stage = blank_stage_now
+            elif preliminary_ok:
+                blank_stage_now = {'ran': False, 'appears_blank': False, 'reasons': ['disabled']}
+                last_blank_stage = blank_stage_now
+
             history.append({
                 'round': round_idx,
                 'mode': prompt_key,
@@ -158,9 +186,11 @@ class RepairAgent:
                 'errors': list(all_errs)[:8],
                 'touch_passed': touch_audit_now.get('passed', True),
                 'touch_score': touch_audit_now.get('score'),
+                'blank_stage': blank_stage_now,
             })
 
             if ok and not all_errs and not touch_blocking:
+                merged_screen = {**last_screen, 'blank_stage': last_blank_stage or {}}
                 return {
                     'bundle': sanitized,
                     'ok': True,
@@ -169,11 +199,13 @@ class RepairAgent:
                     'errors': all_errs,
                     'warnings': warns,
                     'touch_audit': touch_audit_now,
-                    'screenshot_quality': last_screen,
+                    'screenshot_quality': merged_screen,
+                    'blank_stage': last_blank_stage or {},
                     'history': history,
                 }
 
             if round_idx >= cap:
+                merged_screen = {**last_screen, 'blank_stage': last_blank_stage or {}}
                 return {
                     'bundle': sanitized,
                     'ok': False,
@@ -182,7 +214,8 @@ class RepairAgent:
                     'errors': all_errs,
                     'warnings': warns,
                     'touch_audit': touch_audit_now,
-                    'screenshot_quality': last_screen,
+                    'screenshot_quality': merged_screen,
+                    'blank_stage': last_blank_stage or {},
                     'history': history,
                 }
 
@@ -202,7 +235,7 @@ class RepairAgent:
                 or '*(Kein zusätzlicher Kontext — nur Probleme beheben.)*',
                 'style_dna': self._style_dna,
                 'touch_audit': touch_audit_now,
-                'screenshot_quality': last_screen,
+                'screenshot_quality': {**last_screen, 'blank_stage': last_blank_stage or {}},
             }
             prompt = build_repair_mode_prompt(prompt_key, payload)
 
@@ -220,7 +253,9 @@ class RepairAgent:
                 return {
                     'bundle': sanitized, 'ok': False, 'mode': prompt_key,
                     'rounds': round_idx + 1, 'errors': all_errs, 'warnings': warns,
-                    'touch_audit': touch_audit_now, 'screenshot_quality': last_screen,
+                    'touch_audit': touch_audit_now,
+                    'screenshot_quality': {**last_screen, 'blank_stage': last_blank_stage or {}},
+                    'blank_stage': last_blank_stage or {},
                     'history': history,
                 }
 

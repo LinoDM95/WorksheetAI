@@ -1,3 +1,9 @@
+/** Max. gleichzeitig wartende KI-Aufträge (Status `queued`) app-weit. */
+export const AI_GENERATION_MAX_QUEUED = 4;
+
+export const AI_GENERATION_QUEUE_FULL_MESSAGE =
+  'Es können höchstens 4 Generierungen gleichzeitig in der Warteschlange stehen. Bitte warte, bis ein Auftrag startet oder beendet wird.';
+
 export type AiGenerationJobKind =
   | 'board-creative'
   | 'board-blocks'

@@ -4,25 +4,25 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
+import { flushSync } from 'react-dom';
 import type {
   AiGenerationCompleteOptions,
   AiGenerationJob,
   AiGenerationJobStartInput,
 } from './aiGenerationTypes';
+import { AI_GENERATION_MAX_QUEUED } from './aiGenerationTypes';
 import { refreshAuthCookies } from '../../lib/api';
 import { AiGenerationQueueAbortedError } from './generationQueue';
 
-/** Während langer KI-Läufe Access-Cookie vor Ablauf erneuern (Access default 120 min, Jobs bis 60 min+). */
+/** Während langer KI-Läufe Access-Cookie vor Ablauf erneuern (Access default 120 min, Jobs bis 60 min+). */
 const PROACTIVE_AUTH_REFRESH_MS = 10 * 60 * 1000;
 
 /** Maximale sichtbare Jobs in der Liste; ältere werden beim Start verworfen. */
 export const AI_GENERATION_MAX_JOBS = 6;
-
-type State = { jobs: AiGenerationJob[] };
 
 type Action =
   | { type: 'start'; job: AiGenerationJob }
@@ -34,24 +34,26 @@ const newId = (): string =>
     ? crypto.randomUUID()
     : `job-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-function reducer(state: State, action: Action): State {
+export function jobsReducer(jobs: AiGenerationJob[], action: Action): AiGenerationJob[] {
   switch (action.type) {
-    case 'start':
-      return { jobs: [action.job, ...state.jobs].slice(0, AI_GENERATION_MAX_JOBS) };
+    case 'start': {
+      const queued = jobs.filter((j) => j.status === 'queued').length;
+      if (queued >= AI_GENERATION_MAX_QUEUED) return jobs;
+      return [action.job, ...jobs].slice(0, AI_GENERATION_MAX_JOBS);
+    }
     case 'patch':
-      return {
-        jobs: state.jobs.map((j) => (j.id === action.id ? { ...j, ...action.patch } : j)),
-      };
+      return jobs.map((j) => (j.id === action.id ? { ...j, ...action.patch } : j));
     case 'dismiss':
-      return { jobs: state.jobs.filter((j) => j.id !== action.id) };
+      return jobs.filter((j) => j.id !== action.id);
     default:
-      return state;
+      return jobs;
   }
 }
 
 type Ctx = {
   jobs: AiGenerationJob[];
-  startJob: (input: AiGenerationJobStartInput) => string;
+  /** `null`, wenn die Warteschlange voll ist (`AI_GENERATION_MAX_QUEUED`). */
+  startJob: (input: AiGenerationJobStartInput) => string | null;
   /** Führt Arbeit strikt nacheinander aus; setzt den Job auf „running“, sobald er an der Reihe ist. */
   runSerialized: <T,>(jobId: string, fn: () => Promise<T>) => Promise<T>;
   updateJob: (
@@ -68,28 +70,32 @@ export type AiGenerationCompletionInput = AiGenerationCompleteOptions;
 const AiGenerationJobsContext = createContext<Ctx | null>(null);
 
 export function AiGenerationJobsProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, { jobs: [] });
-  const jobsRef = useRef(state.jobs);
+  const [jobs, setJobs] = useState<AiGenerationJob[]>([]);
+  const jobsRef = useRef(jobs);
   useEffect(() => {
-    jobsRef.current = state.jobs;
-  }, [state.jobs]);
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   const queueTailRef = useRef<Promise<unknown>>(Promise.resolve());
   const abortedQueuedIdsRef = useRef(new Set<string>());
   const hasActiveGenerationRef = useRef(false);
 
   useEffect(() => {
-    hasActiveGenerationRef.current = state.jobs.some(
+    hasActiveGenerationRef.current = jobs.some(
       (j) => j.status === 'queued' || j.status === 'running',
     );
-  }, [state.jobs]);
+  }, [jobs]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
       if (!hasActiveGenerationRef.current) return;
       void refreshAuthCookies().catch(() => undefined);
     }, PROACTIVE_AUTH_REFRESH_MS);
-    return () => clearInterval(id);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const dispatch = useCallback((action: Action) => {
+    setJobs((prev) => jobsReducer(prev, action));
   }, []);
 
   const runSerialized = useCallback(async <T,>(jobId: string, fn: () => Promise<T>): Promise<T> => {
@@ -107,9 +113,9 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
       () => undefined,
     );
     return run;
-  }, []);
+  }, [dispatch]);
 
-  const startJob = useCallback((input: AiGenerationJobStartInput) => {
+  const startJob = useCallback((input: AiGenerationJobStartInput): string | null => {
     const id = newId();
     const now = Date.now();
     const job: AiGenerationJob = {
@@ -124,8 +130,15 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
       progressPercent: null,
       createdAt: now,
     };
-    dispatch({ type: 'start', job });
-    return id;
+    let acceptedId: string | null = null;
+    flushSync(() => {
+      setJobs((prev) => {
+        const next = jobsReducer(prev, { type: 'start', job });
+        if (next !== prev) acceptedId = id;
+        return next;
+      });
+    });
+    return acceptedId;
   }, []);
 
   const updateJob = useCallback(
@@ -135,50 +148,59 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
     ) => {
       dispatch({ type: 'patch', id, patch });
     },
-    [],
+    [dispatch],
   );
 
-  const completeJob = useCallback((id: string, options?: AiGenerationCompletionInput) => {
-    const now = Date.now();
-    dispatch({
-      type: 'patch',
-      id,
-      patch: {
-        status: 'success',
-        progressPercent: 100,
-        phaseLabel: undefined,
-        successMessage: options?.successMessage ?? 'Fertig.',
-        primaryAction: options?.primaryAction,
-        endedAt: now,
-      },
-    });
-  }, []);
+  const completeJob = useCallback(
+    (id: string, options?: AiGenerationCompletionInput) => {
+      const now = Date.now();
+      dispatch({
+        type: 'patch',
+        id,
+        patch: {
+          status: 'success',
+          progressPercent: 100,
+          phaseLabel: undefined,
+          successMessage: options?.successMessage ?? 'Fertig.',
+          primaryAction: options?.primaryAction,
+          endedAt: now,
+        },
+      });
+    },
+    [dispatch],
+  );
 
-  const failJob = useCallback((id: string, message: string) => {
-    const now = Date.now();
-    dispatch({
-      type: 'patch',
-      id,
-      patch: {
-        status: 'error',
-        errorMessage: message,
-        endedAt: now,
-        progressPercent: null,
-      },
-    });
-  }, []);
+  const failJob = useCallback(
+    (id: string, message: string) => {
+      const now = Date.now();
+      dispatch({
+        type: 'patch',
+        id,
+        patch: {
+          status: 'error',
+          errorMessage: message,
+          endedAt: now,
+          progressPercent: null,
+        },
+      });
+    },
+    [dispatch],
+  );
 
-  const dismissJob = useCallback((id: string) => {
-    const j = jobsRef.current.find((x) => x.id === id);
-    if (j?.status === 'queued') {
-      abortedQueuedIdsRef.current.add(id);
-    }
-    dispatch({ type: 'dismiss', id });
-  }, []);
+  const dismissJob = useCallback(
+    (id: string) => {
+      const j = jobsRef.current.find((x) => x.id === id);
+      if (j?.status === 'queued') {
+        abortedQueuedIdsRef.current.add(id);
+      }
+      dispatch({ type: 'dismiss', id });
+    },
+    [dispatch],
+  );
 
   const value = useMemo(
     () => ({
-      jobs: state.jobs,
+      jobs,
       startJob,
       runSerialized,
       updateJob,
@@ -186,7 +208,7 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
       failJob,
       dismissJob,
     }),
-    [state.jobs, startJob, runSerialized, updateJob, completeJob, failJob, dismissJob],
+    [jobs, startJob, runSerialized, updateJob, completeJob, failJob, dismissJob],
   );
 
   return (

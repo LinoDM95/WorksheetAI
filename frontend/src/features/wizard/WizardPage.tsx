@@ -32,6 +32,7 @@ import { useWizardState, type WizardActions } from './useWizardState';
 import { FieldRow, RadioGroup, SectionHeading, Stepper } from './components';
 import { useShellChrome } from '../../components/shell/ShellChromeContext';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
+import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../components/ai-generation/aiGenerationTypes';
 import { isAiGenerationQueueAbortedError } from '../../components/ai-generation/generationQueue';
 import { addPendingFirstOpenWorksheet } from '../worksheets/lib/worksheetFirstOpenHighlight';
 
@@ -144,6 +145,10 @@ export function WizardPage() {
       title: 'Arbeitsblatt wird erstellt',
       subtitle,
     });
+    if (!jid) {
+      setGenerateError(AI_GENERATION_QUEUE_FULL_MESSAGE);
+      return;
+    }
     wizardWsJobIdsRef.current.add(jid);
     try {
       await runSerialized(jid, async () => {

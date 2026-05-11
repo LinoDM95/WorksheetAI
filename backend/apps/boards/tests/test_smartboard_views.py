@@ -17,6 +17,7 @@ from apps.boards.models import Board, BoardRevision
 
 @override_settings(
     API_REQUIRE_AUTH=False,
+    AI_CREDITS_ENABLED=False,
     BOARDS_VISUAL_QA_ALLOWED=False,
     BOARDS_AI_PROVIDER='mock',
     AI_PROVIDER='mock',
@@ -85,6 +86,22 @@ class SmartboardPipelineApiTests(TestCase):
         resp = self.client.post('/api/boards/generate/', body, format='json')
         self.assertEqual(resp.status_code, 400, getattr(resp, 'data', resp.content))
         self.assertIn('Prompt', str(resp.data.get('detail', '')))
+
+    def test_generate_respects_optional_board_title(self) -> None:
+        body = {
+            'prompt': 'Mini-Test: eine Seite mit einem großen Start-Button (min. 64px).',
+            'subject': 'Test',
+            'topic': 'Smoke',
+            'title': 'Galileo-Projekt Woche 2',
+            'grade_from': 5,
+            'grade_to': 5,
+        }
+        resp = self.client.post('/api/boards/generate/', body, format='json')
+        self.assertEqual(resp.status_code, 201, getattr(resp, 'data', resp.content))
+        self.assertEqual(resp.data.get('title'), 'Galileo-Projekt Woche 2')
+        bid = resp.data.get('id')
+        self.assertTrue(bid)
+        self.assertEqual(Board.objects.get(pk=bid).title, 'Galileo-Projekt Woche 2')
 
     def test_generate_stream_returns_ndjson_done(self) -> None:
         import json
