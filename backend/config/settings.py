@@ -202,8 +202,8 @@ GEMINI_DEADLINE_RETRIES=env.int('GEMINI_DEADLINE_RETRIES', default=4)
 GEMINI_DEADLINE_RETRY_DELAY_SECONDS=env.float('GEMINI_DEADLINE_RETRY_DELAY_SECONDS', default=60.0)
 GEMINI_DEADLINE_RETRY_EXPONENTIAL=env.bool('GEMINI_DEADLINE_RETRY_EXPONENTIAL', default=False)
 # Ohne explizites Limit kann die API die Ausgabe bei ~8k Tokens kappen (kaputtes / unvollständiges JSON).
-# gemini-2.5-pro erlaubt bis ca. 65k Ausgabe-Tokens; andere Modelle ggf. in .env runtersetzen.
-GEMINI_MAX_OUTPUT_TOKENS=env.int('GEMINI_MAX_OUTPUT_TOKENS', default=65536)
+# Sehr große HTML-/JSON-Ausgaben; andere Modelle ggf. in .env runtersetzen (API-Maximum je Modell beachten).
+GEMINI_MAX_OUTPUT_TOKENS=env.int('GEMINI_MAX_OUTPUT_TOKENS', default=200_000)
 # Zweiter API-Durchgang: Lückentext-Redundanzen, Linien vs. Aufgabe, Fläche, Fach-Kohärenz (doppelte Kosten/Latenz).
 GEMINI_ENABLE_REVIEW_PASS=env.bool('GEMINI_ENABLE_REVIEW_PASS', default=False)
 # Max. zusätzliche pages am Ende, die der Review-Durchgang anfügen darf (Schutz vor Ausreißern).
