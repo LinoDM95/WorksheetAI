@@ -208,6 +208,7 @@ export function BoardDetailPage() {
       subtitle: board?.title?.trim() || undefined,
       resourceId: id,
     });
+    setReviseOpen(false);
     void runSerialized(jid, async () => {
       try {
         updateJob(jid, {
@@ -223,7 +224,6 @@ export function BoardDetailPage() {
         setRevisionMode('general');
         setRevertError(null);
         setReloadKey((k) => k + 1);
-        setReviseOpen(false);
         setPreviewRevisionId(null);
       } catch (err: unknown) {
         if (isAiGenerationQueueAbortedError(err)) return;
@@ -233,6 +233,7 @@ export function BoardDetailPage() {
           || 'Revision fehlgeschlagen.';
         failJob(jid, detail);
         setReviseError(detail);
+        setReviseOpen(true);
       }
     });
   };
@@ -621,7 +622,10 @@ export function BoardDetailPage() {
       <BoardShellModal
         open={reviseOpen}
         title="Board per KI überarbeiten"
-        onClose={() => setReviseOpen(false)}
+        onClose={() => {
+          setReviseOpen(false);
+          setReviseError(null);
+        }}
         wide
       >
         <BoardDetailReviseTab
