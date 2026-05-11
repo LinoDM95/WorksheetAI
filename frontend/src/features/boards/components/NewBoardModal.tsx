@@ -93,6 +93,10 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       setError('Bitte wähle ein Fach.');
       return;
     }
+    if (!boardTitle.trim()) {
+      setError('Bitte gib einen Titel für deine Galerie an.');
+      return;
+    }
     if (!topic.trim()) {
       setError('Bitte gib ein kurzes Thema an.');
       return;
@@ -116,21 +120,22 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       setError('Bitte beschreibe in eigenen Worten, was das Board zeigen soll.');
       return;
     }
+    const titleTrimmed = boardTitle.trim().slice(0, 255);
     const payload: BoardGeneratePayload = {
       prompt: prompt.trim(),
       subject: subject.trim(),
       topic: topic.trim(),
+      title: titleTrimmed,
       grade_from: gf,
       grade_to: gt,
       duration_minutes: d,
       creativity: 'experimentell',
       visual_style: visualStyle,
-      ...(boardTitle.trim() ? { title: boardTitle.trim().slice(0, 255) } : {}),
     };
     const jid = startJob({
       kind: 'board-creative',
       title: 'Board wird erstellt',
-      subtitle: boardTitle.trim() || payload.topic.trim() || undefined,
+      subtitle: titleTrimmed || payload.topic.trim() || undefined,
     });
     if (!jid) {
       setError(AI_GENERATION_QUEUE_FULL_MESSAGE);
@@ -277,20 +282,11 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
                 </Field>
               </div>
 
-              <Field label="Thema (kurz)" htmlFor="b-topic-modal" required>
-                <TextInput
-                  id="b-topic-modal"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="z. B. Wasserkreislauf"
-                  aria-required
-                />
-              </Field>
-
               <Field
                 label="Titel in deiner Galerie"
                 htmlFor="b-board-title-modal"
-                help="Optional. Ohne Eintrag wird ein KI-Vorschlag oder das Thema als Titel verwendet. Später jederzeit unter Board-Details änderbar."
+                required
+                help="So heißt das Board in deiner Übersicht. Später unter Board-Details änderbar."
               >
                 <TextInput
                   id="b-board-title-modal"
@@ -299,6 +295,17 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
                   placeholder="z. B. Wasserkreislauf: Übung Stunde 3"
                   maxLength={255}
                   autoComplete="off"
+                  aria-required
+                />
+              </Field>
+
+              <Field label="Thema (kurz)" htmlFor="b-topic-modal" required>
+                <TextInput
+                  id="b-topic-modal"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  placeholder="z. B. Wasserkreislauf"
+                  aria-required
                 />
               </Field>
 

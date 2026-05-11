@@ -86,6 +86,8 @@ def validate_creative_generate_payload(body: dict[str, Any]) -> None:
     """Pflichtfelder für POST /boards/generate/ (Kreativ)."""
     if not str(body.get('subject') or '').strip():
         raise ValueError('Fach ist ein Pflichtfeld.')
+    if not str(body.get('title') or '').strip():
+        raise ValueError('Titel ist ein Pflichtfeld.')
     if not str(body.get('topic') or '').strip():
         raise ValueError('Thema ist ein Pflichtfeld.')
     if not str(body.get('prompt') or '').strip():

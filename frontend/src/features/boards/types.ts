@@ -321,8 +321,8 @@ export type BoardGeneratePayload = {
   grade_from: number;
   grade_to: number;
   topic: string;
-  /** Optional: Anzeigetitel in der eigenen Galerie (schlägt KI-Titel). */
-  title?: string;
+  /** Anzeigetitel in der eigenen Galerie (Pflichtfeld). */
+  title: string;
   board_type?: string;
   duration_minutes?: number;
   creativity?: CreativityLevel;

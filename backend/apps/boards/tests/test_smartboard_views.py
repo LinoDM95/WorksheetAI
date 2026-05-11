@@ -80,6 +80,7 @@ class SmartboardPipelineApiTests(TestCase):
             'prompt': '   ',
             'subject': 'Test',
             'topic': 'Thema',
+            'title': 'Mein Board-Titel',
             'grade_from': 5,
             'grade_to': 5,
         }
@@ -87,7 +88,20 @@ class SmartboardPipelineApiTests(TestCase):
         self.assertEqual(resp.status_code, 400, getattr(resp, 'data', resp.content))
         self.assertIn('Prompt', str(resp.data.get('detail', '')))
 
-    def test_generate_respects_optional_board_title(self) -> None:
+    def test_generate_rejects_empty_title(self) -> None:
+        body = {
+            'prompt': 'Mini-Test.',
+            'subject': 'Test',
+            'topic': 'Smoke',
+            'title': '   ',
+            'grade_from': 5,
+            'grade_to': 5,
+        }
+        resp = self.client.post('/api/boards/generate/', body, format='json')
+        self.assertEqual(resp.status_code, 400, getattr(resp, 'data', resp.content))
+        self.assertIn('Titel', str(resp.data.get('detail', '')))
+
+    def test_generate_uses_request_title(self) -> None:
         body = {
             'prompt': 'Mini-Test: eine Seite mit einem großen Start-Button (min. 64px).',
             'subject': 'Test',
@@ -110,6 +124,7 @@ class SmartboardPipelineApiTests(TestCase):
             'prompt': 'Mini-Test: eine Seite mit einem großen Start-Button (min. 64px).',
             'subject': 'Test',
             'topic': 'Smoke',
+            'title': 'Stream-Test Board',
             'grade_from': 5,
             'grade_to': 5,
         }

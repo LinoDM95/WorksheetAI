@@ -90,7 +90,16 @@ class ValidatePlanErrorTests(SimpleTestCase):
         raw['pages'][0]['bullets'] = []
         with self.assertRaises(SpecValidationError) as cm:
             validate_plan(raw)
-        self.assertTrue(any('Stichpunkt' in e for e in cm.exception.errors))
+        err = ' '.join(cm.exception.errors)
+        self.assertIn('Titel', err)
+        self.assertIn('Stichpunkt', err)
+
+    def test_empty_title_rejected(self) -> None:
+        raw = _ok_plan()
+        raw['title'] = '   '
+        with self.assertRaises(SpecValidationError) as cm:
+            validate_plan(raw)
+        self.assertTrue(any('Titel' in e for e in cm.exception.errors))
 
     def test_page_without_bullets_ok_when_global_topic_present(self) -> None:
         raw = _ok_plan()

@@ -105,13 +105,17 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
   }, [open, busy, onClose, pageIndex, plan.pages.length, handleSelectPage]);
 
   const totalSlots = plan.pages.reduce((sum, p) => sum + p.block_slots.length, 0);
-  const submitDisabled = totalSlots === 0 || busy;
+  const submitDisabled = totalSlots === 0 || busy || !plan.title.trim();
 
   const handleSubmit = () => {
     if (submitDisabled) return;
     setPlanError(null);
     if (!plan.subject.trim()) {
       setPlanError('Bitte wähle ein Fach.');
+      return;
+    }
+    if (!plan.title.trim()) {
+      setPlanError('Bitte gib einen Titel an.');
       return;
     }
     const snap = pageEditorRef.current?.getBulletsSnapshot() ?? currentPage.bullets;
@@ -130,7 +134,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
     const payload: CompositionPlan = {
       ...plan,
       pages: pagesMerged,
-      title: plan.title || plan.topic || 'Board',
+      title: plan.title.trim(),
     };
     const jid = startJob({
       kind: 'board-blocks',
@@ -240,18 +244,19 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
               placeholder="z. B. 5"
             />
           </Field>
+          <Field label="Titel" className="min-w-[220px] flex-1" required>
+            <TextInput
+              value={plan.title}
+              onChange={(e) => dispatch({ type: 'set_meta', field: 'title', value: e.target.value })}
+              placeholder="z. B. Statistik in der Klasse"
+              aria-required
+            />
+          </Field>
           <Field label="Thema" className="min-w-[200px] flex-1">
             <TextInput
               value={plan.topic}
               onChange={(e) => dispatch({ type: 'set_meta', field: 'topic', value: e.target.value })}
               placeholder="z. B. Statistik — gilt als globaler Kontext für alle Seiten"
-            />
-          </Field>
-          <Field label="Titel" className="min-w-[220px] flex-1">
-            <TextInput
-              value={plan.title}
-              onChange={(e) => dispatch({ type: 'set_meta', field: 'title', value: e.target.value })}
-              placeholder="z. B. Statistik in der Klasse"
             />
           </Field>
           <Field label="Stilrichtung (optional)" className="min-w-[200px] flex-1">

@@ -86,6 +86,8 @@ def _validate_plan_structure(plan: CompositionPlan) -> list[str]:
     from .registry import BLOCK_BY_ID
 
     errors: list[str] = []
+    if not plan.title.strip():
+        errors.append('Titel ist ein Pflichtfeld.')
     has_global_topic = bool(plan.topic.strip() or plan.title.strip())
     for p_idx, page in enumerate(plan.pages, start=1):
         if not page.block_slots:
