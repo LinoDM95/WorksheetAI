@@ -1,10 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { Construction } from 'lucide-react';
 import { AuthProvider, useAuth } from './lib/authContext';
 import { AiGenerationJobsProvider } from './components/ai-generation/AiGenerationJobsContext';
 import { AppShell } from './components/shell/AppShell';
-import { MockBadge } from './components/MockBadge';
-import { Card } from './components/ui';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { WizardPage } from './features/wizard/WizardPage';
 import { WorksheetWorkspacePage, WorksheetEditorPlaceholder, WorksheetPageOutlet } from './features/worksheets/WorksheetWorkspacePage';
@@ -21,22 +18,10 @@ import { PasswordResetConfirmPage } from './features/auth/PasswordResetConfirmPa
 import { PublicLoginPage } from './features/auth/PublicLoginPage';
 import { DatenschutzPage, ImpressumPage } from './features/legal/LegalNoticePages';
 import { BackofficePage } from './features/backoffice/BackofficePage';
+import { SubscriptionPage } from './features/subscription/SubscriptionPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
-
-const ComingSoon = ({ title }: { title: string }) => (
-  <div className="mx-auto w-full max-w-3xl">
-    <MockBadge className="mb-4" />
-    <Card className="!p-8 text-center">
-      <Construction size={36} className="mx-auto mb-3 text-amber-500" aria-hidden />
-      <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-      <p className="mt-2 text-sm text-slate-500">
-        Diese Ansicht ist Teil des Designs, hat aber noch kein Backend. Sobald die nötigen
-        Endpunkte existieren, wird hier die echte Funktion ergänzt.
-      </p>
-    </Card>
-  </div>
-);
 
 /* ------------------------- Wrapper-Helper ------------------------- */
 const ShellRoute = ({
@@ -176,6 +161,14 @@ const ProtectedAppLayout = () => {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
+  const subscriptionPath =
+    location.pathname === '/app/abonnement' || location.pathname.startsWith('/app/abonnement/');
+  const settingsPath =
+    location.pathname === '/app/settings' || location.pathname.startsWith('/app/settings/');
+  const bypassPaywall = user.is_staff || user.is_superuser;
+  if (!bypassPaywall && user.has_platform_access !== true && !subscriptionPath && !settingsPath) {
+    return <Navigate to="/app/abonnement" replace />;
+  }
   return <Outlet />;
 };
 
@@ -193,6 +186,14 @@ export default function App() {
         <Route path="/s/:token" element={<StudentBoardPage />} />
         <Route path="/app" element={<ProtectedAppLayout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
+        <Route
+          path="abonnement"
+          element={
+            <ShellRoute topbar={{ title: 'Abonnement', subtitle: 'Wähle ein Paket für volle Plattform-Nutzung' }}>
+              <SubscriptionPage />
+            </ShellRoute>
+          }
+        />
         <Route
           path="dashboard"
           element={
@@ -244,8 +245,8 @@ export default function App() {
         <Route
           path="settings"
           element={
-            <ShellRoute topbar={{ title: 'Einstellungen' }}>
-              <ComingSoon title="Einstellungen" />
+            <ShellRoute topbar={{ title: 'Einstellungen', subtitle: 'Konto, Passwort und Zahlungen' }}>
+              <SettingsPage />
             </ShellRoute>
           }
         />

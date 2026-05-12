@@ -10,6 +10,7 @@ from rest_framework import decorators, exceptions, permissions, response, status
 from rest_framework.views import APIView
 
 from apps.ai.error_mapper import AIErrorMapper
+from apps.accounts.permissions import APIPaywallMixin
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 
 from .models import Board, BoardFolder, BoardLibraryComment, BoardRating, BoardRevision
@@ -117,7 +118,7 @@ class PublicStudentPresenceView(APIView):
         return response.Response({'ok': True})
 
 
-class BoardFolderViewSet(viewsets.ModelViewSet):
+class BoardFolderViewSet(APIPaywallMixin, viewsets.ModelViewSet):
     """Hierarchische Galerie-Ordner (Fach, Klassenstufe, …) pro Lehrkraft."""
 
     serializer_class = BoardFolderSerializer
@@ -136,7 +137,7 @@ class BoardFolderViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class BoardViewSet(viewsets.ModelViewSet):
+class BoardViewSet(APIPaywallMixin, viewsets.ModelViewSet):
     """CRUD + KI-Generierung/Revision für Free-HTML5-Boards."""
 
     def get_object(self):
@@ -157,7 +158,12 @@ class BoardViewSet(viewsets.ModelViewSet):
             owner = resolve_board_owner(self.request.user)
         except ValueError:
             return Board.objects.none()
-        return Board.objects.filter(owner=owner).select_related('folder')
+        base = Board.objects.select_related('folder')
+        if self.action == 'list':
+            return base.filter(owner=owner)
+        if getattr(self.request.user, 'is_staff', False):
+            return base
+        return base.filter(owner=owner)
 
     def get_serializer_class(self):
         if self.action == 'list':

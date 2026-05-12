@@ -62,10 +62,44 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return attrs
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    new_password_confirm = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if not user.check_password(attrs['current_password']):
+            raise serializers.ValidationError({'current_password': 'Das aktuelle Passwort ist falsch.'})
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError(
+                {'new_password_confirm': 'Die neuen Passwörter stimmen nicht überein.'}
+            )
+        return attrs
+
+
+class ChangeEmailSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+    current_password = serializers.CharField(write_only=True)
+
+    def validate_new_email(self, value: str) -> str:
+        return value.lower().strip()
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if not user.check_password(attrs['current_password']):
+            raise serializers.ValidationError({'current_password': 'Das aktuelle Passwort ist falsch.'})
+        new_email = attrs['new_email']
+        if User.objects.filter(username=new_email).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError({'new_email': 'Diese E-Mail ist bereits vergeben.'})
+        return attrs
+
+
 class UserSerializer(serializers.ModelSerializer):
     credits_balance = serializers.SerializerMethodField()
     credits_reference_cap = serializers.SerializerMethodField()
     subscription = serializers.SerializerMethodField()
+    has_platform_access = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -77,8 +111,15 @@ class UserSerializer(serializers.ModelSerializer):
             'credits_balance',
             'credits_reference_cap',
             'subscription',
+            'has_platform_access',
             'is_staff',
+            'is_superuser',
         ]
+
+    def get_has_platform_access(self, obj: User) -> bool:
+        from apps.accounts.services.subscription import user_has_platform_access
+
+        return user_has_platform_access(obj)
 
     def get_subscription(self, obj: User) -> dict | None:
         from apps.accounts.services.subscription import get_subscription_api_payload

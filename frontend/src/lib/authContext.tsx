@@ -22,6 +22,7 @@ export type AuthUser = {
   last_name: string;
   credits_balance: number;
   credits_reference_cap: number;
+  has_platform_access?: boolean;
   subscription?: {
     plan_slug: string;
     plan_name: string;
@@ -29,6 +30,7 @@ export type AuthUser = {
     status: string;
   } | null;
   is_staff: boolean;
+  is_superuser?: boolean;
 };
 
 type AuthContextValue = {

@@ -8,6 +8,7 @@ django-redis==5.4.0
 whitenoise==6.9.0
 gunicorn==23.0.0
 sentry-sdk[django]==2.22.0
+stripe>=11,<13
 PyYAML
 pydantic
 httpx

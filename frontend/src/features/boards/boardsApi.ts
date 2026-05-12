@@ -197,7 +197,11 @@ export const generateBoardWithProgress = async (
 export const reviseBoard = (
   id: string,
   prompt: string,
-  opts?: { ai_quality_tier?: BoardAiQualityTier; revision_mode?: RevisionMode },
+  opts?: {
+    ai_quality_tier?: BoardAiQualityTier;
+    revision_mode?: RevisionMode;
+    signal?: AbortSignal;
+  },
 ) =>
   api
     .post<{ board: BoardDetail; revision: BoardRevision }>(
@@ -209,7 +213,7 @@ export const reviseBoard = (
           ? { revision_mode: opts.revision_mode }
           : {}),
       },
-      longBoard,
+      { ...longBoard, signal: opts?.signal },
     )
     .then((r) => r.data);
 
@@ -282,5 +286,7 @@ export const backofficeDeleteWorksheet = (worksheetId: string) =>
 export const fetchBlockRegistry = () =>
   api.get<BlockRegistryResponse>('/boards/blocks/').then((r) => r.data);
 
-export const generateBoardFromBlocks = (plan: CompositionPlan) =>
-  api.post<BoardDetail>('/boards/generate-blocks/', plan, longBoard).then((r) => r.data);
+export const generateBoardFromBlocks = (plan: CompositionPlan, signal?: AbortSignal) =>
+  api
+    .post<BoardDetail>('/boards/generate-blocks/', plan, { ...longBoard, signal })
+    .then((r) => r.data);

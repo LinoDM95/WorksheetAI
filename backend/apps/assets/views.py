@@ -16,7 +16,7 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views import View
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from apps.accounts.permissions import APIPaywallMixin
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -80,11 +80,7 @@ def _resolve_board_context_user(request) -> object | None:
         return None
 
 
-class DevOrAuthAssetPermissionMixin:
-    def get_permissions(self):
-        if getattr(settings, 'API_REQUIRE_AUTH', True):
-            return [IsAuthenticated()]
-        return [AllowAny()]
+DevOrAuthAssetPermissionMixin = APIPaywallMixin
 
 
 class AssetSvgView(View):

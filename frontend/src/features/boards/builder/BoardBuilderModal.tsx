@@ -15,7 +15,7 @@ import { LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 import { cn } from '../../../lib/cn';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
 import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
-import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
+import { isUserCancelledGenerationError } from '../../../components/ai-generation/generationQueue';
 
 type Props = {
   open: boolean;
@@ -147,13 +147,13 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
     }
     sessionBlocksJobIdsRef.current.add(jid);
     setBlocksGenerateError(null);
-    void runSerialized(jid, async () => {
+    void runSerialized(jid, async (signal) => {
       try {
         updateJob(jid, {
           phaseLabel: 'KI füllt Bausteine und komponiert das Board …',
           progressPercent: null,
         });
-        const board = await generateBoardFromBlocks(payload);
+        const board = await generateBoardFromBlocks(payload, signal);
         queryClient.setQueryData(BOARDS_DETAIL_QUERY_KEY(String(board.id)), board);
         queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
         addPendingFirstOpenBoard(board.id);
@@ -161,7 +161,7 @@ export const BoardBuilderModal = ({ open, onClose, onPendingHighlightChange }: P
         completeJob(jid, { successMessage: 'Board ist in deiner Galerie.' });
         onClose();
       } catch (err: unknown) {
-        if (isAiGenerationQueueAbortedError(err)) return;
+        if (isUserCancelledGenerationError(err)) return;
         const detail =
           (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
           || (err as Error)?.message

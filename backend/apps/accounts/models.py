@@ -80,7 +80,7 @@ class UserCreditBalance(models.Model):
     balance = models.IntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
     last_monthly_grant_key = models.CharField(
-        max_length=32,
+        max_length=64,
         blank=True,
         help_text='Idempotenz für periodische Gutschriften (z. B. YYYY-MM oder Stripe invoice id).',
     )

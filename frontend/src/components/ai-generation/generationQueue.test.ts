@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AiGenerationQueueAbortedError,
   isAiGenerationQueueAbortedError,
+  isUserCancelledGenerationError,
 } from './generationQueue';
 
 describe('generationQueue', () => {
@@ -28,5 +29,14 @@ describe('generationQueue', () => {
   it('unterscheidet von anderen Error-Subklassen', () => {
     expect(isAiGenerationQueueAbortedError(new TypeError('foo'))).toBe(false);
     expect(isAiGenerationQueueAbortedError(new RangeError('bar'))).toBe(false);
+  });
+
+  it('isUserCancelledGenerationError: Warteschlange + Abort-/Cancel-Signale', () => {
+    expect(isUserCancelledGenerationError(new AiGenerationQueueAbortedError())).toBe(true);
+    const abortErr = new DOMException('Aborted', 'AbortError');
+    expect(isUserCancelledGenerationError(abortErr)).toBe(true);
+    const canceled = Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' });
+    expect(isUserCancelledGenerationError(canceled)).toBe(true);
+    expect(isUserCancelledGenerationError(new Error('network'))).toBe(false);
   });
 });

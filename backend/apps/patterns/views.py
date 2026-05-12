@@ -1,4 +1,6 @@
 from rest_framework import viewsets, decorators, response, status
+
+from apps.accounts.permissions import APIPaywallMixin
 from .models import WorksheetPattern
 from .serializers import WorksheetPatternSerializer
 from .services import parse_blueprint, PatternBlueprintValidator
@@ -8,7 +10,7 @@ HELP={
  'required_keys':['id','name','metadata','generation_rules','layout','slots'],
  'slot_types':['text','task_list','arithmetic_task_list','table','matching','fill_blank','solution_list','teacher_notes']
 }
-class PatternViewSet(viewsets.ModelViewSet):
+class PatternViewSet(APIPaywallMixin, viewsets.ModelViewSet):
     serializer_class=WorksheetPatternSerializer
     def get_queryset(self):
         return WorksheetPattern.objects.filter(status__in=['active','validated','draft']).order_by('-is_system','name')

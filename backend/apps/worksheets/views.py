@@ -4,6 +4,7 @@ import copy
 from django.db.models import Q
 
 from apps.ai.error_mapper import AIErrorMapper
+from apps.accounts.permissions import APIPaywallMixin
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
@@ -35,7 +36,7 @@ from .services.worksheet_revision_head import (
 from .owner import resolve_worksheet_owner
 
 
-class WorksheetViewSet(viewsets.ModelViewSet):
+class WorksheetViewSet(APIPaywallMixin, viewsets.ModelViewSet):
     serializer_class = WorksheetSerializer
 
     def get_queryset(self):

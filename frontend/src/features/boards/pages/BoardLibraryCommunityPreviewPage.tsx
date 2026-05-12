@@ -289,6 +289,18 @@ export function BoardLibraryCommunityPreviewPage() {
               </p>
             </div>
           </div>
+          {isStaff ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0"
+              onClick={() => navigate(`/app/boards/${libraryBoardId}`)}
+              title="Privaten Arbeitsstand (HTML/CSS/JS) im Volleditor bearbeiten"
+            >
+              Code bearbeiten (Admin)
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -329,7 +341,7 @@ export function BoardLibraryCommunityPreviewPage() {
               usedDatasets={board.used_datasets}
               shareOverlayPortalRef={librarySharePortalRef}
               toolbarExtras={
-                !isOwner
+                !isOwner && !isStaff
                   ? () => (
                       <Button
                         type="button"

@@ -22,7 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { IconButton } from '../../components/ui/IconButton';
-import { isAiGenerationQueueAbortedError } from '../../components/ai-generation/generationQueue';
+import { isUserCancelledGenerationError } from '../../components/ai-generation/generationQueue';
 import {
   appendDraftPage,
   createDefaultWorksheetBlock,
@@ -599,7 +599,7 @@ export function WorksheetEditSidebar({
           [pageIndex]: [...(prev[pageIndex] ?? []), { role: 'assistant', text: 'Änderungen wurden übernommen.' }],
         }));
       } catch (e: unknown) {
-        if (isAiGenerationQueueAbortedError(e)) {
+        if (isUserCancelledGenerationError(e)) {
           setKiChatLog((prev) => ({
             ...prev,
             [pageIndex]: [

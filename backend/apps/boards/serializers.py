@@ -56,6 +56,7 @@ class BoardListSerializer(serializers.ModelSerializer):
 class BoardDetailSerializer(serializers.ModelSerializer):
     folder = BoardFolderBriefSerializer(read_only=True)
     source_board = serializers.UUIDField(source='source_board_id', read_only=True, allow_null=True)
+    viewer_is_owner = serializers.SerializerMethodField()
     avg_rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
     my_stars = serializers.SerializerMethodField()
@@ -68,6 +69,7 @@ class BoardDetailSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'description', 'subject', 'grade', 'grade_from', 'grade_to', 'topic',
             'board_type', 'status',
+            'viewer_is_owner',
             'revision_head_id', 'can_revise_with_ai',
             'html', 'css', 'javascript',
             'teacher_notes', 'usage_instructions', 'warnings',
@@ -112,7 +114,25 @@ class BoardDetailSerializer(serializers.ModelSerializer):
             'avg_rating', 'rating_count', 'my_stars',
             'revision_head_id', 'can_revise_with_ai',
             'grade_from', 'grade_to',
+            'viewer_is_owner',
         )
+
+    def to_representation(self, instance: Board):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return data
+        if instance.owner_id != request.user.id:
+            data['share_token'] = None
+            data['student_link_enabled'] = False
+            data['student_link_expires_at'] = None
+        return data
+
+    def get_viewer_is_owner(self, obj: Board) -> bool:
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return False
+        return obj.owner_id == request.user.id
 
     def get_revision_head_id(self, obj: Board):
         r = latest_revision(obj)
@@ -201,20 +221,36 @@ class BoardLibraryEntrySerializer(serializers.ModelSerializer):
     def get_grade_to(self, obj: Board) -> int | None:
         return catalog_display_grade_to(obj)
 
+    def _bundle_for_library_entry(self, obj: Board) -> tuple[str, str, str, list, list]:
+        request = self.context.get('request')
+        if (
+            request
+            and getattr(request.user, 'is_authenticated', False)
+            and getattr(request.user, 'is_staff', False)
+        ):
+            return (
+                obj.html or '',
+                obj.css or '',
+                obj.javascript or '',
+                list(obj.used_libraries or []),
+                list(obj.used_datasets or []),
+            )
+        return bundle_for_library_preview(obj)
+
     def get_html(self, obj: Board) -> str:
-        return bundle_for_library_preview(obj)[0]
+        return self._bundle_for_library_entry(obj)[0]
 
     def get_css(self, obj: Board) -> str:
-        return bundle_for_library_preview(obj)[1]
+        return self._bundle_for_library_entry(obj)[1]
 
     def get_javascript(self, obj: Board) -> str:
-        return bundle_for_library_preview(obj)[2]
+        return self._bundle_for_library_entry(obj)[2]
 
     def get_used_libraries(self, obj: Board) -> list:
-        return bundle_for_library_preview(obj)[3]
+        return self._bundle_for_library_entry(obj)[3]
 
     def get_used_datasets(self, obj: Board) -> list:
-        return bundle_for_library_preview(obj)[4]
+        return self._bundle_for_library_entry(obj)[4]
 
     def get_planned_duration_minutes(self, obj: Board) -> int | None:
         return catalog_display_duration_minutes(obj)

@@ -13,6 +13,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .cookies import clear_auth_cookies, set_auth_cookies
 from .services.password_reset import is_password_reset_request_throttled, send_password_reset_email
 from .serializers import (
+    ChangeEmailSerializer,
+    ChangePasswordSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
@@ -90,6 +92,33 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ser = ChangePasswordSerializer(data=request.data, context={'request': request})
+        ser.is_valid(raise_exception=True)
+        user = request.user
+        user.set_password(ser.validated_data['new_password'])
+        user.save()
+        _blacklist_all_refresh_tokens_for_user(user)
+        return Response({'detail': 'Dein Passwort wurde geändert.'}, status=status.HTTP_200_OK)
+
+
+class ChangeEmailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ser = ChangeEmailSerializer(data=request.data, context={'request': request})
+        ser.is_valid(raise_exception=True)
+        user = request.user
+        new_email = ser.validated_data['new_email']
+        user.email = new_email
+        user.username = new_email
+        user.save(update_fields=['email', 'username'])
+        return Response({'detail': 'Deine E-Mail-Adresse wurde geändert.', 'email': new_email}, status=status.HTTP_200_OK)
 
 
 class PasswordResetRequestView(APIView):

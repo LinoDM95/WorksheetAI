@@ -55,7 +55,7 @@ type Ctx = {
   /** `null`, wenn die Warteschlange voll ist (`AI_GENERATION_MAX_QUEUED`). */
   startJob: (input: AiGenerationJobStartInput) => string | null;
   /** Führt Arbeit strikt nacheinander aus; setzt den Job auf „running“, sobald er an der Reihe ist. */
-  runSerialized: <T,>(jobId: string, fn: () => Promise<T>) => Promise<T>;
+  runSerialized: <T,>(jobId: string, fn: (signal: AbortSignal) => Promise<T>) => Promise<T>;
   updateJob: (
     id: string,
     patch: Partial<Pick<AiGenerationJob, 'phaseLabel' | 'progressPercent' | 'subtitle'>>,
@@ -78,6 +78,7 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
 
   const queueTailRef = useRef<Promise<unknown>>(Promise.resolve());
   const abortedQueuedIdsRef = useRef(new Set<string>());
+  const runningAbortByJobIdRef = useRef(new Map<string, AbortController>());
   const hasActiveGenerationRef = useRef(false);
 
   useEffect(() => {
@@ -98,22 +99,36 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
     setJobs((prev) => jobsReducer(prev, action));
   }, []);
 
-  const runSerialized = useCallback(async <T,>(jobId: string, fn: () => Promise<T>): Promise<T> => {
-    const run = queueTailRef.current.then(async (): Promise<T> => {
-      if (abortedQueuedIdsRef.current.has(jobId)) {
-        abortedQueuedIdsRef.current.delete(jobId);
-        throw new AiGenerationQueueAbortedError();
-      }
-      await refreshAuthCookies().catch(() => undefined);
-      dispatch({ type: 'patch', id: jobId, patch: { status: 'running' } });
-      return fn();
-    });
-    queueTailRef.current = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  }, [dispatch]);
+  const runSerialized = useCallback(
+    async <T,>(jobId: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+      const run = queueTailRef.current.then(async (): Promise<T> => {
+        if (abortedQueuedIdsRef.current.has(jobId)) {
+          abortedQueuedIdsRef.current.delete(jobId);
+          throw new AiGenerationQueueAbortedError();
+        }
+        await refreshAuthCookies().catch(() => undefined);
+        dispatch({ type: 'patch', id: jobId, patch: { status: 'running' } });
+        const ac = new AbortController();
+        runningAbortByJobIdRef.current.set(jobId, ac);
+        try {
+          return await fn(ac.signal);
+        } catch (e) {
+          if (ac.signal.aborted) {
+            throw new AiGenerationQueueAbortedError();
+          }
+          throw e;
+        } finally {
+          runningAbortByJobIdRef.current.delete(jobId);
+        }
+      });
+      queueTailRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    },
+    [dispatch],
+  );
 
   const startJob = useCallback((input: AiGenerationJobStartInput): string | null => {
     const id = newId();
@@ -192,6 +207,9 @@ export function AiGenerationJobsProvider({ children }: { children: ReactNode }) 
       const j = jobsRef.current.find((x) => x.id === id);
       if (j?.status === 'queued') {
         abortedQueuedIdsRef.current.add(id);
+      }
+      if (j?.status === 'running') {
+        runningAbortByJobIdRef.current.get(id)?.abort();
       }
       dispatch({ type: 'dismiss', id });
     },

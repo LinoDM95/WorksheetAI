@@ -92,13 +92,17 @@ CSRF_TRUSTED_ORIGINS = env.list(
 API_REQUIRE_AUTH = env.bool('API_REQUIRE_AUTH', default=True)
 DISABLE_API_THROTTLE = env.bool('DISABLE_API_THROTTLE', default=DEBUG)
 
+if API_REQUIRE_AUTH:
+    _DEFAULT_API_PERMISSIONS = (
+        'rest_framework.permissions.IsAuthenticated',
+        'apps.accounts.permissions.HasActivePaidSubscription',
+    )
+else:
+    _DEFAULT_API_PERMISSIONS = ('rest_framework.permissions.AllowAny',)
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ('apps.accounts.authentication.CookieJWTAuthentication',),
-    'DEFAULT_PERMISSION_CLASSES': (
-        ('rest_framework.permissions.IsAuthenticated',)
-        if API_REQUIRE_AUTH
-        else ('rest_framework.permissions.AllowAny',)
-    ),
+    'DEFAULT_PERMISSION_CLASSES': _DEFAULT_API_PERMISSIONS,
 }
 if not DISABLE_API_THROTTLE:
     REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = (
@@ -158,6 +162,16 @@ else:
     }
 
 FRONTEND_PUBLIC_URL = env('FRONTEND_PUBLIC_URL', default='http://localhost:5173')
+
+STRIPE_SECRET_KEY = env.str('STRIPE_SECRET_KEY', default='').strip()
+STRIPE_WEBHOOK_SECRET = env.str('STRIPE_WEBHOOK_SECRET', default='').strip()
+STRIPE_PRICE_STARTER_10 = env.str('STRIPE_PRICE_STARTER_10', default='').strip()
+STRIPE_PRICE_PRO_20 = env.str('STRIPE_PRICE_PRO_20', default='').strip()
+STRIPE_PRICE_TO_PLAN_SLUG: dict[str, str] = {}
+if STRIPE_PRICE_STARTER_10:
+    STRIPE_PRICE_TO_PLAN_SLUG[STRIPE_PRICE_STARTER_10] = 'starter_10'
+if STRIPE_PRICE_PRO_20:
+    STRIPE_PRICE_TO_PLAN_SLUG[STRIPE_PRICE_PRO_20] = 'pro_20'
 PASSWORD_RESET_EMAIL_SITE_NAME = env('PASSWORD_RESET_EMAIL_SITE_NAME', default='WorksheetAI')
 PASSWORD_RESET_MAX_PER_IP_PER_HOUR = env.int('PASSWORD_RESET_MAX_PER_IP_PER_HOUR', default=10)
 PASSWORD_RESET_THROTTLE_WINDOW_SECONDS = env.int('PASSWORD_RESET_THROTTLE_WINDOW_SECONDS', default=3600)

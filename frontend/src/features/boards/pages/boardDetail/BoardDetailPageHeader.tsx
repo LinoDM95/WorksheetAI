@@ -55,6 +55,7 @@ export function BoardDetailPageHeader({
   onWithdrawFromLibrary: () => void;
   patchMutation: { isPending: boolean; mutate: (body: BoardCodeUpdate, opts?: object) => void };
 }) {
+  const viewerIsOwner = Boolean(board.viewer_is_owner);
   return (
     <header className="relative z-20 flex shrink-0 flex-col gap-1 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top,0px))] shadow-sm backdrop-blur-sm sm:px-3">
       {showFatalErrors && (
@@ -83,9 +84,9 @@ export function BoardDetailPageHeader({
             const v = e.target.value;
             patchMutation.mutate({ folder_id: v === '' ? null : v });
           }}
-          disabled={patchMutation.isPending}
+          disabled={patchMutation.isPending || !viewerIsOwner}
           aria-label="Galerie-Ordner"
-          title="Ordner"
+          title={!viewerIsOwner ? 'Nur der Eigentümer kann den Ordner ändern.' : 'Ordner'}
         >
           <option value="">Ohne Ordner</option>
           {foldersSorted.map((f) => (
@@ -184,11 +185,22 @@ export function BoardDetailPageHeader({
                 </p>
                 {board.library_public_live_differs ? (
                   <p className="mt-2 text-[11px] font-semibold text-amber-900">
-                    Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
+                    {viewerIsOwner ? (
+                      <>
+                        Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
+                      </>
+                    ) : (
+                      <>
+                        Hinweis (Admin): Der gespeicherte Arbeitsstand des Autors unterscheidet sich von der
+                        öffentlichen Bibliotheksfassung.
+                      </>
+                    )}
                   </p>
                 ) : (
                   <p className="mt-2 text-[11px] text-emerald-800/80">
-                    Gespeicherter Stand und öffentliche Fassung stimmen überein.
+                    {viewerIsOwner
+                      ? 'Gespeicherter Stand und öffentliche Fassung stimmen überein.'
+                      : 'Öffentliche Karte und gespeicherter Autoren-Stand stimmen überein.'}
                   </p>
                 )}
               </div>
@@ -205,7 +217,7 @@ export function BoardDetailPageHeader({
                   >
                     Öffentliche Fassung aktualisieren
                   </Button>
-                ) : (
+                ) : viewerIsOwner ? (
                   <Button
                     type="button"
                     size="sm"
@@ -225,7 +237,8 @@ export function BoardDetailPageHeader({
                   >
                     Update zur Freigabe einreichen
                   </Button>
-                )}
+                ) : null}
+                {viewerIsOwner || userIsStaff ? (
                 <Button
                   type="button"
                   variant="secondary"
@@ -235,6 +248,8 @@ export function BoardDetailPageHeader({
                 >
                   Bibliotheks-Texte
                 </Button>
+                ) : null}
+                {viewerIsOwner ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -245,6 +260,7 @@ export function BoardDetailPageHeader({
                 >
                   Aus Bibliothek nehmen
                 </Button>
+                ) : null}
               </div>
               {board.avg_rating != null || (board.rating_count ?? 0) > 0 ? (
                 <p className="text-[11px] text-emerald-900/80 lg:text-right">
@@ -258,7 +274,7 @@ export function BoardDetailPageHeader({
             </div>
           </div>
         </div>
-      ) : (
+      ) : viewerIsOwner ? (
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
           <span>Dieses Board ist nur für dich sichtbar.</span>
           <Button
@@ -270,6 +286,10 @@ export function BoardDetailPageHeader({
           >
             In Bibliothek veröffentlichen
           </Button>
+        </div>
+      ) : (
+        <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
+          <span>Admin-Ansicht: Dieses Board ist nicht öffentlich in der Bibliothek.</span>
         </div>
       )}
     </header>

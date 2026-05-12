@@ -14,7 +14,11 @@ from .backoffice_views import (
     BackofficeWorksheetRejectView,
     BackofficeWorksheetUnpublishView,
 )
+from .stripe_views import StripeBillingPortalView, StripeCheckoutSessionView
+from .stripe_webhook import stripe_webhook_view
 from .views import (
+    ChangeEmailView,
+    ChangePasswordView,
     CookieTokenObtainPairView,
     CookieTokenRefreshView,
     LogoutView,
@@ -25,11 +29,16 @@ from .views import (
 )
 
 urlpatterns = [
+    path('stripe/checkout/', StripeCheckoutSessionView.as_view()),
+    path('stripe/portal/', StripeBillingPortalView.as_view()),
+    path('stripe/webhook/', stripe_webhook_view),
     path('register/', RegisterView.as_view()),
     path('login/', CookieTokenObtainPairView.as_view()),
     path('logout/', LogoutView.as_view()),
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('me/', MeView.as_view()),
+    path('password/change/', ChangePasswordView.as_view()),
+    path('email/change/', ChangeEmailView.as_view()),
     path('password-reset/', PasswordResetRequestView.as_view()),
     path('password-reset/confirm/', PasswordResetConfirmView.as_view()),
     path('backoffice/pending/', BackofficePendingView.as_view()),

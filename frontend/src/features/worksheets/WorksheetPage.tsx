@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
 import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../components/ai-generation/aiGenerationTypes';
+import { isUserCancelledGenerationError } from '../../components/ai-generation/generationQueue';
 import axios from 'axios';
 import { api, LONG_RUNNING_BOARD_TIMEOUT_MS } from '../../lib/api';
 import { cn } from '../../lib/cn';
@@ -428,80 +429,86 @@ export function WorksheetPage() {
         return;
       }
 
-      await runSerialized(jid, async () => {
-        updateJob(jid, { phaseLabel: 'KI überarbeitet die Seite …', progressPercent: 8 });
-        setErr('');
+      try {
+        await runSerialized(jid, async (signal) => {
+          updateJob(jid, { phaseLabel: 'KI überarbeitet die Seite …', progressPercent: 8 });
+          setErr('');
 
-        const cur = draftRef.current;
-        if (!cur || typeof cur !== 'object') {
-          const msg = 'Inhalt konnte nicht für die Überarbeitung gelesen werden.';
-          failJob(jid, msg);
-          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
-          throw new Error(msg);
-        }
-
-        let contentSnapshot: Record<string, unknown>;
-        try {
-          contentSnapshot = JSON.parse(JSON.stringify(cur)) as Record<string, unknown>;
-        } catch {
-          const msg = 'Inhalt konnte nicht für die Überarbeitung kopiert werden.';
-          failJob(jid, msg);
-          if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
-          throw new Error(msg);
-        }
-
-        let r;
-        try {
-          r = await api.post(
-            `/worksheets/${targetWorksheetId}/regenerate-page/`,
-            {
-              page_index: pageIndex,
-              teacher_instruction: instruction,
-              content: contentSnapshot,
-            },
-            { timeout: LONG_RUNNING_BOARD_TIMEOUT_MS },
-          );
-        } catch (e: unknown) {
-          const msg = formatWorksheetKiApiError(e, 'Seite konnte nicht überarbeitet werden.');
-          failJob(jid, msg);
-          if (worksheetIdRef.current === targetWorksheetId) {
-            setErr(msg);
+          const cur = draftRef.current;
+          if (!cur || typeof cur !== 'object') {
+            const msg = 'Inhalt konnte nicht für die Überarbeitung gelesen werden.';
+            failJob(jid, msg);
+            if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+            throw new Error(msg);
           }
-          throw e;
-        }
 
-        updateJob(jid, { progressPercent: 85 });
-        const nextWs = r.data as Worksheet;
-        const persistedDraft = normalizeContentForEdit(nextWs.content as Record<string, unknown>);
+          let contentSnapshot: Record<string, unknown>;
+          try {
+            contentSnapshot = JSON.parse(JSON.stringify(cur)) as Record<string, unknown>;
+          } catch {
+            const msg = 'Inhalt konnte nicht für die Überarbeitung kopiert werden.';
+            failJob(jid, msg);
+            if (worksheetIdRef.current === targetWorksheetId) setErr(msg);
+            throw new Error(msg);
+          }
 
-        if (worksheetIdRef.current === targetWorksheetId) {
-          draftRef.current = persistedDraft;
-          setWs(nextWs);
-          setDraft(persistedDraft);
-          setPreviewRm((nextWs.render_model || null) as Record<string, unknown> | null);
-          setPageLayoutOverflow({});
-          clearDraftUndoStack();
-        }
+          let r;
+          try {
+            r = await api.post(
+              `/worksheets/${targetWorksheetId}/regenerate-page/`,
+              {
+                page_index: pageIndex,
+                teacher_instruction: instruction,
+                content: contentSnapshot,
+              },
+              { timeout: LONG_RUNNING_BOARD_TIMEOUT_MS, signal },
+            );
+          } catch (e: unknown) {
+            if (isUserCancelledGenerationError(e)) throw e;
+            const msg = formatWorksheetKiApiError(e, 'Seite konnte nicht überarbeitet werden.');
+            failJob(jid, msg);
+            if (worksheetIdRef.current === targetWorksheetId) {
+              setErr(msg);
+            }
+            throw e;
+          }
 
-        void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(targetWorksheetId) });
+          updateJob(jid, { progressPercent: 85 });
+          const nextWs = r.data as Worksheet;
+          const persistedDraft = normalizeContentForEdit(nextWs.content as Record<string, unknown>);
 
-        const stillHere = worksheetIdRef.current === targetWorksheetId;
-        completeJob(jid, {
-          successMessage: stillHere
-            ? 'Seite überarbeitet und gespeichert.'
-            : 'Seite überarbeitet und gespeichert. Das Arbeitsblatt liegt im Aktivitätsbereich unter „Öffnen“.',
-          ...(!stillHere
-            ? {
-                primaryAction: {
-                  label: 'Arbeitsblatt öffnen',
-                  to: `/app/worksheets/${targetWorksheetId}`,
-                },
-              }
-            : {}),
+          if (worksheetIdRef.current === targetWorksheetId) {
+            draftRef.current = persistedDraft;
+            setWs(nextWs);
+            setDraft(persistedDraft);
+            setPreviewRm((nextWs.render_model || null) as Record<string, unknown> | null);
+            setPageLayoutOverflow({});
+            clearDraftUndoStack();
+          }
+
+          void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(targetWorksheetId) });
+
+          const stillHere = worksheetIdRef.current === targetWorksheetId;
+          completeJob(jid, {
+            successMessage: stillHere
+              ? 'Seite überarbeitet und gespeichert.'
+              : 'Seite überarbeitet und gespeichert. Das Arbeitsblatt liegt im Aktivitätsbereich unter „Öffnen“.',
+            ...(!stillHere
+              ? {
+                  primaryAction: {
+                    label: 'Arbeitsblatt öffnen',
+                    to: `/app/worksheets/${targetWorksheetId}`,
+                  },
+                }
+              : {}),
+          });
+
+          void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
         });
-
-        void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
-      });
+      } catch (e: unknown) {
+        if (isUserCancelledGenerationError(e)) return;
+        throw e;
+      }
     },
     [
       ws,

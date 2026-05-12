@@ -33,7 +33,7 @@ import { FieldRow, RadioGroup, SectionHeading, Stepper } from './components';
 import { useShellChrome } from '../../components/shell/ShellChromeContext';
 import { useAiGenerationJobs } from '../../components/ai-generation/AiGenerationJobsContext';
 import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../components/ai-generation/aiGenerationTypes';
-import { isAiGenerationQueueAbortedError } from '../../components/ai-generation/generationQueue';
+import { isUserCancelledGenerationError } from '../../components/ai-generation/generationQueue';
 import { addPendingFirstOpenWorksheet } from '../worksheets/lib/worksheetFirstOpenHighlight';
 
 const STEP_LABELS = ['Modus', 'Inhalt', 'Design & Seite', 'Generieren'];
@@ -151,10 +151,10 @@ export function WizardPage() {
     }
     wizardWsJobIdsRef.current.add(jid);
     try {
-      await runSerialized(jid, async () => {
+      await runSerialized(jid, async (signal) => {
         updateJob(jid, { phaseLabel: 'KI erstellt dein Arbeitsblatt …', progressPercent: 4 });
         const payload = buildGeneratePayload(state);
-        const r = await api.post('/worksheets/generate/', payload);
+        const r = await api.post('/worksheets/generate/', payload, { signal });
         progressStop.current = true;
         setGenerateProgress(100);
         updateJob(jid, { progressPercent: 100 });
@@ -169,7 +169,7 @@ export function WizardPage() {
         navigate('/app/worksheets');
       });
     } catch (err) {
-      if (isAiGenerationQueueAbortedError(err)) {
+      if (isUserCancelledGenerationError(err)) {
         progressStop.current = true;
         setGenerateProgress(0);
         return;

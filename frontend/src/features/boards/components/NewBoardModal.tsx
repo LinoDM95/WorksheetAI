@@ -18,7 +18,7 @@ import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_GRADE_STEPS, LIBRARY_SUBJECT_FILTER_LABELS } from '../lib/libraryCatalogFilters';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
 import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
-import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
+import { isUserCancelledGenerationError } from '../../../components/ai-generation/generationQueue';
 
 const VISUAL_STYLES: { id: VisualStyleId; label: string; hint: string }[] = [
   { id: 'auto', label: 'Automatisch', hint: 'KI wählt Stil zum Thema.' },
@@ -142,11 +142,12 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
       return;
     }
     sessionCreativeJobIdsRef.current.add(jid);
-    void runSerialized(jid, async () => {
+    void runSerialized(jid, async (signal) => {
       try {
         updateJob(jid, { phaseLabel: 'Wir bereiten die Generierung vor …', progressPercent: 4 });
         const board = await generateBoardWithProgress(payload, {
           onPhase: (p) => updateJob(jid, { phaseLabel: p.label, progressPercent: p.pct }),
+          signal,
         });
         queryClient.setQueryData(BOARDS_DETAIL_QUERY_KEY(String(board.id)), board);
         queryClient.invalidateQueries({ queryKey: BOARDS_LIST_QUERY_KEY });
@@ -156,7 +157,7 @@ export const NewBoardModal = ({ open, onClose, onPendingHighlightChange }: NewBo
         onClose();
         setError(null);
       } catch (err: unknown) {
-        if (isAiGenerationQueueAbortedError(err)) return;
+        if (isUserCancelledGenerationError(err)) return;
         const detail =
           (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
           || (err as Error)?.message

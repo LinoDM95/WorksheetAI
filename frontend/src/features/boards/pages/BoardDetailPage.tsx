@@ -35,7 +35,7 @@ import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
 import { BoardShellModal } from './boardDetail/BoardShellModal';
 import { useAiGenerationJobs } from '../../../components/ai-generation/AiGenerationJobsContext';
 import { AI_GENERATION_QUEUE_FULL_MESSAGE } from '../../../components/ai-generation/aiGenerationTypes';
-import { isAiGenerationQueueAbortedError } from '../../../components/ai-generation/generationQueue';
+import { isUserCancelledGenerationError } from '../../../components/ai-generation/generationQueue';
 
 export function BoardDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
@@ -216,13 +216,13 @@ export function BoardDetailPage() {
       return;
     }
     setReviseOpen(false);
-    void runSerialized(jid, async () => {
+    void runSerialized(jid, async (signal) => {
       try {
         updateJob(jid, {
           phaseLabel: 'Die KI passt HTML, CSS und JavaScript an …',
           progressPercent: null,
         });
-        await reviseBoard(id, prompt, { revision_mode: mode });
+        await reviseBoard(id, prompt, { revision_mode: mode, signal });
         completeJob(jid, { successMessage: 'Vorschau wurde aktualisiert.' });
         queryClient.invalidateQueries({ queryKey: BOARDS_DETAIL_QUERY_KEY(id) });
         queryClient.invalidateQueries({ queryKey: ['board-revisions', id] });
@@ -233,7 +233,7 @@ export function BoardDetailPage() {
         setReloadKey((k) => k + 1);
         setPreviewRevisionId(null);
       } catch (err: unknown) {
-        if (isAiGenerationQueueAbortedError(err)) return;
+        if (isUserCancelledGenerationError(err)) return;
         const detail =
           (err as { response?: { data?: { detail?: string } }; message?: string }).response?.data?.detail
           || (err as Error)?.message
@@ -630,7 +630,7 @@ export function BoardDetailPage() {
         shareOverlayPortalRef={boardSharePortalRef}
         shareToolbarAction={{
           onClick: handleDetailShareClick,
-          disabled: !isHeadView,
+          disabled: !isHeadView || board.viewer_is_owner === false,
           loading: patchMutation.isPending && sharePrepOpen,
           title: isHeadView ? undefined : aiBlockedHint,
           ariaLabel: isHeadView ? undefined : aiBlockedHint,

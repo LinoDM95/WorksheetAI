@@ -31,7 +31,7 @@ class SubscriptionDefaultsTests(TestCase):
             email='paid@example.com',
             password='TestPass123!',
         )
-        pro = SubscriptionPlan.objects.get(slug='pro')
+        pro = SubscriptionPlan.objects.get(slug='starter_10')
         sub = UserSubscription.objects.get(user=u)
         sub.plan = pro
         sub.save(update_fields=['plan'])
