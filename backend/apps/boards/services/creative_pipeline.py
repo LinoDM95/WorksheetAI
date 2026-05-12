@@ -2,10 +2,12 @@
 
 1. Ein Aufruf **Code-Generierung** (``generate_free_html_board``).
 2. **Sanitize/Validate** + **KI-Reparatur** über ``run_validation_repairs``.
-3. **Touch-Audit** (optional). Bei Fehlschlag: **ein** zusätzlicher Reparatur-LLM nur
+3. Nach **erfolgreicher** Validierung: optional **Visual-Polish** (zweiter LLM-Durchlauf,
+   nur Oberflächendetails — abschaltbar über ``SMARTBOARD_ENABLE_VISUAL_POLISH_PASS``).
+4. **Touch-Audit** (optional). Bei Fehlschlag: **ein** zusätzlicher Reparatur-LLM nur
    wenn ``SMARTBOARD_TOUCH_ONLY_REPAIR`` aktiv und Audit gelaufen ist *(Token-sparend)*.
-4. **Quality-Report**.
-5. Board persistieren + ``AIUsageLog``-Flush.
+5. **Quality-Report**.
+6. Board persistieren + ``AIUsageLog``-Flush.
 
 Optional: NDJSON-Stream mit kurzen deutschsprachigen Fortschrittshinweisen
 (``SmartboardCreativePipeline.iter_ndjson`` / ``generate_board_stream``).
@@ -31,6 +33,7 @@ from .free_html_generation import (
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import validate_free_html_bundle
 from .free_html_validate_repair import run_validation_repairs
+from .free_html_visual_polish import run_visual_polish_pass
 from .quality_report import build_quality_report
 from .touch_audit import TouchAuditService
 from .visual_resource_registry import (
@@ -50,13 +53,15 @@ def _dbg(message: str) -> None:
 
 LABEL_CODEGEN = 'Die KI erstellt dein interaktives Board …'
 LABEL_VALIDATE = 'Wir prüfen den Code auf Sicherheit und Struktur …'
+LABEL_POLISH = 'Wir verfeinern Farben und Oberflächendetails …'
 LABEL_TOUCH = 'Wir prüfen die Bedienung für Smartboard und Touch …'
 LABEL_TOUCH_FIX = 'Wir optimieren Bedienflächen und Abstände …'
 LABEL_QUALITY = 'Kurzer Qualitätscheck …'
 LABEL_SAVE = 'Fast fertig — wir speichern …'
 
 PCT_CODEGEN = 12
-PCT_VALIDATE = 38
+PCT_VALIDATE = 32
+PCT_POLISH = 46
 PCT_TOUCH = 62
 PCT_TOUCH_FIX = 78
 PCT_QUALITY = 88
@@ -199,6 +204,24 @@ class SmartboardCreativePipeline:
             f'Validate/Repair: ok={ok} errors={len(verrs)} warnings={len(vwarns)} '
             f'visual_qa={visual_qa_enabled} repair_steps={len(repair_trace)}',
         )
+
+        if ok:
+            yield (
+                'phase',
+                {'event': 'phase', 'key': 'polish', 'pct': PCT_POLISH, 'label': LABEL_POLISH},
+            )
+            last_raw, bundle, polish_trace = run_visual_polish_pass(
+                provider,
+                bundle=bundle,
+                last_raw=last_raw,
+                resource_ctx=ctx,
+                context_hint=context_hint,
+                board_didactic=board_didactic_from_generation_payload(self.payload),
+                style_dna={},
+                visual_qa=visual_qa_enabled,
+                document_base_href=None,
+            )
+            repair_trace.append(polish_trace)
 
         yield (
             'phase',

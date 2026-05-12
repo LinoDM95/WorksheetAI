@@ -260,6 +260,8 @@ BOARDS_AI_PROVIDER = env('BOARDS_AI_PROVIDER', default='default')
 BOARDS_FREE_HTML_GENERATION_TEMPERATURE = env.float('BOARDS_FREE_HTML_GENERATION_TEMPERATURE', default=0.55)
 BOARDS_FREE_HTML_REVISION_TEMPERATURE = env.float('BOARDS_FREE_HTML_REVISION_TEMPERATURE', default=0.4)
 BOARDS_FREE_HTML_REPAIR_TEMPERATURE = env.float('BOARDS_FREE_HTML_REPAIR_TEMPERATURE', default=0.25)
+# Optionaler zweiter Durchlauf nach erfolgreicher Validierung: nur CSS/SVG-Kosmetik (siehe ``repair_visual_polish``).
+BOARDS_VISUAL_POLISH_TEMPERATURE = env.float('BOARDS_VISUAL_POLISH_TEMPERATURE', default=0.35)
 # Nach Erst- oder Revisions-Generierung: max. zusätzliche KI-Reparaturrunden bei serverseitigen Validierungsfehlern (0–5).
 # Standard jetzt **1**: ein einziger struktureller Reparatur-Versuch, kein iterative „bis grün“.
 BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=1)
@@ -289,6 +291,8 @@ SMARTBOARD_SMALL_MODEL = env('SMARTBOARD_SMALL_MODEL', default='gemini-2.5-flash
 SMARTBOARD_LARGE_MODEL_PROVIDER = env('SMARTBOARD_LARGE_MODEL_PROVIDER', default='gemini')
 SMARTBOARD_LARGE_MODEL = env('SMARTBOARD_LARGE_MODEL', default='gemini-2.5-pro')
 SMARTBOARD_USE_PIPELINE = env.bool('SMARTBOARD_USE_PIPELINE', default=True)
+# Nach erfolgreicher Validierung: optional ein LLM-Pass nur für Oberflächendetails (kein Layout-Umbau).
+SMARTBOARD_ENABLE_VISUAL_POLISH_PASS = env.bool('SMARTBOARD_ENABLE_VISUAL_POLISH_PASS', default=True)
 # Nach Touch/Screenshot-Audit: zusätzlicher großer „RepairAgent“-Pass (oft redundant zu Validierungsrepair).
 # Default **aus**, um keine zweite Groß-Reparaturschleife zu bezahlen.
 SMARTBOARD_ENABLE_PIPELINE_REPAIR_AGENT = env.bool('SMARTBOARD_ENABLE_PIPELINE_REPAIR_AGENT', default=False)

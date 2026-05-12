@@ -51,6 +51,7 @@ MODE_TO_PROMPT_KEY: dict[str, str] = {
     'content_change': 'content_change',
     'simplify': 'simplify',
     'make_more_creative': 'make_more_creative',
+    'visual_polish': 'visual_polish',
 }
 
 

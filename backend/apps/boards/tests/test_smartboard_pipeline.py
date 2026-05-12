@@ -193,7 +193,7 @@ class SnippetLibraryTests(SimpleTestCase):
 class RepairAgentDispatchTests(SimpleTestCase):
     def test_mode_to_prompt_key_covers_all_revision_modes(self):
         for mode in ('general', 'bug_fix', 'design_improve', 'touch_optimize',
-                     'content_change', 'simplify', 'make_more_creative',
+                     'visual_polish', 'content_change', 'simplify', 'make_more_creative',
                      'performance_improve', 'security_fix', 'factual_warning'):
             self.assertIn(mode, MODE_TO_PROMPT_KEY)
 

@@ -22,6 +22,7 @@ from .free_html_sanitize import (
 )
 from .free_html_surgical_edits import normalize_provider_free_html_response
 from .free_html_validate_repair import run_validation_repairs
+from .free_html_visual_polish import run_visual_polish_pass
 from .visual_resource_registry import (
     filter_used_assets,
     filter_used_datasets,
@@ -178,6 +179,20 @@ class FreeHtmlBoardGenerationService:
                 visual_qa=_visual_qa_for_pipeline(),
                 document_base_href=None,
             )
+            repair_trace = list(repair_trace)
+            if ok:
+                last_raw, bundle, polish_trace = run_visual_polish_pass(
+                    provider,
+                    bundle=bundle,
+                    last_raw=last_raw,
+                    resource_ctx=ctx,
+                    context_hint=context_hint,
+                    board_didactic=didactic,
+                    style_dna={},
+                    visual_qa=_visual_qa_for_pipeline(),
+                    document_base_href=None,
+                )
+                repair_trace.append(polish_trace)
 
             title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
@@ -187,6 +202,7 @@ class FreeHtmlBoardGenerationService:
             gen_input = self._sanitized_input()
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
+            gen_input['visual_polish_pipeline'] = 'on' if ok else 'off'
 
             board = Board.objects.create(
                 owner=self.user,
@@ -266,6 +282,26 @@ class FreeHtmlBoardGenerationService:
                 visual_qa=_visual_qa_for_pipeline(),
                 document_base_href=None,
             )
+            repair_trace = list(repair_trace)
+            if ok:
+                yield enc({
+                    'event': 'phase',
+                    'key': 'polish',
+                    'pct': 52,
+                    'label': 'Wir verfeinern Farben und Oberflächendetails …',
+                })
+                last_raw, bundle, polish_trace = run_visual_polish_pass(
+                    provider,
+                    bundle=bundle,
+                    last_raw=last_raw,
+                    resource_ctx=ctx,
+                    context_hint=context_hint,
+                    board_didactic=didactic,
+                    style_dna={},
+                    visual_qa=_visual_qa_for_pipeline(),
+                    document_base_href=None,
+                )
+                repair_trace.append(polish_trace)
 
             title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
@@ -275,6 +311,7 @@ class FreeHtmlBoardGenerationService:
             gen_input = self._sanitized_input()
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
+            gen_input['visual_polish_pipeline'] = 'on' if ok else 'off'
 
             used = _normalize_used_lists(bundle)
             yield enc({
