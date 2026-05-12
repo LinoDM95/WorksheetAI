@@ -44,6 +44,7 @@ const LIBRARY_SCRIPTS: Record<LibraryId, string> = {
   confetti: '/board-libs/confetti.browser.js',
   howler: '/board-libs/howler.min.js',
   konva: '/board-libs/konva.min.js',
+  /** Phaser 3.80.x (npm `phaser@3.80.1`, siehe `copy-board-libs.mjs`) */
   phaser: '/board-libs/phaser.min.js',
   pixi: '/board-libs/pixi.min.js',
 };

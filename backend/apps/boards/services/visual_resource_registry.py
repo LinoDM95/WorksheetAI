@@ -137,7 +137,8 @@ LIBRARIES: list[dict[str, Any]] = [
             '2d_game_loop',
         ],
         'note': (
-            'Phaser 4 als window.Phaser — nur bei echtem Spiel-/Szenenbedarf; Bühne in '
+            'Phaser 3.80.x als window.Phaser (gebündelt als /board-libs/phaser.min.js) — '
+            'nur bei echtem Spiel-/Szenenbedarf; **kein** Phaser-4-Code. Bühne in '
             '`.free-board` halten, Touch-first, keine externen Assets. Nicht parallel zu '
             'einer zweiten schweren Engine nötig — eine Engine pro Board bevorzugen.'
         ),

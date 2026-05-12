@@ -66,7 +66,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 ### Libraries
 {{ libraries_summary }}
 
-**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`; **`phaser`** ↔ **`Phaser.`**; **`pixi`** ↔ **`PIXI.`**). Bei inhaltlichen Umbauten: **Lehrkraft-Auftrag zuerst** — **Qualität vor Kurzcode:** Lieber **passende** Engine oder zusätzliche Library und **strukturierter** Code, wenn das Ergebnis **deutlich** besser wird; **keine** zwei schweren Szenen-Engines parallel. Nur wenn die Lehrkraft **ausdrücklich** Vereinfachung will: Technik zurücknehmen.
+**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`; **`phaser`** ↔ **`Phaser.`** — **nur Phaser-3.x-API** wie im Erstprompt; keine Phaser-4-Beispiele; **`pixi`** ↔ **`PIXI.`**). Bei inhaltlichen Umbauten: **Lehrkraft-Auftrag zuerst** — **Qualität vor Kurzcode:** Lieber **passende** Engine oder zusätzliche Library und **strukturierter** Code, wenn das Ergebnis **deutlich** besser wird; **keine** zwei schweren Szenen-Engines parallel. Nur wenn die Lehrkraft **ausdrücklich** Vereinfachung will: Technik zurücknehmen.
 
 ### Assets
 {{ assets_summary }}

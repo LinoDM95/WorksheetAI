@@ -31,6 +31,6 @@ export const LIBRARY_TECH_LABELS: Record<LibraryId, string> = {
   confetti: 'Canvas-Confetti',
   howler: 'Howler',
   konva: 'Konva',
-  phaser: 'Phaser',
+  phaser: 'Phaser 3',
   pixi: 'PixiJS',
 };

@@ -1,0 +1,68 @@
+---
+description: Phaser 3 — Best Practices für Kreativ-/Free-HTML-Boards (Sandbox 1280×720, Touch-first)
+globs:
+  - backend/apps/ai/prompts/formats/interactive_board/**/*.md
+  - backend/apps/boards/services/free_html*.py
+  - backend/apps/boards/services/visual_resource_registry.py
+  - frontend/scripts/copy-board-libs.mjs
+  - frontend/src/features/boards/**/free-html/**/*
+  - frontend/src/features/boards/lib/boardLibraryLabels.ts
+alwaysApply: false
+---
+
+# Phaser 3 in Free-HTML-Boards
+
+Gilt **zusätzlich** zu [project-core.mdc](mdc:.cursor/rules/project-core.mdc) und den Sandbox-Pflichten in `free_html_generation.md` / `free_html_revision.md`, sobald **Phaser** (`window.Phaser`, `used_libraries: ["phaser", …]`) vorgesehen oder bearbeitet wird.
+
+## Versions- und API-Bindung
+
+- **Nur Phaser 3.80.x** — gebündelt als `phaser.min.js` unter `/board-libs/` (Kopie aus `frontend/node_modules`, Pin in `frontend/package.json`).
+- **Kein Phaser 4:** keine Tutorials/Code für „Phaser 4“, keine APIs wie veränderte Graphics-Ketten, die nur in v4 existieren.
+- **`used_libraries`:** sobald `Phaser.` im generierten Nutzer-JS vorkommt, **`"phaser"`** eintragen — sonst lädt die Bühne das Modul nicht.
+
+## Einbettung in die Bühne (1280×720)
+
+- **Container:** ein festes Parent-Element (z. B. `<div id="game-parent">`) **innerhalb** von `.free-board`; Größe per CSS **`width`/`height` in px oder `100%`** relativ zu `.free-board` — **kein** `100vh`/`100dvh` für die Hauptfläche.
+- **Game-Konfiguration:** `width`/`height` an die **logische** Bühnengröße koppeln (typ. **1280×720** oder proportional); für Skalierung im iframe **`scale`**-Modus nutzen, z. B. `Phaser.Scale.FIT` + `autoCenter: Phaser.Scale.CENTER_BOTH`, `parent` auf den Container-DOM-Knoten.
+- **Höchstens ein** schweres Szenen-Setup (**Phaser** vs. **Pixi** vs. großes **Konva**) pro Board — nicht kombinieren.
+
+## Szenen & Lebenszyklus
+
+- **Szenen** mit klarer Trennung: `preload` (nur laden), `create` (Aufbau), `update` (Simulation/Animation).
+- Keine schweren Allokationen oder massenhaftes `new` pro Frame in `update` — lieber **Pooling** oder vorab erzeugte Gruppen.
+- Bei erneuter Initialisierung im selben HTML: vorheriges `Phaser.Game` **zerstören** (`destroy(true)`), damit kein Doppel-Canvas und kein Event-Leak entsteht.
+
+## Assets & Netzwerk
+
+- **Nur** Pfade unter **`/board-assets/`** (Bilder/Sprites gemäß Registry) — keine externen URLs, kein Netzwerk im Sandbox-Skript außerhalb der erlaubten Libraries-Regeln.
+- In `preload`: `this.load.image` / `spritesheet` / `audio` mit konsistenten Keys; in `create` nur noch `this.add` / Zugriff auf Cache.
+
+## Eingabe & Smartboard (Touch-first)
+
+- **Pointer-API** (`setInteractive`, `pointerdown`/`up`/`over`) statt rein Maus-Hover; **kein Hover-only** für Pflichtaktionen.
+- Klick-/Touch-Flächen groß genug (mind. **44×44 px** logisch), Abstände zwischen Hotspots **≥ 8 px** — siehe globale Touch-Regeln im Free-HTML-Prompt.
+- `touch-action` am Container sinnvoll setzen, wenn Scroll und Spiel gleichzeitig riskant sind.
+
+## Graphics, Geometrie, Canvas
+
+- **`Phaser.GameObjects.Graphics` (v3):** Füll- und Linienstile wie in der **Phaser-3-Doku** — **`fillStyle` / `lineStyle` / `strokePath` / `fillPath`** sauber trennen; **kein** Blind-Ketten, das v4-artige Rückgaben voraussetzt.
+- **`Phaser.Geom.RoundedRectangle`:** nur als **`new Phaser.Geom.RoundedRectangle(x, y, w, h, radius)`** (v3) verwenden.
+- **Keine** rohen Browser-Canvas-Hacks auf dem **Phaser-WebGL-Hauptcanvas** (z. B. `createRadialGradient` auf einem Kontext, der in WebGL nicht existiert). Verläufe über **Phaser-API** oder separates **2D-Canvas** im DOM, wenn unbedingt nötig — und dann sandbox-konform.
+
+## Performance & Stabilität
+
+- Physik/Arcade nur dort einschalten, wo nötig; **`setBounds`** und **einfache Kollision** statt überfrachteter Welt.
+- **`pauseOnBlur` / Sichtbarkeit:** bewusst setzen (Klassenzimmer: oft **`pauseOnBlur: false`**, wenn das Board weiterlaufen soll — product policy abgleichen).
+- Fehler im Spielcode **nicht** die ganze Bühne crashen lassen: äußeres Nutzer-Skript bleibt in **IIFE + try/catch** laut Free-HTML-Pflicht.
+
+## Änderungen an Prompts oder Registry
+
+- Prompt-Zeilen zu Phaser in **`free_html_generation.md`** / **`free_html_revision.md`** nur anpassen, wenn diese Rule und die **3.80.x**-Bindung erhalten bleiben.
+- **`visual_resource_registry.py`** / **`copy-board-libs.mjs`:** Phaser-Version nur in Abstimmung mit **`frontend/package.json`** ändern; nach Upgrade **`npm run copy:board-libs`** im `frontend/`.
+
+## Kurz-Checkliste (vor Merge)
+
+1. Nur **Phaser-3**-APIs, **`phaser`** in `used_libraries` wenn `Phaser.` vorkommt.
+2. **1280×720**-Freundliches Scaling, kein `vh`/`dvh`-Anti-Pattern auf Haupt-UI.
+3. **Touch-first**, große Hit-Areas, kein Phaser-4-Beispielcode aus dem Netz „1:1“.
+4. Kein Mix mehrerer schwerer Szenen-Engines; kein externes Asset-Loading.

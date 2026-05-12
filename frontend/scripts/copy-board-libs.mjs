@@ -33,6 +33,7 @@ const COPIES = [
   [['canvas-confetti/dist/confetti.browser.js'], 'confetti.browser.js'],
   [['howler/dist/howler.min.js'], 'howler.min.js'],
   [['konva/konva.min.js'], 'konva.min.js'],
+  // Phaser 3.x (gebündelt für KI-kompatible API; kein Phaser 4)
   [['phaser/dist/phaser.min.js', 'phaser/dist/phaser.js'], 'phaser.min.js'],
   [['pixi.js/dist/pixi.min.js'], 'pixi.min.js'],
 ];
