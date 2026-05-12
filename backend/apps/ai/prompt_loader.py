@@ -273,6 +273,10 @@ def _board_format_dir() -> Path:
     return _BOARD_FORMAT_DIR
 
 
+def _phaser3_teacher_rules_markdown() -> str:
+    return (_board_format_dir() / 'phaser3_teacher_rules.md').read_text(encoding='utf-8')
+
+
 def _truncate_block(s: str, max_chars: int = 14_000) -> str:
     t = s or ''
     if len(t) <= max_chars:
@@ -424,6 +428,7 @@ def build_free_html_generation_prompt(payload: dict) -> str:
         .replace('{{ snippets }}', str(payload.get('snippets') or '— keine —'))
         .replace('{{ golden_example }}', str(payload.get('golden_example') or '— keines —'))
         .replace('{{ prompt }}', prompt)
+        .replace('{{ phaser3_teacher_rules }}', _phaser3_teacher_rules_markdown())
     )
     return _append_teacher_visual_quality_supplement(filled)
 
@@ -445,6 +450,7 @@ def build_free_html_revision_prompt(payload: dict) -> str:
         .replace('{{ board_grade }}', str(payload.get('board_grade') or '— nicht angegeben —'))
         .replace('{{ board_topic }}', str(payload.get('board_topic') or '— nicht angegeben —'))
         .replace('{{ board_generation_prompt }}', gp_block)
+        .replace('{{ phaser3_teacher_rules }}', _phaser3_teacher_rules_markdown())
     )
     return _append_teacher_visual_quality_supplement(filled)
 
@@ -470,6 +476,7 @@ def build_free_html_repair_prompt(payload: dict) -> str:
         .replace('{{ libraries_summary }}', str(payload.get('libraries_summary') or '— keine —'))
         .replace('{{ assets_summary }}', str(payload.get('assets_summary') or '— keine —'))
         .replace('{{ datasets_summary }}', str(payload.get('datasets_summary') or '— keine —'))
+        .replace('{{ phaser3_teacher_rules }}', _phaser3_teacher_rules_markdown())
     )
     didactic = _board_didactic_markdown_block(payload)
     merged = didactic + _append_teacher_visual_quality_supplement(filled)

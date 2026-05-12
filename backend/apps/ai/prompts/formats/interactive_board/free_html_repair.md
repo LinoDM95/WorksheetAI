@@ -73,6 +73,9 @@ Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z.
 - Ein äußeres **`<div class="free-board …">`**; keine `<script>`-Tags im HTML, keine `on*=` Inline-Handler, keine `<form>`/`<iframe>`/`<object>`/`<embed>`, kein `javascript:` in Links.
 - JS: **IIFE**, `'use strict';`, äußeres **`try/catch`**. Keine `fetch`, `XMLHttpRequest`, `WebSocket`, Speicher-APIs, `eval`/`Function`, `import()`, Navigation/Alerts, `Worker`, `top`/`parent`, usw. (vollständige Liste wie in der Erstgenerierung).
 - Touch: aktive Ziele **≥ 44×44 px**, Abstände zwischen tappbaren Elementen **≥ 8 px** (lieber ≥ 12 px).
+- **Phaser:** Enthält der Code **`Phaser.`** oder **`phaser`** in `used_libraries`, halte dich an die **Phaser-3-Lehrer-Regeln** (gleicher Block wie bei Erstgenerierung) — insbesondere Graphics/Geom **Phaser 3**, ein `Game`-`parent` im DOM, keine Phaser-4-Snippets.
+
+{{ phaser3_teacher_rules }}
 
 ---
 

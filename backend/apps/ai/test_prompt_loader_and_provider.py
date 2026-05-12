@@ -104,12 +104,16 @@ class PromptLoaderBoardTests(SimpleTestCase):
         self.assertIn('Mathe', p)
         self.assertIn('Brüche', p)
         self.assertIn('Mach ein Poster', p)
+        self.assertIn('Geltungsbereich', p)
+        self.assertIn('Phaser 3.80', p)
 
     def test_free_html_revision_truncates_huge_html(self) -> None:
         huge = 'x' * 210_000
         p = build_free_html_revision_prompt({'html': huge, 'user_prompt': 'fix'})
         self.assertIn('gekürzt', p)
-        self.assertLess(len(p), len(huge) + 5000)
+        # Fester Prompt-Rumpf inkl. eingebetteter Lehrer-Regeln (z. B. Phaser-Block);
+        # Obergrenze relativ zur gekürzten HTML-Einbettung, nicht absolut klein.
+        self.assertLess(len(p), len(huge) + 25_000)
 
     def test_free_html_revision_substitutes_didactic_fields(self) -> None:
         p = build_free_html_revision_prompt(

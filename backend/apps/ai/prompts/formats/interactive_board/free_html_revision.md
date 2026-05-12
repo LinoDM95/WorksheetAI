@@ -88,6 +88,8 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 - **Slider:** Große Thumbs (CSS-Pseudoelemente) **oder** **+ / −**-Buttons mit vollen Touch-Zielen.
 - **Karten-Hotspots:** Keine mikroskopischen Klickflächen.
 
+{{ phaser3_teacher_rules }}
+
 ---
 
 ## Qualitätsregeln (Pflicht)

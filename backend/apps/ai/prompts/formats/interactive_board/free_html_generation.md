@@ -156,6 +156,8 @@ Nutze diese Libraries **bewusst**, wenn sie die **Unterrichtsqualität** verbess
 
 **Heuristik vor Ergebnisfreigabe:** Wenn eines der Schlüsselwörter **`interact(`**, **`Matter.`**, **`gsap.`**, **`confetti(`**, **`Konva.`** (z. B. `Konva.Stage`), **`new Konva`**, **`new Howl`**, **`Phaser.`** oder **`PIXI.`** vorkommt, **muss** die passende **`used_libraries`**-ID enthalten sein — sonst fehlen die Module und das Board läuft weiß/leer für diesen Teil.
 
+{{ phaser3_teacher_rules }}
+
 ---
 
 ## Pflicht: Touch / Smartboard (immer)
@@ -212,6 +214,7 @@ Nutze diese Libraries **bewusst**, wenn sie die **Unterrichtsqualität** verbess
 3. Alle **Pflicht-Taps** ≥ **44×44 px**, Abstände zwischen Taps ≥ **8 px**?
 4. Kein **Hover-only** für Pflichtinfos; keine **fetch**/Storage/**eval** usw.?
 5. **Werkzeugwahl & Qualität:** Sind die gewählten optionalen Libraries (inkl. **Phaser/Pixi/Konva**) die **qualitativ passende** Umsetzung für den Auftrag — auch wenn der Code **umfangreicher** ist? Keine **parallelen** schweren Szenen-Engines; ansonsten **Qualität** nicht zugunsten von „möglichst kurz“ opfern.
+6. **Phaser:** Wird **Phaser** genutzt, die **Phaser-3-Zusatzregeln** (Block oben) erfüllt — Szenen, `preload`/`create`, Touch-Ziele, keine verbotene API-Mixtur?
 
 ---
 

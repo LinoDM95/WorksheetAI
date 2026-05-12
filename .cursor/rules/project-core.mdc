@@ -56,5 +56,5 @@ alwaysApply: true
 ## Board-Erstellung
 
 Boards können in **zwei Modi** erzeugt werden — siehe [blocks-mode.mdc](mdc:.cursor/rules/blocks-mode.mdc) und für KI-Filling [blocks-mode-ai.mdc](mdc:.cursor/rules/blocks-mode-ai.mdc).
-- **Kreativ**: KI baut HTML/CSS/JS frei aus dem Lehrkraft-Prompt (`/api/boards/generate/`). Nutzt die Arbeit **Phaser** (`Phaser.` / `used_libraries: phaser`), gilt zusätzlich [phaser-free-html.mdc](mdc:.cursor/rules/phaser-free-html.mdc).
+- **Kreativ**: KI baut HTML/CSS/JS frei aus dem Lehrkraft-Prompt (`/api/boards/generate/`).
 - **Bausteine**: Lehrkraft wählt pro Seite Bausteine + Stichpunkte (CompositionPlan); KI füllt die Bausteine inhaltlich, gerendert wird deterministisch aus geprüften Templates (`/api/boards/generate-blocks/`).
