@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FolderPlus, MessageCircle, ShieldAlert, Star } from 'lucide-react';
@@ -26,6 +26,7 @@ import {
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_TECH_LABELS } from '../lib/boardLibraryLabels';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
+import { BoardCodeEditorModal } from '../components/BoardCodeEditorModal';
 import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import { BoardLibraryCommentsSection } from '../components/library/BoardLibraryCommentsSection';
 import { BoardLibraryInteractiveRating } from '../components/library/BoardLibraryInteractiveRating';
@@ -116,6 +117,11 @@ export function BoardLibraryCommunityPreviewPage() {
     title: string;
   } | null>(null);
   const librarySharePortalRef = useRef<HTMLDivElement | null>(null);
+  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
+
+  useEffect(() => {
+    setCodeEditorOpen(false);
+  }, [libraryBoardId]);
 
   const board = itemQuery.data;
 
@@ -290,16 +296,28 @@ export function BoardLibraryCommunityPreviewPage() {
             </div>
           </div>
           {isStaff ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-              onClick={() => navigate(`/app/boards/${libraryBoardId}`)}
-              title="Privaten Arbeitsstand (HTML/CSS/JS) im Volleditor bearbeiten"
-            >
-              Code bearbeiten (Admin)
-            </Button>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                onClick={() => navigate(`/app/boards/${libraryBoardId}`)}
+                title="Zur Board-Detailseite mit Vorschau, Pipeline und Ordner"
+              >
+                Volleditor
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setCodeEditorOpen(true)}
+                title="HTML, CSS und JavaScript in einem Tab-Editor bearbeiten"
+              >
+                Code bearbeiten (Admin)
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -556,6 +574,12 @@ export function BoardLibraryCommunityPreviewPage() {
         onResetValidity={isOwner ? handleResetStudentLinkValidity : undefined}
         resetBusy={sharePatchMutation.isPending}
         portalRootRef={librarySharePortalRef}
+      />
+      <BoardCodeEditorModal
+        open={codeEditorOpen}
+        boardId={libraryBoardId || null}
+        boardTitle={board?.title}
+        onClose={() => setCodeEditorOpen(false)}
       />
     </div>
   );
