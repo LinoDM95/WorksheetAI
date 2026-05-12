@@ -5,7 +5,7 @@
  *  1. Reset-/Layout-CSS (Design-Bühne #board-root = feste Pixel, passiert zu allen Viewports)
  *  2. optional Leaflet-CSS, falls 'leaflet' in usedLibraries
  *  3. immer d3 + roughjs; optional chartjs, leaflet, turf, topojson, gsap, konva, matterjs,
- *     interactjs, confetti, howler je nach usedLibraries
+ *     phaser, pixi, interactjs, confetti, howler je nach usedLibraries
  *  4. on-demand topojson, turf, leaflet
  *  5. BOARD_DATASETS-Injection (JSON → globales Objekt)
  *  6. Globaler Error-Handler (window error + unhandledrejection)
@@ -43,6 +43,8 @@ const LIBRARY_SCRIPTS: Record<LibraryId, string> = {
   confetti: '/board-libs/confetti.browser.js',
   howler: '/board-libs/howler.min.js',
   konva: '/board-libs/konva.min.js',
+  phaser: '/board-libs/phaser.min.js',
+  pixi: '/board-libs/pixi.min.js',
 };
 
 /** Reihenfolge der `<script>`-Tags: konsistent zum Backend `free_html_visual_doc`. */
@@ -56,6 +58,8 @@ const LIBRARY_SCRIPT_ORDER: LibraryId[] = [
   'gsap',
   'konva',
   'matterjs',
+  'phaser',
+  'pixi',
   'interactjs',
   'confetti',
   'howler',

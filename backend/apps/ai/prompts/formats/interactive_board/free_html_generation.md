@@ -134,8 +134,10 @@ Nutze diese Libraries **bewusst**, wenn sie **messbar** bessere Unterrichtswirku
 - **`confetti` → `window.confetti`** (optional): Kurzes **Konfetti** nach richtiger Antwort (**nach** Tap). **`confetti` in `used_libraries`**, wenn `confetti(` aufgerufen wird.
 - **`howler` → `window.Howl`** (optional): Kurze **Sounds** unter **`/board-assets/`** — z. B. `src: ['/board-assets/sounds/dein_effekt.mp3']`. **Externe URLs verboten**; eigener Lehrkräfte-/Sandbox-JS darf **weiterhin keinen** direkten `fetch`/`XMLHttpRequest` nutzen (Howler verwendet beim Laden lokaler Sounds selbst Mechanismen des Browsers). Abspielen **nach** Nutzer‑Tap (Klassenzimmer-Autoplay). **`howler` in `used_libraries`**, wenn `new Howl` vorkommt.
 - **`konva` → `window.Konva`** (optional): **Stage mit vielen Nodes** — Mindmaps, Kartenreihen mit Linien, Schicht-Szenen. **`konva` in `used_libraries`**, wenn du `Konva.Stage`/Layer verwendest. Container im HTML mit festen **`width`/`height`** in Pixeln innerhalb von 1280×720.
+- **`phaser` → `window.Phaser`** (optional): **Kleine Spiele/Szenen** (Phaser 4) — Sprites, Game-Loop, Eingaben. **`phaser` in `used_libraries`**, sobald `Phaser.` im Code vorkommt. Nur **lokales** Bundle; **eine** schwere Engine pro Board reicht (nicht wahllos parallel zu **Konva** + **Pixi** + **Phaser** stapeln).
+- **`pixi` → `window.PIXI`** (optional): **PixiJS 8** — WebGL/Canvas-Rendering (`PIXI.Application` o. ä.). **`pixi` in `used_libraries`**, sobald **`PIXI.`** im Code vorkommt.
 
-**Heuristik vor Ergebnisfreigabe:** Wenn eines der Schlüsselwörter **`interact(`**, **`Matter.`**, **`gsap.`**, **`confetti(`**, **`new Konva`** oder **`new Howl`** vorkommt, **muss** die passende **`used_libraries`**-ID enthalten sein — sonst fehlen die Module und das Board läuft weiß/leer für diesen Teil.
+**Heuristik vor Ergebnisfreigabe:** Wenn eines der Schlüsselwörter **`interact(`**, **`Matter.`**, **`gsap.`**, **`confetti(`**, **`new Konva`**, **`new Howl`**, **`Phaser.`** oder **`PIXI.`** vorkommt, **muss** die passende **`used_libraries`**-ID enthalten sein — sonst fehlen die Module und das Board läuft weiß/leer für diesen Teil.
 
 ---
 
@@ -170,7 +172,7 @@ Nutze diese Libraries **bewusst**, wenn sie **messbar** bessere Unterrichtswirku
 
 ### JavaScript
 - Vanilla JS sowie die zwei immer geladenen Libraries **`d3` (`window.d3`)** und **`rough` (`window.rough`)**. **Optional nach Registry:**
-  **`chartjs` → `window.Chart`**; **`leaflet`, `turf`, `topojson`** wie in der Lib-Liste; **`interactjs` → `interact`**; **`matterjs` → `Matter`**; **`gsap` → `gsap`** (nur Core); **`confetti` → `confetti`**; **`howler` → `Howl`**; **`konva` → `Konva`**. Jedes dieser APIs **nur**, wenn die passende **`used_libraries`**-ID gesetzt wurde.
+  **`chartjs` → `window.Chart`**; **`leaflet`, `turf`, `topojson`** wie in der Lib-Liste; **`interactjs` → `interact`**; **`matterjs` → `Matter`**; **`gsap` → `gsap`** (nur Core); **`confetti` → `confetti`**; **`howler` → `Howl`**; **`konva` → `Konva`**; **`phaser` → `Phaser`**; **`pixi` → `PIXI`**. Jedes dieser APIs **nur**, wenn die passende **`used_libraries`**-ID gesetzt wurde.
 - Das **Nutzer‑Script** nutzt keine `fetch`/`XMLHttpRequest`/`WebSocket`/`EventSource`. Kein `localStorage`/`sessionStorage`/`indexedDB`/`document.cookie`. Kein `eval`, `new Function`, `Function('…')`, `import()`. Kein `alert/prompt/confirm`. Kein `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`.
 - Wrap dein gesamtes Script in eine **IIFE mit `'use strict';`** und einem äußeren `try/catch`, damit ein Fehler die Bühne nicht weiß lässt.
 - **Defensive DOM-Zugriffe**: `var el = document.getElementById('x'); if (!el) return;`

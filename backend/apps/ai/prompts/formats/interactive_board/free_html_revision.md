@@ -66,7 +66,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 ### Libraries
 {{ libraries_summary }}
 
-**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`).
+**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`; **`phaser`** ↔ **`Phaser.`**; **`pixi`** ↔ **`PIXI.`**).
 
 ### Assets
 {{ assets_summary }}
@@ -99,7 +99,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 - Verbote unverändert: kein `<script>` im HTML, keine `on*=` Inline-Handler, keine `<form>`/`<iframe>`/`<object>`/`<embed>`, kein `javascript:`-href.
 - JS in IIFE mit `'use strict';` + `try/catch`. Keine verbotenen APIs (`fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `localStorage`/`sessionStorage`/`indexedDB`, `document.cookie`, `eval`, `new Function`, `Function('…')`, `import()`, `alert/prompt/confirm`, `location.*`, `document.write`, `navigator.geolocation`, `navigator.clipboard`, `Notification`, `serviceWorker`, `Worker`, `top.`, `parent.`).
 - Defensive DOM-Zugriffe: alle `getElementById/querySelector` Ergebnisse vor Nutzung prüfen.
-- Optional: **`chartjs` → `Chart`**, wenn in `used_libraries`. **`interactjs`/`matterjs`/`gsap`/`confetti`/`howler`/`konva`/`leaflet`/`turf`/`topojson`** analog — immer ID setzen, sobald das globale API im Code vorkommt. Sonst **d3**/Vanilla wie in der Haupt-Prompt-Anleitung.
+- Optional: **`chartjs` → `Chart`**, wenn in `used_libraries`. **`interactjs`/`matterjs`/`gsap`/`confetti`/`howler`/`konva`/`phaser`/`pixi`/`leaflet`/`turf`/`topojson`** analog — immer ID setzen, sobald das globale API im Code vorkommt. Sonst **d3**/Vanilla wie in der Haupt-Prompt-Anleitung.
 - Werte aus `<input type="range">` mit `parseInt/parseFloat` lesen und auf Range klemmen.
 - Kein `setInterval` ohne `clearInterval`. Kein endloser `requestAnimationFrame` ohne Abbruchbedingung.
 - **Touch / Smartboard:** Regeln im Abschnitt „Pflicht: Touch / Smartboard“ vollständig erfüllen — nicht nur Hover, Mindestgrößen für alle Bedienelemente.

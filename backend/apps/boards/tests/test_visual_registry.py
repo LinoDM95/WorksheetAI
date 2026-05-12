@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.test import SimpleTestCase
 
 from apps.boards.services.visual_resource_registry import (
+    LIBRARY_IDS,
     always_loaded_library_ids,
     filter_used_assets,
     filter_used_datasets,
@@ -35,3 +36,11 @@ class VisualResourceRegistryTests(SimpleTestCase):
         md = summarize_libraries()
         self.assertIn('window.', md)
         self.assertIn('d3', md)
+
+    def test_game_engine_libs_registered(self) -> None:
+        self.assertIn('phaser', LIBRARY_IDS)
+        self.assertIn('pixi', LIBRARY_IDS)
+        self.assertEqual(
+            filter_used_libraries(['phaser', 'pixi', 'unknown']),
+            ['phaser', 'pixi'],
+        )

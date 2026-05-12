@@ -12,7 +12,9 @@ export type LibraryId =
   | 'gsap'
   | 'confetti'
   | 'howler'
-  | 'konva';
+  | 'konva'
+  | 'phaser'
+  | 'pixi';
 
 export type AssetId = string;
 

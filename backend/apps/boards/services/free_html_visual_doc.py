@@ -19,6 +19,8 @@ _LIBRARY_SCRIPT_ORDER: tuple[str, ...] = (
     'gsap',
     'konva',
     'matterjs',
+    'phaser',
+    'pixi',
     'interactjs',
     'confetti',
     'howler',
@@ -36,6 +38,8 @@ _LIBRARY_SCRIPTS: dict[str, str] = {
     'confetti': '/board-libs/confetti.browser.js',
     'howler': '/board-libs/howler.min.js',
     'konva': '/board-libs/konva.min.js',
+    'phaser': '/board-libs/phaser.min.js',
+    'pixi': '/board-libs/pixi.min.js',
 }
 
 _ESCAPE_STYLE_RE = re.compile(r'</style', re.IGNORECASE)

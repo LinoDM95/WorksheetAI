@@ -21,6 +21,8 @@ const LIBRARY_LABELS: Record<LibraryId, string> = {
   confetti: 'canvas-confetti — Konfetti / Belohnung',
   howler: 'Howler — Sound (lokale Audiodateien unter /board-assets/…)',
   konva: 'Konva — 2D-Canvas-Staging (Mindmaps, viele Knoten)',
+  phaser: 'Phaser — HTML5-Spiel-Framework (Szenen, Sprites, Arcade)',
+  pixi: 'PixiJS — WebGL/Canvas-2D-Renderer (PIXI)',
 };
 
 const SectionList = ({ title, items, emptyHint }: { title: string; items: string[]; emptyHint: string }) => (

@@ -126,6 +126,37 @@ LIBRARIES: list[dict[str, Any]] = [
             '`stage.width()`/`height()` ggf. anpassen.'
         ),
     },
+    {
+        'id': 'phaser',
+        'global': 'Phaser',
+        'always': False,
+        'use_for': [
+            'mini_games',
+            'sprites_scenes',
+            'arcade_style_interaction',
+            '2d_game_loop',
+        ],
+        'note': (
+            'Phaser 4 als window.Phaser — nur bei echtem Spiel-/Szenenbedarf; Bühne in '
+            '`.free-board` halten, Touch-first, keine externen Assets. Nicht parallel zu '
+            'einer zweiten schweren Engine nötig — eine Engine pro Board bevorzugen.'
+        ),
+    },
+    {
+        'id': 'pixi',
+        'global': 'PIXI',
+        'always': False,
+        'use_for': [
+            'webgl_canvas_2d',
+            'particle_simple_graphics',
+            'custom_sprite_stage',
+        ],
+        'note': (
+            'PixiJS 8 — typisch `PIXI.Application` / Renderer; globales Namespace `PIXI`. '
+            'Kein CDN; nur lokales Bundle. Mit Phaser/Konva nicht doppelt einplanen, wenn '
+            'eine Library reicht.'
+        ),
+    },
 ]
 
 ASSETS: list[dict[str, Any]] = [

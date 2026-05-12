@@ -11,6 +11,8 @@ export const BOARD_LIBRARY_TECH_FILTER_IDS: LibraryId[] = [
   'konva',
   'leaflet',
   'matterjs',
+  'phaser',
+  'pixi',
   'roughjs',
   'topojson',
   'turf',
@@ -29,4 +31,6 @@ export const LIBRARY_TECH_LABELS: Record<LibraryId, string> = {
   confetti: 'Canvas-Confetti',
   howler: 'Howler',
   konva: 'Konva',
+  phaser: 'Phaser',
+  pixi: 'PixiJS',
 };

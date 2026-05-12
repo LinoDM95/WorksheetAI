@@ -35,6 +35,8 @@ describe('boardLibraryLabels', () => {
       'konva',
       'leaflet',
       'matterjs',
+      'phaser',
+      'pixi',
       'roughjs',
       'topojson',
       'turf',
@@ -42,7 +44,7 @@ describe('boardLibraryLabels', () => {
     expect(BOARD_LIBRARY_TECH_FILTER_IDS).toEqual(expected);
   });
 
-  it('LIBRARY_TECH_LABELS deckt alle 12 LibraryIds ab', () => {
+  it('LIBRARY_TECH_LABELS deckt alle 14 LibraryIds ab', () => {
     expect(Object.keys(LIBRARY_TECH_LABELS).sort()).toEqual([...BOARD_LIBRARY_TECH_FILTER_IDS].sort());
   });
 
