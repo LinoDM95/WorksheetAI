@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -165,6 +166,7 @@ export function BoardsWorkspacePage() {
   const [dropTarget, setDropTarget] = useState<'ungrouped' | string | null>(null);
   const [draggingBoardId, setDraggingBoardId] = useState<string | null>(null);
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+  const folderCollapseInitRef = useRef(false);
   const [newBoardOpen, setNewBoardOpen] = useState(false);
   const [pendingFirstOpenIds, setPendingFirstOpenIds] = useState<string[]>(() => [...getPendingFirstOpenBoardIds()]);
   const [libraryPublishTarget, setLibraryPublishTarget] = useState<BoardListItem | null>(null);
@@ -197,6 +199,16 @@ export function BoardsWorkspacePage() {
     queryFn: fetchBoardFolders,
     staleTime: 60_000,
   });
+
+  useLayoutEffect(() => {
+    if (folders.length === 0) {
+      folderCollapseInitRef.current = false;
+      return;
+    }
+    if (folderCollapseInitRef.current) return;
+    folderCollapseInitRef.current = true;
+    setCollapsedFolderIds(new Set(folders.map((f) => f.id)));
+  }, [folders]);
 
   const foldersByParent = useMemo(() => {
     const m = new Map<string | null, BoardFolderDto[]>();
