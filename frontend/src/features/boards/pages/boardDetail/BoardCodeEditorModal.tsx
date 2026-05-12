@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { html } from '@codemirror/lang-html';
 import { css as cssLang } from '@codemirror/lang-css';
@@ -9,8 +9,12 @@ import { Copy } from 'lucide-react';
 import { Alert, Button } from '../../../../components/ui';
 import { FreeHtmlBoardFrame } from '../../components/free-html/FreeHtmlBoardFrame';
 import { isWaBoardSandboxLogPayload } from '../../components/free-html/sandboxConsoleBridge';
+import { BOARD_LIBRARY_TECH_FILTER_IDS, LIBRARY_TECH_LABELS } from '../../lib/boardLibraryLabels';
 import type { DatasetId, LibraryId } from '../../types';
 import { BoardShellModal } from './BoardShellModal';
+
+/** Entspricht `ALWAYS_LIBRARIES` im Sandbox-srcdoc — immer geladen, unabhängig von `used_libraries`. */
+const SANDBOX_ALWAYS_LIBRARY_IDS: LibraryId[] = ['d3', 'roughjs'];
 
 export type BoardCodeEditorTab = 'html' | 'css' | 'javascript';
 
@@ -124,6 +128,16 @@ export function BoardCodeEditorModal({
 
   const editorHeight = showAdminSandboxConsole ? 'min(40dvh, 360px)' : 'min(62dvh, 520px)';
 
+  const libOrder = useMemo(
+    () => new Map(BOARD_LIBRARY_TECH_FILTER_IDS.map((id, i) => [id, i] as const)),
+    [],
+  );
+  const sandboxLibrariesDisplay = useMemo(() => {
+    const merged = Array.from(new Set([...SANDBOX_ALWAYS_LIBRARY_IDS, ...(usedLibraries ?? [])]));
+    merged.sort((a, b) => (libOrder.get(a) ?? 999) - (libOrder.get(b) ?? 999));
+    return merged;
+  }, [usedLibraries, libOrder]);
+
   const handleClose = () => {
     if (savePending) return;
     onClose();
@@ -206,6 +220,47 @@ export function BoardCodeEditorModal({
         </p>
 
         {saveError ? <Alert tone="error">{saveError}</Alert> : null}
+
+        {showAdminSandboxConsole ? (
+          <div
+            className="rounded-xl border border-indigo-100 bg-indigo-50/80 px-3 py-2.5"
+            aria-label="Für dieses Board geladene Sandbox-Bibliotheken"
+          >
+            <p className="text-xs font-medium text-indigo-950">
+              Sandbox-Bibliotheken (vom Board / KI)
+            </p>
+            <p className="mt-0.5 text-[11px] leading-snug text-indigo-900/80">
+              D3 und Rough.js werden in der Vorschau immer mitgeladen; die übrigen Einträge entsprechen{' '}
+              <code className="rounded bg-indigo-100/80 px-1 py-0.5 text-[10px]">used_libraries</code> am Board.
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-1.5" role="list">
+              {sandboxLibrariesDisplay.map((id) => {
+                const always = SANDBOX_ALWAYS_LIBRARY_IDS.includes(id);
+                return (
+                  <li key={id}>
+                    <span
+                      className="inline-flex items-center rounded-full border border-indigo-200/90 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-800 shadow-sm"
+                      title={id}
+                    >
+                      {LIBRARY_TECH_LABELS[id] ?? id}
+                      {always ? (
+                        <span className="ml-1 text-[10px] font-normal text-slate-500">(immer)</span>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {(usedDatasets?.length ?? 0) > 0 ? (
+              <p className="mt-2 text-[11px] text-indigo-900/85">
+                <span className="font-medium">Datensätze: </span>
+                {[...(usedDatasets ?? [])].filter(Boolean).join(', ')}
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] text-indigo-900/70">Keine Board-Datensätze (Datasets).</p>
+            )}
+          </div>
+        ) : null}
 
         <div
           role="tablist"
