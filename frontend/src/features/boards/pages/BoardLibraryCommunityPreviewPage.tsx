@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FolderPlus, MessageCircle, ShieldAlert, Star } from 'lucide-react';
 import {
@@ -40,9 +40,12 @@ import type { BoardLibraryItem } from '../types';
 export function BoardLibraryCommunityPreviewPage() {
   const { libraryBoardId = '' } = useParams<{ libraryBoardId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fromPrivateLibrary = searchParams.get('from') === 'mine';
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isStaff = Boolean(user?.is_staff);
+  const showStaffCodeEditor = isStaff && fromPrivateLibrary;
   const cached =
     queryClient
       .getQueryData<BoardLibraryItem[]>(boardsLibraryQueryKey('all'))
@@ -307,16 +310,18 @@ export function BoardLibraryCommunityPreviewPage() {
               >
                 Volleditor
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setCodeEditorOpen(true)}
-                title="HTML, CSS und JavaScript in einem Tab-Editor bearbeiten"
-              >
-                Code bearbeiten (Admin)
-              </Button>
+              {showStaffCodeEditor ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setCodeEditorOpen(true)}
+                  title="HTML, CSS und JavaScript in einem Tab-Editor bearbeiten"
+                >
+                  Code bearbeiten (Admin)
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -576,7 +581,7 @@ export function BoardLibraryCommunityPreviewPage() {
         portalRootRef={librarySharePortalRef}
       />
       <BoardCodeEditorModal
-        open={codeEditorOpen}
+        open={showStaffCodeEditor && codeEditorOpen}
         boardId={libraryBoardId || null}
         boardTitle={board?.title}
         onClose={() => setCodeEditorOpen(false)}

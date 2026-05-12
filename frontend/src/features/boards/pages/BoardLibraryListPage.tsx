@@ -82,13 +82,11 @@ function BoardLibraryCatalogCard({
   board,
   index,
   libraryScope,
-  isStaff,
   onAdminEditBoard,
 }: {
   board: BoardLibraryItem;
   index: number;
   libraryScope: BoardLibraryScope;
-  isStaff?: boolean;
   onAdminEditBoard?: (board: BoardLibraryItem) => void;
 }) {
   const com = board.comment_count ?? 0;
@@ -109,7 +107,11 @@ function BoardLibraryCatalogCard({
         )}
       >
         <Link
-          to={board.id}
+          to={
+            libraryScope === 'mine'
+              ? { pathname: board.id, search: 'from=mine' }
+              : board.id
+          }
           aria-label={
             libraryScope === 'mine'
               ? `${board.title || 'Board'} — Vorschau öffnen`
@@ -184,13 +186,17 @@ function BoardLibraryCatalogCard({
         </Link>
         <div className="flex flex-col gap-1.5 border-t border-slate-100 bg-slate-50/70 px-3 py-2">
           <Link
-            to={board.id}
+            to={
+              libraryScope === 'mine'
+                ? { pathname: board.id, search: 'from=mine' }
+                : board.id
+            }
             className="inline-flex w-full items-center justify-center gap-0.5 rounded-lg bg-indigo-50 px-2 py-1.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100/80 transition-[background-color,color,transform] hover:bg-indigo-600 hover:text-white hover:ring-indigo-500"
           >
             Ansehen
             <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
           </Link>
-          {isStaff && onAdminEditBoard ? (
+          {onAdminEditBoard ? (
             <Button
               type="button"
               variant="secondary"
@@ -287,6 +293,9 @@ export function BoardLibraryListPage() {
   const [resourceKind, setResourceKind] = useState<ResourceKindFilter>(() =>
     readKindFromParams(new URLSearchParams(location.search)),
   );
+
+  const showAdminBoardCodeEditor =
+    isStaff && libraryScope === 'mine' && resourceKind !== 'worksheets';
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
@@ -844,8 +853,7 @@ export function BoardLibraryListPage() {
                           board={row}
                           index={si * 30 + i}
                           libraryScope={libraryScope}
-                          isStaff={isStaff}
-                          onAdminEditBoard={isStaff ? setAdminCodeBoard : undefined}
+                          onAdminEditBoard={showAdminBoardCodeEditor ? setAdminCodeBoard : undefined}
                         />
                       ) : (
                         <WorksheetLibraryCatalogCard
@@ -879,8 +887,7 @@ export function BoardLibraryListPage() {
                       board={row}
                       index={i}
                       libraryScope={libraryScope}
-                      isStaff={isStaff}
-                      onAdminEditBoard={isStaff ? setAdminCodeBoard : undefined}
+                      onAdminEditBoard={showAdminBoardCodeEditor ? setAdminCodeBoard : undefined}
                     />
                   ) : (
                     <WorksheetLibraryCatalogCard key={`ws-${row.id}`} ws={row} index={i} />
