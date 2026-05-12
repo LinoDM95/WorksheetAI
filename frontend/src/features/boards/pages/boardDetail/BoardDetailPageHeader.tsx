@@ -1,4 +1,4 @@
-import { Globe2, Sparkles, Trash2 } from 'lucide-react';
+import { FileCode2, Globe2, Sparkles, Trash2 } from 'lucide-react';
 import { Alert, Button } from '../../../../components/ui';
 import { formatDate } from '../../../../lib/formatDate';
 import type { BoardCodeUpdate, BoardDetail, BoardFolderDto, BoardRevision } from '../../types';
@@ -20,6 +20,10 @@ export function BoardDetailPageHeader({
   canReviseWithAi,
   reviseButtonTitle,
   reviseBlockedTitle,
+  canOpenCodeEditor,
+  codeEditorBlockedTitle,
+  onOpenCodeEditor,
+  showCodeEditorEntry,
   onOpenRevise,
   libraryShareMessage,
   userIsStaff,
@@ -45,6 +49,10 @@ export function BoardDetailPageHeader({
   canReviseWithAi: boolean;
   reviseButtonTitle?: string;
   reviseBlockedTitle?: string;
+  canOpenCodeEditor: boolean;
+  codeEditorBlockedTitle?: string;
+  onOpenCodeEditor: () => void;
+  showCodeEditorEntry: boolean;
   onOpenRevise: () => void;
   libraryShareMessage: { tone: 'error' | 'info'; text: string } | null;
   userIsStaff: boolean;
@@ -55,7 +63,6 @@ export function BoardDetailPageHeader({
   onWithdrawFromLibrary: () => void;
   patchMutation: { isPending: boolean; mutate: (body: BoardCodeUpdate, opts?: object) => void };
 }) {
-  const viewerIsOwner = Boolean(board.viewer_is_owner);
   return (
     <header className="relative z-20 flex shrink-0 flex-col gap-1 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top,0px))] shadow-sm backdrop-blur-sm sm:px-3">
       {showFatalErrors && (
@@ -84,9 +91,9 @@ export function BoardDetailPageHeader({
             const v = e.target.value;
             patchMutation.mutate({ folder_id: v === '' ? null : v });
           }}
-          disabled={patchMutation.isPending || !viewerIsOwner}
+          disabled={patchMutation.isPending}
           aria-label="Galerie-Ordner"
-          title={!viewerIsOwner ? 'Nur der Eigentümer kann den Ordner ändern.' : 'Ordner'}
+          title="Ordner"
         >
           <option value="">Ohne Ordner</option>
           {foldersSorted.map((f) => (
@@ -145,6 +152,27 @@ export function BoardDetailPageHeader({
 
         <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
 
+        {showCodeEditorEntry ? (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="!px-2"
+              disabled={!canOpenCodeEditor}
+              title={canOpenCodeEditor ? 'HTML, CSS und JavaScript direkt bearbeiten' : codeEditorBlockedTitle}
+              aria-label={
+                canOpenCodeEditor ? 'Board-Code in Editor bearbeiten' : (codeEditorBlockedTitle ?? '')
+              }
+              onClick={onOpenCodeEditor}
+            >
+              <FileCode2 size={14} className="sm:mr-1" aria-hidden />
+              <span className="hidden sm:inline">Code bearbeiten</span>
+            </Button>
+            <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
+          </>
+        ) : null}
+
         <Button
           type="button"
           size="sm"
@@ -185,22 +213,11 @@ export function BoardDetailPageHeader({
                 </p>
                 {board.library_public_live_differs ? (
                   <p className="mt-2 text-[11px] font-semibold text-amber-900">
-                    {viewerIsOwner ? (
-                      <>
-                        Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
-                      </>
-                    ) : (
-                      <>
-                        Hinweis (Admin): Der gespeicherte Arbeitsstand des Autors unterscheidet sich von der
-                        öffentlichen Bibliotheksfassung.
-                      </>
-                    )}
+                    Hinweis: Dein gespeicherter Arbeitsstand unterscheidet sich von dieser Online-Fassung.
                   </p>
                 ) : (
                   <p className="mt-2 text-[11px] text-emerald-800/80">
-                    {viewerIsOwner
-                      ? 'Gespeicherter Stand und öffentliche Fassung stimmen überein.'
-                      : 'Öffentliche Karte und gespeicherter Autoren-Stand stimmen überein.'}
+                    Gespeicherter Stand und öffentliche Fassung stimmen überein.
                   </p>
                 )}
               </div>
@@ -217,7 +234,7 @@ export function BoardDetailPageHeader({
                   >
                     Öffentliche Fassung aktualisieren
                   </Button>
-                ) : viewerIsOwner ? (
+                ) : (
                   <Button
                     type="button"
                     size="sm"
@@ -237,8 +254,7 @@ export function BoardDetailPageHeader({
                   >
                     Update zur Freigabe einreichen
                   </Button>
-                ) : null}
-                {viewerIsOwner || userIsStaff ? (
+                )}
                 <Button
                   type="button"
                   variant="secondary"
@@ -248,8 +264,6 @@ export function BoardDetailPageHeader({
                 >
                   Bibliotheks-Texte
                 </Button>
-                ) : null}
-                {viewerIsOwner ? (
                 <Button
                   type="button"
                   variant="ghost"
@@ -260,7 +274,6 @@ export function BoardDetailPageHeader({
                 >
                   Aus Bibliothek nehmen
                 </Button>
-                ) : null}
               </div>
               {board.avg_rating != null || (board.rating_count ?? 0) > 0 ? (
                 <p className="text-[11px] text-emerald-900/80 lg:text-right">
@@ -274,7 +287,7 @@ export function BoardDetailPageHeader({
             </div>
           </div>
         </div>
-      ) : viewerIsOwner ? (
+      ) : (
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
           <span>Dieses Board ist nur für dich sichtbar.</span>
           <Button
@@ -286,10 +299,6 @@ export function BoardDetailPageHeader({
           >
             In Bibliothek veröffentlichen
           </Button>
-        </div>
-      ) : (
-        <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2 text-xs text-slate-700">
-          <span>Admin-Ansicht: Dieses Board ist nicht öffentlich in der Bibliothek.</span>
         </div>
       )}
     </header>

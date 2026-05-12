@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FolderPlus, MessageCircle, ShieldAlert, Star } from 'lucide-react';
 import {
@@ -26,7 +26,6 @@ import {
 import { addPendingFirstOpenBoard } from '../lib/boardFirstOpenHighlight';
 import { LIBRARY_TECH_LABELS } from '../lib/boardLibraryLabels';
 import { BoardShareQrModal } from '../components/BoardShareQrModal';
-import { BoardCodeEditorModal } from '../components/BoardCodeEditorModal';
 import { BoardStudentSharePrepModal } from '../components/BoardStudentSharePrepModal';
 import { BoardLibraryCommentsSection } from '../components/library/BoardLibraryCommentsSection';
 import { BoardLibraryInteractiveRating } from '../components/library/BoardLibraryInteractiveRating';
@@ -40,12 +39,9 @@ import type { BoardLibraryItem } from '../types';
 export function BoardLibraryCommunityPreviewPage() {
   const { libraryBoardId = '' } = useParams<{ libraryBoardId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const fromPrivateLibrary = searchParams.get('from') === 'mine';
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isStaff = Boolean(user?.is_staff);
-  const showStaffCodeEditor = isStaff && fromPrivateLibrary;
   const cached =
     queryClient
       .getQueryData<BoardLibraryItem[]>(boardsLibraryQueryKey('all'))
@@ -120,11 +116,6 @@ export function BoardLibraryCommunityPreviewPage() {
     title: string;
   } | null>(null);
   const librarySharePortalRef = useRef<HTMLDivElement | null>(null);
-  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
-
-  useEffect(() => {
-    setCodeEditorOpen(false);
-  }, [libraryBoardId]);
 
   const board = itemQuery.data;
 
@@ -298,32 +289,6 @@ export function BoardLibraryCommunityPreviewPage() {
               </p>
             </div>
           </div>
-          {isStaff ? (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => navigate(`/app/boards/${libraryBoardId}`)}
-                title="Zur Board-Detailseite mit Vorschau, Pipeline und Ordner"
-              >
-                Volleditor
-              </Button>
-              {showStaffCodeEditor ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => setCodeEditorOpen(true)}
-                  title="HTML, CSS und JavaScript in einem Tab-Editor bearbeiten"
-                >
-                  Code bearbeiten (Admin)
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </div>
 
@@ -364,7 +329,7 @@ export function BoardLibraryCommunityPreviewPage() {
               usedDatasets={board.used_datasets}
               shareOverlayPortalRef={librarySharePortalRef}
               toolbarExtras={
-                !isOwner && !isStaff
+                !isOwner
                   ? () => (
                       <Button
                         type="button"
@@ -579,12 +544,6 @@ export function BoardLibraryCommunityPreviewPage() {
         onResetValidity={isOwner ? handleResetStudentLinkValidity : undefined}
         resetBusy={sharePatchMutation.isPending}
         portalRootRef={librarySharePortalRef}
-      />
-      <BoardCodeEditorModal
-        open={showStaffCodeEditor && codeEditorOpen}
-        boardId={libraryBoardId || null}
-        boardTitle={board?.title}
-        onClose={() => setCodeEditorOpen(false)}
       />
     </div>
   );

@@ -261,8 +261,6 @@ export type BoardDetail = {
   can_revise_with_ai?: boolean;
   created_at: string;
   updated_at: string;
-  /** True, wenn der authentifizierte Nutzer Eigentümer des Boards ist (Staff kann fremde Boards bearbeiten, dann false). */
-  viewer_is_owner?: boolean;
 };
 
 export type BoardRevisionMetadata = {

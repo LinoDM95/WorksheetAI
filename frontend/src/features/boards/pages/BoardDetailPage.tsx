@@ -30,6 +30,7 @@ import { defaultLibraryListingCategoryFromBoardType, type LibraryListingCategory
 import { needsStudentSharePrep, isStudentShareLinkActive } from '../lib/studentShareFlow';
 import { buildStudentBoardUrl } from '../publicBoardApi';
 import { BoardDetailMetaPanel } from './boardDetail/BoardDetailMetaPanel';
+import { BoardCodeEditorModal } from './boardDetail/BoardCodeEditorModal';
 import { BoardDetailPageHeader } from './boardDetail/BoardDetailPageHeader';
 import { BoardDetailReviseTab } from './boardDetail/BoardDetailReviseTab';
 import { BoardShellModal } from './boardDetail/BoardShellModal';
@@ -73,6 +74,8 @@ export function BoardDetailPage() {
     title: string;
   } | null>(null);
   const boardSharePortalRef = useRef<HTMLDivElement | null>(null);
+  const [codeEditorOpen, setCodeEditorOpen] = useState(false);
+  const [codeEditorSaveError, setCodeEditorSaveError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     return () => {
@@ -515,6 +518,12 @@ export function BoardDetailPage() {
     ? 'In eigenen Worten beschreiben, was sich am Board ändern soll — die KI liefert eine neue Fassung aus HTML, CSS und JavaScript.'
     : reviseBlockedTitle;
 
+  const showCodeEditorEntry = Boolean(user?.is_staff || user?.is_superuser);
+  const canOpenCodeEditor = Boolean(showCodeEditorEntry && isHeadView);
+  const codeEditorBlockedTitle: string | undefined = !isHeadView
+    ? aiBlockedHint
+    : undefined;
+
   const handleWithdrawFromLibrary = useCallback(() => {
     const ok = window.confirm(
       'Dieses Board aus der öffentlichen Bibliothek nehmen? Der Eintrag ist danach für andere nicht mehr sichtbar.',
@@ -582,6 +591,13 @@ export function BoardDetailPage() {
           canReviseWithAi={canReviseWithAi}
           reviseButtonTitle={reviseButtonTitle}
           reviseBlockedTitle={reviseBlockedTitle}
+          showCodeEditorEntry={showCodeEditorEntry}
+          canOpenCodeEditor={canOpenCodeEditor}
+          codeEditorBlockedTitle={codeEditorBlockedTitle}
+          onOpenCodeEditor={() => {
+            setCodeEditorSaveError(null);
+            setCodeEditorOpen(true);
+          }}
           onOpenRevise={() => setReviseOpen(true)}
           libraryShareMessage={libraryShareMessage}
           userIsStaff={Boolean(user?.is_staff)}
@@ -630,7 +646,7 @@ export function BoardDetailPage() {
         shareOverlayPortalRef={boardSharePortalRef}
         shareToolbarAction={{
           onClick: handleDetailShareClick,
-          disabled: !isHeadView || board.viewer_is_owner === false,
+          disabled: !isHeadView,
           loading: patchMutation.isPending && sharePrepOpen,
           title: isHeadView ? undefined : aiBlockedHint,
           ariaLabel: isHeadView ? undefined : aiBlockedHint,
@@ -642,6 +658,38 @@ export function BoardDetailPage() {
         }
       />
       </div>
+
+      <BoardCodeEditorModal
+        open={codeEditorOpen}
+        onClose={() => {
+          if (patchMutation.isPending) return;
+          setCodeEditorOpen(false);
+          setCodeEditorSaveError(null);
+        }}
+        initialHtml={board.html}
+        initialCss={board.css}
+        initialJavascript={board.javascript}
+        onSave={(payload) => {
+          setCodeEditorSaveError(null);
+          patchMutation.mutate(payload, {
+            onSuccess: () => {
+              setCodeEditorOpen(false);
+              setCodeEditorSaveError(null);
+            },
+            onError: (err: unknown) => {
+              const data = (err as { response?: { data?: { detail?: string; errors?: string[] } } })
+                ?.response?.data;
+              const detail = data?.detail || (err as Error)?.message || 'Speichern fehlgeschlagen.';
+              const more = data?.errors?.filter(Boolean).length
+                ? ` (${data.errors!.join('; ')})`
+                : '';
+              setCodeEditorSaveError(`${detail}${more}`);
+            },
+          });
+        }}
+        savePending={patchMutation.isPending}
+        saveError={codeEditorSaveError}
+      />
 
       <BoardShellModal
         open={reviseOpen}

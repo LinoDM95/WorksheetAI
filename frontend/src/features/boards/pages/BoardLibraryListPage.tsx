@@ -32,11 +32,9 @@ import {
   uniqueCanonicalSubjectLabelsFromRows,
   type LibraryPurposeFilter,
 } from '../lib/libraryCatalogFilters';
-import { BoardCodeEditorModal } from '../components/BoardCodeEditorModal';
 import { BoardLibraryThumbnail } from '../components/library/BoardLibraryThumbnail';
 import { LibraryPlannedDuration } from '../components/library/LibraryPlannedDuration';
 import { LibrarySubjectChipsScrollBar } from '../components/library/LibrarySubjectChipsScrollBar';
-import { useAuth } from '../../../lib/authContext';
 import type { BoardLibraryItem, LibraryId } from '../types';
 import type { WorksheetLibraryItem } from '../../../types';
 import { WorksheetCardThumbnail } from '../../worksheets/WorksheetCardThumbnail';
@@ -82,12 +80,10 @@ function BoardLibraryCatalogCard({
   board,
   index,
   libraryScope,
-  onAdminEditBoard,
 }: {
   board: BoardLibraryItem;
   index: number;
   libraryScope: BoardLibraryScope;
-  onAdminEditBoard?: (board: BoardLibraryItem) => void;
 }) {
   const com = board.comment_count ?? 0;
   const isViewerOwner = Boolean(board.viewer_is_owner);
@@ -100,28 +96,20 @@ function BoardLibraryCatalogCard({
       transition={{ duration: 0.2, delay: Math.min(index * 0.03, 0.24) }}
       className="min-w-0"
     >
-      <div
+      <Link
+        to={board.id}
+        aria-label={
+          libraryScope === 'mine'
+            ? `${board.title || 'Board'} — Vorschau öffnen`
+            : `${board.title || 'Board'} — Community-Vorschau öffnen`
+        }
         className={cn(
-          'flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)] shadow-sm',
-          'transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
+          'group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)]',
+          'shadow-sm outline-none ring-indigo-400/80 transition-[transform,box-shadow,border-color] duration-150',
+          'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md',
+          'focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
         )}
       >
-        <Link
-          to={
-            libraryScope === 'mine'
-              ? { pathname: board.id, search: 'from=mine' }
-              : board.id
-          }
-          aria-label={
-            libraryScope === 'mine'
-              ? `${board.title || 'Board'} — Vorschau öffnen`
-              : `${board.title || 'Board'} — Community-Vorschau öffnen`
-          }
-          className={cn(
-            'group/link relative flex min-h-0 flex-1 flex-col outline-none ring-indigo-400/80',
-            'focus-visible:rounded-t-xl focus-visible:border-indigo-400 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-app)]',
-          )}
-        >
         <div className="relative shrink-0 overflow-hidden">
           {techPreview.length > 0 ? (
             <div className="pointer-events-none absolute left-2 top-2 z-20 flex max-w-[calc(100%-1rem)] flex-wrap gap-1">
@@ -139,7 +127,7 @@ function BoardLibraryCatalogCard({
             aria-hidden
             className={cn(
               'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-14 bg-gradient-to-t from-slate-950/35 to-transparent',
-              'opacity-80 transition-opacity duration-200 group-hover/link:opacity-95',
+              'opacity-80 transition-opacity duration-200 group-hover:opacity-95',
             )}
           />
           <BoardLibraryThumbnail
@@ -181,34 +169,13 @@ function BoardLibraryCatalogCard({
                 {com}
               </span>
             </div>
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100/80 transition-[background-color,color] group-hover:bg-indigo-600 group-hover:text-white group-hover:ring-indigo-500">
+              Ansehen
+              <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
+            </span>
           </div>
         </div>
-        </Link>
-        <div className="flex flex-col gap-1.5 border-t border-slate-100 bg-slate-50/70 px-3 py-2">
-          <Link
-            to={
-              libraryScope === 'mine'
-                ? { pathname: board.id, search: 'from=mine' }
-                : board.id
-            }
-            className="inline-flex w-full items-center justify-center gap-0.5 rounded-lg bg-indigo-50 px-2 py-1.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100/80 transition-[background-color,color,transform] hover:bg-indigo-600 hover:text-white hover:ring-indigo-500"
-          >
-            Ansehen
-            <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
-          </Link>
-          {onAdminEditBoard ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              onClick={() => onAdminEditBoard(board)}
-            >
-              Code bearbeiten (Admin)
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      </Link>
     </motion.article>
   );
 }
@@ -277,9 +244,6 @@ function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; 
 
 export function BoardLibraryListPage() {
   const location = useLocation();
-  const { user } = useAuth();
-  const isStaff = Boolean(user?.is_staff);
-  const [adminCodeBoard, setAdminCodeBoard] = useState<BoardLibraryItem | null>(null);
 
   const [libraryScope, setLibraryScope] = useState<BoardLibraryScope>('all');
   const [filtersExpanded, setFiltersExpanded] = useState(false);
@@ -293,9 +257,6 @@ export function BoardLibraryListPage() {
   const [resourceKind, setResourceKind] = useState<ResourceKindFilter>(() =>
     readKindFromParams(new URLSearchParams(location.search)),
   );
-
-  const showAdminBoardCodeEditor =
-    isStaff && libraryScope === 'mine' && resourceKind !== 'worksheets';
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
@@ -518,7 +479,6 @@ export function BoardLibraryListPage() {
   }, [isPending, filteredSorted, libraryScope, sourceCount, ownerCount]);
 
   return (
-    <>
     <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col bg-[var(--color-bg-app)]">
       <div className="sticky top-0 z-20 shrink-0 border-b border-slate-200 bg-[var(--color-bg-card)]">
         <div className="mx-auto max-w-[1600px] space-y-1.5 px-2 py-1.5 sm:px-3 sm:py-2">
@@ -853,7 +813,6 @@ export function BoardLibraryListPage() {
                           board={row}
                           index={si * 30 + i}
                           libraryScope={libraryScope}
-                          onAdminEditBoard={showAdminBoardCodeEditor ? setAdminCodeBoard : undefined}
                         />
                       ) : (
                         <WorksheetLibraryCatalogCard
@@ -887,7 +846,6 @@ export function BoardLibraryListPage() {
                       board={row}
                       index={i}
                       libraryScope={libraryScope}
-                      onAdminEditBoard={showAdminBoardCodeEditor ? setAdminCodeBoard : undefined}
                     />
                   ) : (
                     <WorksheetLibraryCatalogCard key={`ws-${row.id}`} ws={row} index={i} />
@@ -899,12 +857,5 @@ export function BoardLibraryListPage() {
         </div>
       </div>
     </div>
-    <BoardCodeEditorModal
-      open={adminCodeBoard !== null}
-      boardId={adminCodeBoard?.id ?? null}
-      boardTitle={adminCodeBoard?.title}
-      onClose={() => setAdminCodeBoard(null)}
-    />
-    </>
   );
 }

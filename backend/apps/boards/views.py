@@ -158,12 +158,7 @@ class BoardViewSet(APIPaywallMixin, viewsets.ModelViewSet):
             owner = resolve_board_owner(self.request.user)
         except ValueError:
             return Board.objects.none()
-        base = Board.objects.select_related('folder')
-        if self.action == 'list':
-            return base.filter(owner=owner)
-        if getattr(self.request.user, 'is_staff', False):
-            return base
-        return base.filter(owner=owner)
+        return Board.objects.filter(owner=owner).select_related('folder')
 
     def get_serializer_class(self):
         if self.action == 'list':

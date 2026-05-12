@@ -37,24 +37,6 @@ def patch_board_with_validation(*, request, instance: Board, _partial: bool):
 
     body = request.data if isinstance(request.data, dict) else dict(request.data)
 
-    try:
-        acting_owner = resolve_board_owner(request.user)
-    except ValueError:
-        acting_owner = None
-    board_is_foreign = acting_owner is not None and instance.owner_id != acting_owner.id
-
-    if board_is_foreign:
-        if 'folder_id' in body:
-            return response.Response(
-                {'detail': 'Den Galerie-Ordner kann nur der Board-Eigentümer ändern.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if 'student_link_enabled' in body or 'student_link_valid_minutes' in body:
-            return response.Response(
-                {'detail': 'Schüler-Link-Einstellungen können nur vom Board-Eigentümer geändert werden.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
     if body.get('library_public') is True and not instance.is_catalog_listed():
         lt_chk = str(
             body.get('library_listing_title', instance.library_listing_title or '') or '',
