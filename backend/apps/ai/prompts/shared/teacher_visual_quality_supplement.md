@@ -35,7 +35,7 @@ Die **jeweils gültigen Haupt-Prompts und Produktregeln** haben **immer Vorrang*
 - **Hierarchie:** klare Lesereihenfolge (Überschrift → Aufgabe → Steuerung); nicht zu viele gleichwertige Flächen konkurrieren lassen.
 - **Typografie:** auf der **1280×720**-Bühne lesbar; **kein** Mikrotext für Pflichtinformationen; ausreichender Zeilenabstand.
 - **Touch:** wie im Hauptprompt — große Ziele, Abstände; **kein** hover-only für Pflichtaktionen.
-- **Dekoration:** nur, wenn sie **didaktisch** oder **orientierend** hilft — kein „Tech-Deko“ um des Effekts willen.
+- **Dekoration:** nur, wenn sie **didaktisch** oder **orientierend** hilft — kein „Tech-Deko“ um des Effekts willen. **Kurzes, lernmotivierendes Feedback** (z. B. dezentes Konfetti nach richtiger Antwort) ist **keine** bloße Ziererei, solange es den Auftrag nicht übertönt.
 
 ### 2.3 Barrierefreiheit (technische WCAG 2.2 — Kurzfassung, **keine** Zertifizierung)
 
@@ -52,7 +52,7 @@ Die **jeweils gültigen Haupt-Prompts und Produktregeln** haben **immer Vorrang*
 - **Vorhersehbar:** Nutzer verstehen, wie es weitergeht; klare Primäraktionen.
 - **Konsistenz:** gleiche Begriffe und Muster für gleiche Aktionen.
 - **Fehlerfreundlichkeit:** kurze, hilfreiche Hinweise bei Fehlbedienung — ohne belehrenden Fließtext.
-- **Minimalismus:** so viel Gestaltung wie nötig für Klarheit und Motivation — nicht mehr.
+- **Minimalismus (visuelle Oberfläche):** so viel **Gestaltung** wie für **Klarheit und Motivation** nötig — nicht mehr **reine Deko**. **Gleichzeitig:** Das ist **kein** Aufruf, auf **passende** Technik zu verzichten — **Libraries, Szenen-Engines** und **strukturierten Code** wie im **Hauptprompt** (Qualität vor Kurzcode) sind davon **nicht** betroffen.
 
 ---
 

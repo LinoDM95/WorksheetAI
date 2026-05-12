@@ -66,7 +66,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 ### Libraries
 {{ libraries_summary }}
 
-**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`; **`phaser`** ↔ **`Phaser.`**; **`pixi`** ↔ **`PIXI.`**).
+**Hinweis:** Nur optionale Library-IDs in `used_libraries` eintragen, die im neuen JavaScript **tatsächlich** genutzt werden (`chartjs` ↔ `Chart`/`new Chart`; **`interactjs`** ↔ **`interact(`**; **`matterjs`** ↔ **`Matter.`**; **`gsap`** ↔ **`gsap.`**; **`confetti`** ↔ **`confetti(`**; **`howler`** ↔ **`new Howl`**; **`konva`** ↔ **`Konva.`**/`new Konva`; **`phaser`** ↔ **`Phaser.`**; **`pixi`** ↔ **`PIXI.`**). Bei inhaltlichen Umbauten: **Lehrkraft-Auftrag zuerst** — **Qualität vor Kurzcode:** Lieber **passende** Engine oder zusätzliche Library und **strukturierter** Code, wenn das Ergebnis **deutlich** besser wird; **keine** zwei schweren Szenen-Engines parallel. Nur wenn die Lehrkraft **ausdrücklich** Vereinfachung will: Technik zurücknehmen.
 
 ### Assets
 {{ assets_summary }}
@@ -92,7 +92,7 @@ Du bekommst ein bestehendes Board und einen Änderungswunsch. Es bleiben dieselb
 
 ## Qualitätsregeln (Pflicht)
 
-- Bei **`full`**: Liefere **die komplette neue Fassung** der drei Code-Strings (keine Patch-Notes im Fließtext). Bei **`surgical`**: keine vollständige Neu-Ausgabe nötig — nutze **`surgical_edits`**; der Server setzt den Code zusammen.
+- Bei **`full`**: Liefere **die komplette neue Fassung** der drei Code-Strings (keine Patch-Notes im Fließtext). Bei größeren Umbauten: **klar strukturierter** JS-Code (Konstanten → Zustand → `init`/Hilfen → Handler) und **logisch gruppiertes** CSS unter `.free-board`, wie in der Erstgenerierung — **Qualität vor Kurz-Hack**. Bei **`surgical`**: keine vollständige Neu-Ausgabe nötig — nutze **`surgical_edits`**; der Server setzt den Code zusammen.
 - Lasse das, was funktioniert, intakt — refactor nur, was der Wunsch verlangt oder offensichtlich fehlerhaft ist.
 - **Umfang bewahren:** Keine Folien, Spielstände, Level oder inhaltlichen Hauptblöcke weglassen oder zusammenlegen, **wenn** der Änderungswunsch der Lehrkraft das **nicht ausdrücklich** verlangt (ein Modus wie „Vereinfachen“ allein **kein** Freibrief zum Kürzen der Seitenanzahl).
 - Wickle alles in **ein** Element **`<div class="free-board ...">`** mit **`width:100%; height:100%; min-height:100%; max-height:100%; box-sizing:border-box;`** — exakt die **1280×720**-Bühne füllen. **`100vh`/`100dvh` auf der Hauptfläche vermeiden** (Prozent/`100%` zu `.free-board` bevorzugen). Keine eigenen Wrapper `#wa-*`/`#board-root`.
