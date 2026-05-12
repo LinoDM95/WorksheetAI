@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { cn } from '../../../../lib/cn';
 import { buildFreeHtmlSrcDoc } from './buildFreeHtmlSrcDoc';
 import type { DatasetId, LibraryId } from '../../types';
@@ -33,6 +33,12 @@ type Props = {
   surfaceClassName?: string;
   /** Zusätzliche Klassen direkt auf dem iframe (z. B. Abstimmung zur Surface). */
   iframeClassName?: string;
+  /** Ref auf das Sandbox-iframe (z. B. zur Herkunftsprüfung von postMessage). */
+  iframeRef?: RefObject<HTMLIFrameElement | null>;
+  /** Nur in vertrauenswürdiger Admin-UI: Konsolen-/Fehlerausgaben an parent postMessage. */
+  forwardConsoleToParent?: boolean;
+  /** Geheimer Token vom Parent; muss mit postMessage-Payload übereinstimmen. */
+  sandboxLogToken?: string;
 };
 
 const datasetIdsKey = (ids: DatasetId[] | undefined): string =>
@@ -56,6 +62,9 @@ export const FreeHtmlBoardFrame = ({
   onSandboxLoad,
   surfaceClassName,
   iframeClassName,
+  iframeRef,
+  forwardConsoleToParent = false,
+  sandboxLogToken = '',
 }: Props) => {
   const [boardDatasets, setBoardDatasets] = useState<Record<string, unknown> | null>(null);
   const idsSignature = useMemo(() => datasetIdsKey(usedDatasets), [usedDatasets]);
@@ -109,6 +118,8 @@ export const FreeHtmlBoardFrame = ({
         documentBaseHref,
         frozenPreview,
         frozenPreviewFreezeDelayMs,
+        forwardConsoleToParent: false,
+        sandboxLogToken: '',
       });
     }
     return buildFreeHtmlSrcDoc({
@@ -121,6 +132,8 @@ export const FreeHtmlBoardFrame = ({
       documentBaseHref,
       frozenPreview,
       frozenPreviewFreezeDelayMs,
+      forwardConsoleToParent: Boolean(forwardConsoleToParent && sandboxLogToken.trim().length > 0),
+      sandboxLogToken: sandboxLogToken.trim(),
     });
   }, [
     html,
@@ -134,6 +147,8 @@ export const FreeHtmlBoardFrame = ({
     documentBaseHref,
     frozenPreview,
     frozenPreviewFreezeDelayMs,
+    forwardConsoleToParent,
+    sandboxLogToken,
   ]);
 
   const iframeMountKey = `${boardFrameId ?? 'board'}-${reloadKey}`;
@@ -160,6 +175,7 @@ export const FreeHtmlBoardFrame = ({
       >
         <iframe
           key={iframeMountKey}
+          ref={iframeRef}
           title={boardFrameId ? `Board ${boardFrameId}` : 'Board (Sandbox)'}
           srcDoc={srcDoc}
           onLoad={onSandboxLoad}

@@ -21,6 +21,7 @@
  */
 import { STAGE_BASE_H, STAGE_BASE_W } from '../../boardStageLayout';
 import type { LibraryId } from '../../types';
+import { WA_BOARD_SANDBOX_LOG_TYPE } from './sandboxConsoleBridge';
 
 const ESCAPE_STYLE_RE = /<\/style/gi;
 const ESCAPE_SCRIPT_RE = /<\/script/gi;
@@ -197,6 +198,12 @@ export type BuildSrcDocOptions = {
   frozenPreview?: boolean;
   /** Verzögerung vor dem Freeze (ms). Standard nur wirksam wenn `frozenPreview`. */
   frozenPreviewFreezeDelayMs?: number;
+  /**
+   * Nur für vertrauenswürdige Admin-UI: leitet Konsolen-/Fehlermeldungen per postMessage an das Elternfenster.
+   * Erfordert `sandboxLogToken` (vom Parent generiert, zur Absicherung der Nachrichtenherkunft).
+   */
+  forwardConsoleToParent?: boolean;
+  sandboxLogToken?: string;
 };
 
 /** Zeit, die CSS-Animationen im Thumbnail-iframe laufen dürfen, bevor „Freeze“ greift. */
@@ -227,6 +234,69 @@ const libraryScriptTags = (usedLibraries: LibraryId[]): string => {
 const optionalLeafletStyle = (usedLibraries: LibraryId[]): string => {
   if (!usedLibraries.includes('leaflet')) return '';
   return '<link rel="stylesheet" href="/board-libs/leaflet.css" />';
+};
+
+const buildParentConsoleForwardScript = (token: string): string => {
+  const typeJson = JSON.stringify(WA_BOARD_SANDBOX_LOG_TYPE);
+  const tokenJson = JSON.stringify(token);
+  return `
+<script>
+(function () {
+  var T = ${typeJson};
+  var TOKEN = ${tokenJson};
+  function send(level, message) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: T, token: TOKEN, level: level, message: String(message), ts: Date.now() }, '*');
+      }
+    } catch (_) {}
+  }
+  window.__waParentLog = function (level, msg) { send(level || 'log', msg); };
+  var origLog = console.log;
+  var origErr = console.error;
+  var origWarn = console.warn;
+  function stringifyArgs(argsObj) {
+    return Array.prototype.join.call(
+      Array.prototype.map.call(argsObj, function (a) {
+        try {
+          return typeof a === 'string' ? a : JSON.stringify(a);
+        } catch (_) {
+          return String(a);
+        }
+      }),
+      ' '
+    );
+  }
+  console.log = function () {
+    try { send('log', stringifyArgs(arguments)); } catch (_) {}
+    return origLog.apply(console, arguments);
+  };
+  console.error = function () {
+    try { send('error', stringifyArgs(arguments)); } catch (_) {}
+    return origErr.apply(console, arguments);
+  };
+  console.warn = function () {
+    try { send('warn', stringifyArgs(arguments)); } catch (_) {}
+    return origWarn.apply(console, arguments);
+  };
+  window.addEventListener('error', function (e) {
+    try {
+      var msg = e && e.message ? e.message : String(e);
+      var line = e && e.lineno != null ? ' (Zeile ' + e.lineno + ')' : '';
+      send('error', msg + line);
+    } catch (_) {}
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    try {
+      var reason = e && e.reason;
+      var msg = reason != null && typeof reason === 'object' && 'message' in reason
+        ? String(reason.message)
+        : String(reason);
+      send('error', 'Unbehandelte Promise-Ablehnung: ' + msg);
+    } catch (_) {}
+  });
+})();
+<\/script>`;
 };
 
 /** Skaliert die Design-Bühne in den iframe-Viewport; danach Resize-Nudge für Layouts. Immer eingebunden (nicht Nutzer-JS). */
@@ -413,7 +483,13 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
     documentBaseHref,
     frozenPreview,
     frozenPreviewFreezeDelayMs,
+    forwardConsoleToParent = false,
+    sandboxLogToken = '',
   } = opts;
+  const consoleForwardHtml =
+    forwardConsoleToParent && sandboxLogToken.trim().length > 0
+      ? buildParentConsoleForwardScript(sandboxLogToken.trim())
+      : '';
   const safeCss = escapeStyleFragment(css || '');
   const userJs = scriptsEnabled ? escapeScriptFragment(javascript || '') : '';
   const libsHtml = libraryScriptTags(usedLibraries);
@@ -434,6 +510,9 @@ export function buildFreeHtmlSrcDoc(opts: BuildSrcDocOptions): string {
       })();
     } catch (err) {
       try {
+        if (typeof window.__waParentLog === 'function') {
+          window.__waParentLog('error', 'Skriptfehler: ' + String(err && err.message || err));
+        }
         var pre = document.createElement('pre');
         pre.setAttribute('style', 'position:fixed;bottom:0;left:0;right:0;max-height:30%;overflow:auto;background:#fee2e2;color:#7f1d1d;padding:10px 14px;font-size:12px;line-height:1.4;z-index:2147483647;border-top:1px solid #fecaca;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;');
         pre.textContent = 'Skriptfehler: ' + String(err && err.message || err);
@@ -459,6 +538,7 @@ ${datasetsHtml}
 <script>
 ${errorOverlayScript}
 </script>
+${consoleForwardHtml}
 </head>
 <body>
 <div id="wa-viewport">

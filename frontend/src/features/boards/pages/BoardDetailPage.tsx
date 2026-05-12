@@ -689,6 +689,9 @@ export function BoardDetailPage() {
         }}
         savePending={patchMutation.isPending}
         saveError={codeEditorSaveError}
+        showAdminSandboxConsole={showCodeEditorEntry}
+        usedLibraries={board.used_libraries ?? []}
+        usedDatasets={board.used_datasets}
       />
 
       <BoardShellModal
