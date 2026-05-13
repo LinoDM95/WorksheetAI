@@ -22,6 +22,7 @@ from .free_html_sanitize import (
 )
 from .free_html_surgical_edits import normalize_provider_free_html_response
 from .free_html_validate_repair import run_validation_repairs
+from .free_html_script_closure import run_script_closure_pass
 from .free_html_visual_polish import run_visual_polish_pass
 from .visual_resource_registry import (
     filter_used_assets,
@@ -193,6 +194,17 @@ class FreeHtmlBoardGenerationService:
                     document_base_href=None,
                 )
                 repair_trace.append(polish_trace)
+                last_raw, bundle, closure_trace = run_script_closure_pass(
+                    provider,
+                    bundle=bundle,
+                    last_raw=last_raw,
+                    resource_ctx=ctx,
+                    context_hint=context_hint,
+                    board_didactic=didactic,
+                    visual_qa_enabled=_visual_qa_for_pipeline(),
+                    document_base_href=None,
+                )
+                repair_trace.append(closure_trace)
 
             title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
@@ -203,6 +215,12 @@ class FreeHtmlBoardGenerationService:
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
             gen_input['visual_polish_pipeline'] = 'on' if ok else 'off'
+            last_closure = next((t for t in reversed(repair_trace) if t.get('round') == 'script_closure'), None)
+            gen_input['script_closure_pipeline'] = (
+                (last_closure.get('skipped') or ('accepted' if last_closure.get('accepted') else 'attempted'))
+                if ok and last_closure
+                else ('skipped_bundle_not_ok' if not ok else 'missing_trace')
+            )
 
             board = Board.objects.create(
                 owner=self.user,
@@ -302,6 +320,23 @@ class FreeHtmlBoardGenerationService:
                     document_base_href=None,
                 )
                 repair_trace.append(polish_trace)
+                yield enc({
+                    'event': 'phase',
+                    'key': 'script_closure',
+                    'pct': 72,
+                    'label': 'Abschließender Skript-Check …',
+                })
+                last_raw, bundle, closure_trace = run_script_closure_pass(
+                    provider,
+                    bundle=bundle,
+                    last_raw=last_raw,
+                    resource_ctx=ctx,
+                    context_hint=context_hint,
+                    board_didactic=didactic,
+                    visual_qa_enabled=_visual_qa_for_pipeline(),
+                    document_base_href=None,
+                )
+                repair_trace.append(closure_trace)
 
             title = resolve_board_title_from_generation(self.payload, last_raw=last_raw, initial_raw=raw)
             desc = str(last_raw.get('description') or raw.get('description') or '')[:5000]
@@ -312,6 +347,12 @@ class FreeHtmlBoardGenerationService:
             gen_input['validation_repair_trace'] = repair_trace
             gen_input['visual_qa_pipeline'] = 'on' if _visual_qa_for_pipeline() else 'off'
             gen_input['visual_polish_pipeline'] = 'on' if ok else 'off'
+            last_closure = next((t for t in reversed(repair_trace) if t.get('round') == 'script_closure'), None)
+            gen_input['script_closure_pipeline'] = (
+                (last_closure.get('skipped') or ('accepted' if last_closure.get('accepted') else 'attempted'))
+                if ok and last_closure
+                else ('skipped_bundle_not_ok' if not ok else 'missing_trace')
+            )
 
             used = _normalize_used_lists(bundle)
             yield enc({

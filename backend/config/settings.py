@@ -267,6 +267,9 @@ BOARDS_FREE_HTML_REVISION_TEMPERATURE = env.float('BOARDS_FREE_HTML_REVISION_TEM
 BOARDS_FREE_HTML_REPAIR_TEMPERATURE = env.float('BOARDS_FREE_HTML_REPAIR_TEMPERATURE', default=0.25)
 # Optionaler zweiter Durchlauf nach erfolgreicher Validierung: nur CSS/SVG-Kosmetik (siehe ``repair_visual_polish``).
 BOARDS_VISUAL_POLISH_TEMPERATURE = env.float('BOARDS_VISUAL_POLISH_TEMPERATURE', default=0.35)
+# Abschluss-Pass „script_closure``: Temperatur und Headless-Wartezeit nach load (ms) für Konsole/pageerror.
+BOARDS_SCRIPT_CLOSURE_TEMPERATURE = env.float('BOARDS_SCRIPT_CLOSURE_TEMPERATURE', default=0.28)
+BOARDS_SCRIPT_CLOSURE_HEADLESS_DWELL_MS = env.int('BOARDS_SCRIPT_CLOSURE_HEADLESS_DWELL_MS', default=2200)
 # Nach Erst- oder Revisions-Generierung: max. zusätzliche KI-Reparaturrunden bei serverseitigen Validierungsfehlern (0–5).
 # Standard **2**: ein erster Versuch nach Initialfehlern, ein weiterer nach ggf. verbleibenden Layout-/JS-Fehlern.
 BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=2)
@@ -300,6 +303,8 @@ SMARTBOARD_LARGE_MODEL = env('SMARTBOARD_LARGE_MODEL', default='gemini-2.5-pro')
 SMARTBOARD_USE_PIPELINE = env.bool('SMARTBOARD_USE_PIPELINE', default=True)
 # Nach erfolgreicher Validierung: optional ein LLM-Pass nur für Oberflächendetails (kein Layout-Umbau).
 SMARTBOARD_ENABLE_VISUAL_POLISH_PASS = env.bool('SMARTBOARD_ENABLE_VISUAL_POLISH_PASS', default=True)
+# Nach Polish/Touch: Audit + Headless-Skriptcheck und optional ein LLM-Reparatur-Schritt (repair_script_fix).
+SMARTBOARD_ENABLE_SCRIPT_CLOSURE_PASS = env.bool('SMARTBOARD_ENABLE_SCRIPT_CLOSURE_PASS', default=True)
 # Nach Touch/Screenshot-Audit: zusätzlicher großer „RepairAgent“-Pass (oft redundant zu Validierungsrepair).
 # Default **aus**, um keine zweite Groß-Reparaturschleife zu bezahlen.
 SMARTBOARD_ENABLE_PIPELINE_REPAIR_AGENT = env.bool('SMARTBOARD_ENABLE_PIPELINE_REPAIR_AGENT', default=False)

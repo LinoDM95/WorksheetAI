@@ -6,8 +6,10 @@
    nur Oberflächendetails — abschaltbar über ``SMARTBOARD_ENABLE_VISUAL_POLISH_PASS``).
 4. **Touch-Audit** (optional). Bei Fehlschlag: **ein** zusätzlicher Reparatur-LLM nur
    wenn ``SMARTBOARD_TOUCH_ONLY_REPAIR`` aktiv und Audit gelaufen ist *(Token-sparend)*.
-5. **Quality-Report**.
-6. Board persistieren + ``AIUsageLog``-Flush.
+5. Nach erfolgreicher Validierung: optional **Script-Closure** (Audit + Headless-Konsole,
+   ein LLM-Reparatur-Pass bei Bedarf — ``SMARTBOARD_ENABLE_SCRIPT_CLOSURE_PASS``).
+6. **Quality-Report**.
+7. Board persistieren + ``AIUsageLog``-Flush.
 
 Optional: NDJSON-Stream mit kurzen deutschsprachigen Fortschrittshinweisen
 (``SmartboardCreativePipeline.iter_ndjson`` / ``generate_board_stream``).
@@ -33,6 +35,7 @@ from .free_html_generation import (
 from .free_html_prompt_context import build_resource_context
 from .free_html_sanitize import validate_free_html_bundle
 from .free_html_validate_repair import run_validation_repairs
+from .free_html_script_closure import run_script_closure_pass
 from .free_html_visual_polish import run_visual_polish_pass
 from .quality_report import build_quality_report
 from .touch_audit import TouchAuditService
@@ -58,12 +61,14 @@ LABEL_TOUCH = 'Wir prüfen die Bedienung für Smartboard und Touch …'
 LABEL_TOUCH_FIX = 'Wir optimieren Bedienflächen und Abstände …'
 LABEL_QUALITY = 'Kurzer Qualitätscheck …'
 LABEL_SAVE = 'Fast fertig — wir speichern …'
+LABEL_SCRIPT_CLOSURE = 'Abschließender Skript-Check …'
 
 PCT_CODEGEN = 12
 PCT_VALIDATE = 32
 PCT_POLISH = 46
 PCT_TOUCH = 62
 PCT_TOUCH_FIX = 78
+PCT_SCRIPT_CLOSURE = 82
 PCT_QUALITY = 88
 PCT_SAVE = 96
 
@@ -319,6 +324,28 @@ class SmartboardCreativePipeline:
                             'structural_after': after_struct,
                         })
 
+        if ok:
+            yield (
+                'phase',
+                {
+                    'event': 'phase',
+                    'key': 'script_closure',
+                    'pct': PCT_SCRIPT_CLOSURE,
+                    'label': LABEL_SCRIPT_CLOSURE,
+                },
+            )
+            last_raw, bundle, closure_trace = run_script_closure_pass(
+                provider,
+                bundle=bundle,
+                last_raw=last_raw,
+                resource_ctx=ctx,
+                context_hint=context_hint,
+                board_didactic=board_didactic_from_generation_payload(self.payload),
+                visual_qa_enabled=visual_qa_enabled,
+                document_base_href=None,
+            )
+            repair_trace.append(closure_trace)
+
         yield (
             'phase',
             {'event': 'phase', 'key': 'quality', 'pct': PCT_QUALITY, 'label': LABEL_QUALITY},
@@ -343,6 +370,12 @@ class SmartboardCreativePipeline:
         gen_input = self._sanitized_input()
         gen_input['validation_repair_trace'] = repair_trace
         gen_input['visual_qa_pipeline'] = 'on' if visual_qa_enabled else 'off'
+        last_closure = next((t for t in reversed(repair_trace) if t.get('round') == 'script_closure'), None)
+        gen_input['script_closure_pipeline'] = (
+            (last_closure.get('skipped') or ('accepted' if last_closure.get('accepted') else 'attempted'))
+            if ok and last_closure
+            else ('skipped_bundle_not_ok' if not ok else 'missing_trace')
+        )
         gen_input['pipeline'] = 'technical'
 
         used_libs = filter_used_libraries(bundle.get('used_libraries'))

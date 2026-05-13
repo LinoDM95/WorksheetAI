@@ -158,6 +158,22 @@ class PromptLoaderBoardTests(SimpleTestCase):
         self.assertIn('Bio', p)
         self.assertIn('Organelle', p)
 
+    def test_repair_mode_script_fix_prompt_loads(self) -> None:
+        p = build_repair_mode_prompt(
+            'script_fix',
+            {
+                'html': '<div id="board-root"></div>',
+                'css': '',
+                'javascript': 'confetti();',
+                'validation_errors': ['[Skript] confetti ohne Lib'],
+                'repair_attempt': 1,
+                'repair_attempt_max': 1,
+                'context_hint': 'test',
+            },
+        )
+        self.assertIn('script_fix', p.lower())
+        self.assertIn('used_libraries', p.lower())
+
     def test_free_html_repair_lists_errors(self) -> None:
         p = build_free_html_repair_prompt({'validation_errors': ['a', 'b'], 'repair_attempt': 2})
         self.assertIn('1.', p)

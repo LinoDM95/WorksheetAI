@@ -535,7 +535,7 @@ def build_style_dna_prompt(payload: dict) -> str:
 def build_repair_mode_prompt(mode: str, payload: dict) -> str:
     """Mode-spezifischer Repair-Prompt für RepairAgent.
 
-    ``mode`` ∈ {'bug_fix','design_improve','visual_polish','touch_optimize','layout_fix',
+    ``mode`` ∈ {'bug_fix','design_improve','visual_polish','script_fix','touch_optimize','layout_fix',
     'performance_fix','factual_warning','security_fix','general_repair'}.
     Fallback: ``free_html_repair.md`` (klassischer Repair-Prompt).
     """

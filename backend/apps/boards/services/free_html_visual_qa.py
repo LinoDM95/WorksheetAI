@@ -150,10 +150,18 @@ def load_board_datasets_for_qa(used_dataset_ids: list[Any]) -> dict[str, Any]:
     return out
 
 
-def run_visual_layout_qa(bundle: dict[str, Any], *, document_base_href: str) -> tuple[list[str], list[str]]:
+def run_visual_layout_qa(
+    bundle: dict[str, Any],
+    *,
+    document_base_href: str,
+    post_load_delay_ms: int = 1200,
+) -> tuple[list[str], list[str]]:
     """
     Rendert das Bundle headless und liefert (errors, warnings).
     Fehler blockieren 'generated' (werden wie Validierungsfehler in die Reparaturschleife eingespeist).
+
+    post_load_delay_ms
+        Wartezeit nach ``load``, damit kurze Timer/async Konsole/pageerror noch gemeldet werden.
     """
     if not getattr(settings, 'BOARDS_VISUAL_QA_ALLOWED', True):
         return [], ['Visuelle QA ist auf dem Server deaktiviert (BOARDS_VISUAL_QA_ALLOWED).']
@@ -216,7 +224,8 @@ def run_visual_layout_qa(bundle: dict[str, Any], *, document_base_href: str) -> 
 
             page.on('pageerror', on_page_error)
             page.set_content(doc, wait_until='load', timeout=90_000)
-            page.wait_for_timeout(1200)
+            dwell = max(400, min(int(post_load_delay_ms), 8000))
+            page.wait_for_timeout(dwell)
             try:
                 result = page.evaluate(LAYOUT_EVAL_JS)
             except Exception as exc:
