@@ -19,14 +19,19 @@ class SubscriptionPayload(TypedDict):
 
 
 def user_has_platform_access(user: Any) -> bool:
-    """Staff/Superuser immer; Demo mit Credit-Saldo > 0; sonst Abo mit monatlichem Kontingent > 0."""
+    """Staff/Superuser immer; Demo mit Credit-Saldo > 0 und eigenem Passwort gesetzt; sonst Abo."""
     if user is None or not getattr(user, 'is_authenticated', False):
         return False
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
         return True
-    from apps.accounts.services.demo_accounts import is_demo_user_with_active_access
+    from apps.accounts.services.demo_accounts import (
+        demo_must_set_own_password,
+        is_demo_user_with_active_access,
+    )
 
     if is_demo_user_with_active_access(user):
+        if demo_must_set_own_password(user):
+            return False
         return True
     sub = get_user_subscription(user)
     if sub is None:

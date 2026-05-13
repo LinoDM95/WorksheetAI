@@ -22,6 +22,7 @@ import { BackofficePage } from './features/backoffice/BackofficePage';
 import { SubscriptionPage } from './features/subscription/SubscriptionPage';
 import { CreditsPage } from './features/subscription/CreditsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { DemoSetOwnPasswordPage } from './features/auth/DemoSetOwnPasswordPage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
 
@@ -169,13 +170,19 @@ const ProtectedAppLayout = () => {
     location.pathname === '/app/credits' || location.pathname.startsWith('/app/credits/');
   const settingsPath =
     location.pathname === '/app/settings' || location.pathname.startsWith('/app/settings/');
+  const demoPasswordPath =
+    location.pathname === '/app/demo-passwort' || location.pathname.startsWith('/app/demo-passwort/');
   const bypassPaywall = user.is_staff || user.is_superuser;
+  if (!bypassPaywall && user.demo_must_set_own_password === true && !demoPasswordPath) {
+    return <Navigate to="/app/demo-passwort" replace />;
+  }
   if (
     !bypassPaywall &&
     user.has_platform_access !== true &&
     !subscriptionPath &&
     !creditsPath &&
-    !settingsPath
+    !settingsPath &&
+    !demoPasswordPath
   ) {
     return <Navigate to="/app/abonnement" replace />;
   }
@@ -266,6 +273,17 @@ export default function App() {
           element={
             <ShellRoute topbar={{ title: 'Einstellungen', subtitle: 'Account übernehmen, Konto, Passwort und Zahlungen' }}>
               <SettingsPage />
+            </ShellRoute>
+          }
+        />
+        <Route
+          path="demo-passwort"
+          element={
+            <ShellRoute
+              layoutVariant="focus"
+              topbar={{ title: 'Sicherheit', subtitle: 'Persönliches Passwort für deinen Demo-Zugang' }}
+            >
+              <DemoSetOwnPasswordPage />
             </ShellRoute>
           }
         />

@@ -18,7 +18,10 @@ class DemoAccountApiTests(TestCase):
             email='demo-u@demo.example.org',
             password='DemoInit123!',
         )
-        UserProfile.objects.filter(user=self.demo).update(is_demo=True)
+        UserProfile.objects.filter(user=self.demo).update(
+            is_demo=True,
+            demo_must_set_own_password=False,
+        )
         UserCreditBalance.objects.filter(user=self.demo).update(balance=5000)
         self.client = APIClient()
         self.client.force_authenticate(user=self.demo)
@@ -27,7 +30,60 @@ class DemoAccountApiTests(TestCase):
         r = self.client.get('/api/auth/me/')
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertTrue(r.data.get('is_demo_account'))
+        self.assertFalse(r.data.get('demo_must_set_own_password'))
         self.assertTrue(r.data.get('has_platform_access'))
+
+    def test_me_demo_must_set_own_password_blocks_access(self) -> None:
+        UserProfile.objects.filter(user=self.demo).update(demo_must_set_own_password=True)
+        r = self.client.get('/api/auth/me/')
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertTrue(r.data.get('demo_must_set_own_password'))
+        self.assertFalse(r.data.get('has_platform_access'))
+
+    def test_demo_set_own_password(self) -> None:
+        UserProfile.objects.filter(user=self.demo).update(demo_must_set_own_password=True)
+        r = self.client.post(
+            '/api/auth/demo/set-own-password/',
+            {
+                'current_password': 'DemoInit123!',
+                'new_password': 'PersonalDemo999!',
+                'new_password_confirm': 'PersonalDemo999!',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.demo.refresh_from_db()
+        self.assertTrue(self.demo.check_password('PersonalDemo999!'))
+        prof = UserProfile.objects.get(user=self.demo)
+        self.assertTrue(prof.is_demo)
+        self.assertFalse(prof.demo_must_set_own_password)
+        r2 = self.client.get('/api/auth/me/')
+        self.assertTrue(r2.data.get('has_platform_access'))
+
+    def test_demo_set_own_password_rejects_non_demo(self) -> None:
+        UserProfile.objects.filter(user=self.demo).update(is_demo=False, demo_must_set_own_password=False)
+        r = self.client.post(
+            '/api/auth/demo/set-own-password/',
+            {
+                'current_password': 'DemoInit123!',
+                'new_password': 'PersonalDemo999!',
+                'new_password_confirm': 'PersonalDemo999!',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_demo_set_own_password_rejects_when_not_required(self) -> None:
+        r = self.client.post(
+            '/api/auth/demo/set-own-password/',
+            {
+                'current_password': 'DemoInit123!',
+                'new_password': 'PersonalDemo999!',
+                'new_password_confirm': 'PersonalDemo999!',
+            },
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_finalize_demo_account(self) -> None:
         r = self.client.post(

@@ -25,6 +25,8 @@ export type AuthUser = {
   has_platform_access?: boolean;
   /** True: Demo-Zugang — Abo/Zahlungen erst nach „Account übernehmen“ in den Einstellungen. */
   is_demo_account?: boolean;
+  /** True: erst nach Setzen eines persönlichen Passworts ist der Arbeitsbereich freigeschlossen (Konto bleibt Demo). */
+  demo_must_set_own_password?: boolean;
   subscription?: {
     plan_slug: string;
     plan_name: string;

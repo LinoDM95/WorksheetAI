@@ -132,6 +132,7 @@ class UserSerializer(serializers.ModelSerializer):
     subscription = serializers.SerializerMethodField()
     has_platform_access = serializers.SerializerMethodField()
     is_demo_account = serializers.SerializerMethodField()
+    demo_must_set_own_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -145,6 +146,7 @@ class UserSerializer(serializers.ModelSerializer):
             'subscription',
             'has_platform_access',
             'is_demo_account',
+            'demo_must_set_own_password',
             'is_staff',
             'is_superuser',
         ]
@@ -158,6 +160,11 @@ class UserSerializer(serializers.ModelSerializer):
         from apps.accounts.services.demo_accounts import profile_is_demo
 
         return profile_is_demo(obj)
+
+    def get_demo_must_set_own_password(self, obj: User) -> bool:
+        from apps.accounts.services.demo_accounts import demo_must_set_own_password
+
+        return demo_must_set_own_password(obj)
 
     def get_subscription(self, obj: User) -> dict | None:
         from apps.accounts.services.subscription import get_subscription_api_payload

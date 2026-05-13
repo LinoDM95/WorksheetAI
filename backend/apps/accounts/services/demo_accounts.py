@@ -19,7 +19,7 @@ def profile_is_demo(user: Any) -> bool:
 
 
 def demo_must_set_own_password(user: Any) -> bool:
-    """Legacy: Profilfeld für Admin/Debug – kein API-Gate mehr; Finalize erfolgt über Einstellungen."""
+    """True: Demo-Login noch mit Gemeinschaftspasswort — Plattformzugriff gesperrt bis eigenes Passwort gesetzt."""
     if user is None or not getattr(user, 'pk', None):
         return False
     if getattr(user, 'is_staff', False) or getattr(user, 'is_superuser', False):

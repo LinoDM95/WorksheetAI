@@ -131,6 +131,42 @@ class FinalizeDemoAccountView(APIView):
         )
 
 
+class DemoSetOwnPasswordView(APIView):
+    """Eigenes Passwort nach Demo-Login mit Gemeinschaftspasswort; Konto bleibt is_demo."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.accounts.models import UserProfile
+        from apps.accounts.services.demo_accounts import demo_must_set_own_password, profile_is_demo
+
+        if not profile_is_demo(request.user):
+            return Response(
+                {'detail': 'Nur für Demo-Konten.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not demo_must_set_own_password(request.user):
+            return Response(
+                {'detail': 'Für dieses Konto ist kein verpflichtender Passwortwechsel aktiv.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ser = ChangePasswordSerializer(data=request.data, context={'request': request})
+        ser.is_valid(raise_exception=True)
+        u = request.user
+        u.set_password(ser.validated_data['new_password'])
+        u.save(update_fields=['password'])
+        UserProfile.objects.filter(user_id=u.pk).update(demo_must_set_own_password=False)
+        return Response(
+            {
+                'detail': (
+                    'Dein Passwort ist gespeichert. Du kannst die App jetzt nutzen — der Zugang '
+                    'bleibt ein Demo-Zugang, bis du unter Einstellungen dein Konto übernimmst.'
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class MeView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
