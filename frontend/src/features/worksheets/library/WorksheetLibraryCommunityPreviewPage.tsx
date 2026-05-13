@@ -247,8 +247,8 @@ export function WorksheetLibraryCommunityPreviewPage() {
           aria-label="Arbeitsblatt-Vorschau"
         >
           <Card flush className="flex min-h-0 flex-1 flex-col overflow-hidden !p-0">
-            <div className="min-h-0 flex-1 overflow-auto bg-[var(--color-bg-muted)] p-3 sm:p-4">
-              <div className="mx-auto flex min-w-0 max-w-[820px] flex-col gap-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[var(--color-bg-muted)] p-3 sm:p-4">
+              <div className="mx-auto flex min-w-0 w-full flex-col gap-4">
                 {!isOwner ? (
                   <div className="flex justify-end sm:hidden">
                     <Button
@@ -264,7 +264,11 @@ export function WorksheetLibraryCommunityPreviewPage() {
                     </Button>
                   </div>
                 ) : null}
-                <A4WorksheetRenderer worksheet={previewWorksheet} />
+                <div className="flex min-h-0 min-w-0 justify-center">
+                  <div className="mx-auto w-fit max-w-full shrink-0 overflow-x-hidden overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <A4WorksheetRenderer worksheet={previewWorksheet} />
+                  </div>
+                </div>
               </div>
             </div>
           </Card>
