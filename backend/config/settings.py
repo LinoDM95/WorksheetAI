@@ -95,6 +95,7 @@ DISABLE_API_THROTTLE = env.bool('DISABLE_API_THROTTLE', default=DEBUG)
 if API_REQUIRE_AUTH:
     _DEFAULT_API_PERMISSIONS = (
         'rest_framework.permissions.IsAuthenticated',
+        'apps.accounts.permissions.DemoOwnPasswordGate',
         'apps.accounts.permissions.HasActivePaidSubscription',
     )
 else:
@@ -192,6 +193,8 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='WorksheetAI <noreply@loc
 AI_CREDITS_ENABLED = env.bool('AI_CREDITS_ENABLED', default=True)
 # Neuregistrierungen: 0 Credits; Aufladung über Abo (monatliches Kontingent) oder spätere Zahlarten.
 USER_CREDITS_INITIAL_BALANCE = env.int('USER_CREDITS_INITIAL_BALANCE', default=0)
+# Referenz-Anzeige / typische Demo-Obergrenze beim Anlegen (Management Command).
+DEMO_ACCOUNT_CREDIT_CAP = env.int('DEMO_ACCOUNT_CREDIT_CAP', default=10000)
 # Fallback für Clients ohne Abo-Payload (sollte über SubscriptionPlan kommen).
 USER_CREDITS_REFERENCE_CAP = env.int('USER_CREDITS_REFERENCE_CAP', default=10000)
 USER_CREDITS_PER_EUR = env.int('USER_CREDITS_PER_EUR', default=1000)

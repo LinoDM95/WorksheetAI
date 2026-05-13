@@ -28,6 +28,7 @@ export const SettingsPage = () => {
   const navigate = useNavigate();
   const bypassPaywall = !!(user?.is_staff || user?.is_superuser);
   const hasAccess = user?.has_platform_access === true;
+  const isDemo = user?.is_demo_account === true;
 
   const [email, setEmail] = useState('');
   const [emailPassword, setEmailPassword] = useState('');
@@ -43,6 +44,13 @@ export const SettingsPage = () => {
   const [checkoutSlug, setCheckoutSlug] = useState<SubscriptionPlanSlug | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [billingErr, setBillingErr] = useState<string | null>(null);
+
+  const [demoNewEmail, setDemoNewEmail] = useState('');
+  const [demoNewPw, setDemoNewPw] = useState('');
+  const [demoNewPw2, setDemoNewPw2] = useState('');
+  const [demoCurPw, setDemoCurPw] = useState('');
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoMsg, setDemoMsg] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
   const submitEmail = useCallback(async () => {
     setEmailMsg(null);
@@ -94,6 +102,33 @@ export const SettingsPage = () => {
     }
   }, [curPw, newPw, newPw2]);
 
+  const submitFinalizeDemo = useCallback(async () => {
+    setDemoMsg(null);
+    setDemoLoading(true);
+    try {
+      await api.post('/auth/demo/finalize/', {
+        new_email: demoNewEmail.trim(),
+        new_password: demoNewPw,
+        new_password_confirm: demoNewPw2,
+        current_password: demoCurPw,
+      });
+      setDemoMsg({
+        tone: 'ok',
+        text: 'Dein Konto ist jetzt vollständig. Du wirst zur Anmeldung weitergeleitet.',
+      });
+      await logout();
+      navigate('/login?demo=converted', { replace: true });
+    } catch (e: unknown) {
+      const resp = (e as { response?: { data?: unknown } })?.response;
+      const detail =
+        firstFieldError(resp?.data) ||
+        stripeErrorMessage(e, 'Konto konnte nicht abgeschlossen werden.');
+      setDemoMsg({ tone: 'err', text: detail });
+    } finally {
+      setDemoLoading(false);
+    }
+  }, [demoNewEmail, demoNewPw, demoNewPw2, demoCurPw, logout, navigate]);
+
   const onCheckout = useCallback(async (slug: SubscriptionPlanSlug) => {
     setBillingErr(null);
     setCheckoutSlug(slug);
@@ -137,8 +172,84 @@ export const SettingsPage = () => {
             </>
           ) : null}
         </p>
+        {isDemo ? (
+          <p className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-900 ring-1 ring-amber-100">
+            Demo-Zugang
+          </p>
+        ) : null}
       </div>
 
+      {isDemo ? (
+        <Card className="!p-5 sm:!p-6">
+          <div className="mb-4 flex items-center gap-2 text-slate-900">
+            <UserCircle size={18} className="text-violet-600" aria-hidden />
+            <h3 className="text-[15px] font-bold">Demo-Zugang beenden</h3>
+          </div>
+          <p className="mb-4 text-sm text-slate-600">
+            Lege die E-Mail und das Passwort für dein dauerhaftes Konto fest. Deine Arbeitsblätter und Boards bleiben
+            erhalten. Anschließend kannst du ein Abo oder Aufladungen wie gewohnt nutzen.
+          </p>
+          {demoMsg ? (
+            <Alert tone={demoMsg.tone === 'ok' ? 'success' : 'error'} className="mb-4">
+              {demoMsg.text}
+            </Alert>
+          ) : null}
+          <div className="space-y-4">
+            <Field label="Neue E-Mail (Anmeldename)" htmlFor="demo-email" required>
+              <TextInput
+                id="demo-email"
+                type="email"
+                autoComplete="email"
+                value={demoNewEmail}
+                onChange={(e) => setDemoNewEmail(e.target.value)}
+                placeholder="deine@adresse.de"
+              />
+            </Field>
+            <Field label="Neues Passwort" htmlFor="demo-np" required>
+              <TextInput
+                id="demo-np"
+                type="password"
+                autoComplete="new-password"
+                value={demoNewPw}
+                onChange={(e) => setDemoNewPw(e.target.value)}
+              />
+            </Field>
+            <Field label="Neues Passwort wiederholen" htmlFor="demo-np2" required>
+              <TextInput
+                id="demo-np2"
+                type="password"
+                autoComplete="new-password"
+                value={demoNewPw2}
+                onChange={(e) => setDemoNewPw2(e.target.value)}
+              />
+            </Field>
+            <Field label="Aktuelles Demo-Passwort" htmlFor="demo-cur" required>
+              <TextInput
+                id="demo-cur"
+                type="password"
+                autoComplete="current-password"
+                value={demoCurPw}
+                onChange={(e) => setDemoCurPw(e.target.value)}
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              loading={demoLoading}
+              disabled={
+                !demoNewEmail.trim() || !demoNewPw || demoNewPw !== demoNewPw2 || !demoCurPw
+              }
+              onClick={() => void submitFinalizeDemo()}
+            >
+              Konto vervollständigen
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {!isDemo ? (
+        <>
       <Card className="!p-5 sm:!p-6">
         <div className="mb-4 flex items-center gap-2 text-slate-900">
           <Mail size={18} className="text-violet-600" aria-hidden />
@@ -241,6 +352,8 @@ export const SettingsPage = () => {
           </p>
         </div>
       </Card>
+        </>
+      ) : null}
 
       <Card className="!p-5 sm:!p-6">
         <div className="mb-4 flex items-center gap-2 text-slate-900">
@@ -260,18 +373,29 @@ export const SettingsPage = () => {
           </p>
         ) : null}
 
+        {isDemo ? (
+          <p className="mt-2 text-sm text-slate-600">
+            Demo-Konten können hier kein Abo abschließen und keine Zahlungen auslösen. Beende zuerst den Demo-Zugang
+            oben und lege E-Mail und Passwort fest — danach stehen dir die üblichen Optionen zur Verfügung.
+          </p>
+        ) : null}
+
         <div className="mt-4 space-y-2 text-sm text-slate-700">
           <p>
             <span className="font-medium text-slate-900">Credits:</span>{' '}
             {(user?.credits_balance ?? 0).toLocaleString('de-DE')} / Monatsreferenz{' '}
             {(user?.credits_reference_cap ?? 0).toLocaleString('de-DE')}
           </p>
-          {hasAccess && subscription ? (
+          {hasAccess && subscription && !isDemo ? (
             <p>
               <span className="font-medium text-slate-900">Abo:</span>{' '}
               {subscription.plan_name || subscription.plan_slug} ({subscription.status})
             </p>
-          ) : !bypassPaywall ? (
+          ) : hasAccess && isDemo ? (
+            <p className="text-slate-600">
+              <span className="font-medium text-slate-900">Zugang:</span> Demo über Credit-Guthaben (kein Abo).
+            </p>
+          ) : !bypassPaywall && !isDemo ? (
             <p className="text-amber-800">
               Noch kein aktiver Zugang — wähle ein Paket oder öffne die{' '}
               <Link to="/app/abonnement" className="font-medium text-violet-700 hover:underline">
@@ -279,9 +403,15 @@ export const SettingsPage = () => {
               </Link>
               .
             </p>
+          ) : !bypassPaywall && isDemo ? (
+            <p className="text-amber-800">
+              Kein Zugang mehr — Demo-Guthaben ist aufgebraucht oder der Zugang wurde eingeschränkt. Beende den
+              Demo-Zugang oben oder wende dich an den Veranstalter.
+            </p>
           ) : null}
         </div>
 
+        {!isDemo ? (
         <div className="mt-6 flex flex-wrap gap-3">
           <Button
             type="button"
@@ -299,8 +429,9 @@ export const SettingsPage = () => {
             Zur Abo-Übersicht
           </Button>
         </div>
+        ) : null}
 
-        {!hasAccess && !bypassPaywall ? (
+        {!hasAccess && !bypassPaywall && !isDemo ? (
           <div className="mt-6 border-t border-slate-100 pt-6">
             <p className="mb-4 text-sm font-medium text-slate-800">Paket wählen</p>
             <div className="grid gap-3 sm:grid-cols-2">

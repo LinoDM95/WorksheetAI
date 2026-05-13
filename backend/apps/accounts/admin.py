@@ -5,6 +5,7 @@ from apps.accounts.models import (
     CreditPurchase,
     SubscriptionPlan,
     UserCreditBalance,
+    UserProfile,
     UserSubscription,
 )
 
@@ -15,6 +16,14 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
     list_filter = ('is_active',)
     search_fields = ('slug', 'name')
     ordering = ('sort_order', 'slug')
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'is_demo', 'demo_must_set_own_password', 'updated_at')
+    list_filter = ('is_demo', 'demo_must_set_own_password')
+    search_fields = ('user__email', 'user__username')
+    raw_id_fields = ('user',)
 
 
 @admin.register(UserSubscription)

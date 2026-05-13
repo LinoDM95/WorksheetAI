@@ -15,6 +15,7 @@ import { BoardPlayPage } from './features/boards/pages/BoardPlayPage';
 import { StudentBoardPage } from './features/boards/pages/StudentBoardPage';
 import { PasswordForgotPage } from './features/auth/PasswordForgotPage';
 import { PasswordResetConfirmPage } from './features/auth/PasswordResetConfirmPage';
+import { DemoSetOwnPasswordPage } from './features/auth/DemoSetOwnPasswordPage';
 import { PublicLoginPage } from './features/auth/PublicLoginPage';
 import { DatenschutzPage, ImpressumPage } from './features/legal/LegalNoticePages';
 import { BackofficePage } from './features/backoffice/BackofficePage';
@@ -162,6 +163,11 @@ const ProtectedAppLayout = () => {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
+  const demoOwnPwPath =
+    location.pathname === '/app/demo-passwort' || location.pathname.startsWith('/app/demo-passwort/');
+  if (user.demo_must_set_own_password && !demoOwnPwPath) {
+    return <Navigate to="/app/demo-passwort" replace />;
+  }
   const subscriptionPath =
     location.pathname === '/app/abonnement' || location.pathname.startsWith('/app/abonnement/');
   const creditsPath =
@@ -195,6 +201,7 @@ export default function App() {
         <Route path="/s/:token" element={<StudentBoardPage />} />
         <Route path="/app" element={<ProtectedAppLayout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="demo-passwort" element={<DemoSetOwnPasswordPage />} />
         <Route
           path="abonnement"
           element={

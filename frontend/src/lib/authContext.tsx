@@ -23,6 +23,10 @@ export type AuthUser = {
   credits_balance: number;
   credits_reference_cap: number;
   has_platform_access?: boolean;
+  /** True: seeded Demo-Zugang – kein Stripe; Abschluss über Einstellungen „Demo beenden“. */
+  is_demo_account?: boolean;
+  /** Erzwungenes eigenes Passwort nach gemeinschaftlichem Demo-Login. */
+  demo_must_set_own_password?: boolean;
   subscription?: {
     plan_slug: string;
     plan_name: string;

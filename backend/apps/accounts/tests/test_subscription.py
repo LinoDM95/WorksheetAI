@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from apps.accounts.models import SubscriptionPlan, UserCreditBalance, UserSubscription
+from apps.accounts.models import SubscriptionPlan, UserCreditBalance, UserProfile, UserSubscription
 from apps.accounts.services.subscription import (
     effective_monthly_credit_grant,
     grant_monthly_credits,
@@ -56,6 +56,37 @@ class SubscriptionDefaultsTests(TestCase):
         )
         n = grant_monthly_credits(u, grant_key='2026-05')
         self.assertEqual(n, 0)
+
+    def test_grant_monthly_skips_demo_accounts(self) -> None:
+        u = User.objects.create_user(
+            username='demo-grant@example.com',
+            email='demo-grant@example.com',
+            password='TestPass123!',
+        )
+        UserProfile.objects.filter(user=u).update(is_demo=True)
+        pro = SubscriptionPlan.objects.get(slug='starter_10')
+        sub = UserSubscription.objects.get(user=u)
+        sub.plan = pro
+        sub.save(update_fields=['plan'])
+        before = UserCreditBalance.objects.get(user=u).balance
+        n = grant_monthly_credits(u, grant_key='2026-07')
+        self.assertEqual(n, 0)
+        UserCreditBalance.objects.get(user=u).refresh_from_db()
+        self.assertEqual(UserCreditBalance.objects.get(user=u).balance, before)
+
+    def test_grant_monthly_if_due_skips_demo(self) -> None:
+        u = User.objects.create_user(
+            username='demo-due@example.com',
+            email='demo-due@example.com',
+            password='TestPass123!',
+        )
+        UserProfile.objects.filter(user=u).update(is_demo=True)
+        plan = SubscriptionPlan.objects.get(slug='basic_5')
+        sub = UserSubscription.objects.get(user=u)
+        sub.plan = plan
+        sub.status = UserSubscription.Status.ACTIVE
+        sub.save(update_fields=['plan', 'status'])
+        self.assertEqual(grant_monthly_credits_if_due(u), 0)
 
 
 class BasicPlanTests(TestCase):

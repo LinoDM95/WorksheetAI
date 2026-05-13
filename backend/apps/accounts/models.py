@@ -69,6 +69,39 @@ class UserSubscription(models.Model):
         return f'{self.user_id} · {self.plan.slug} ({self.status})'
 
 
+class UserProfile(models.Model):
+    """Erweiterungen zum Django-User ohne Custom-User-Model.
+
+    Demo-Konten (`is_demo`): begrenztes Credit-Guthaben, kein Stripe —
+    Umwandlung in ein reguläres Konto über ``/api/auth/demo/finalize/``.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile',
+    )
+    is_demo = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='True: Demo-Zugang über Credit-Saldo, keine Zahlungen/Monatsgrants.',
+    )
+    demo_must_set_own_password = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='True: Demo-Login mit Gemeinschaftspasswort — zuerst eigenes Passwort per API/UI setzen.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Nutzerprofil'
+        verbose_name_plural = 'Nutzerprofile'
+
+    def __str__(self) -> str:
+        return f'{self.user_id} · demo={self.is_demo}'
+
+
 class UserCreditBalance(models.Model):
     """KI-Credits pro Nutzer (Abrechnung aus geschätzten Token-Kosten)."""
 

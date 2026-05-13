@@ -19,10 +19,14 @@ class SubscriptionPayload(TypedDict):
 
 
 def user_has_platform_access(user: Any) -> bool:
-    """Staff und Superuser immer; sonst aktives Abo mit monatlichem Kontingent > 0 (kein Free-Tier)."""
+    """Staff/Superuser immer; Demo mit Credit-Saldo > 0; sonst Abo mit monatlichem Kontingent > 0."""
     if user is None or not getattr(user, 'is_authenticated', False):
         return False
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return True
+    from apps.accounts.services.demo_accounts import is_demo_user_with_active_access
+
+    if is_demo_user_with_active_access(user):
         return True
     sub = get_user_subscription(user)
     if sub is None:
@@ -111,10 +115,13 @@ def grant_monthly_credits(
     """
     from apps.accounts.models import UserCreditBalance
     from apps.accounts.services.credits import get_or_create_balance
+    from apps.accounts.services.demo_accounts import profile_is_demo
 
     if user is None or not getattr(user, 'is_authenticated', False):
         return 0
     if getattr(user, 'is_staff', False):
+        return 0
+    if profile_is_demo(user):
         return 0
     if not grant_key or not str(grant_key).strip():
         return 0
@@ -154,10 +161,13 @@ def grant_monthly_credits_if_due(user: Any) -> int:
     Gibt die Anzahl gebuchter Credits zurück (0 wenn nichts zu tun).
     """
     from apps.accounts.models import UserCreditBalance
+    from apps.accounts.services.demo_accounts import profile_is_demo
 
     if user is None or not getattr(user, 'is_authenticated', False):
         return 0
     if getattr(user, 'is_staff', False):
+        return 0
+    if profile_is_demo(user):
         return 0
     sub = get_user_subscription(user)
     if not subscription_grants_credits(sub):
@@ -187,10 +197,13 @@ def grant_invoice_credits(user: Any, *, grant_key: str, amount: int) -> int:
     """Idempotente Gutschrift für ``invoice.paid`` (Betrag aus Rechnung). Ohne Abo-Status-Check."""
     from apps.accounts.models import UserCreditBalance
     from apps.accounts.services.credits import get_or_create_balance
+    from apps.accounts.services.demo_accounts import profile_is_demo
 
     if user is None or not getattr(user, 'is_authenticated', False):
         return 0
     if getattr(user, 'is_staff', False):
+        return 0
+    if profile_is_demo(user):
         return 0
     if not grant_key or not str(grant_key).strip():
         return 0

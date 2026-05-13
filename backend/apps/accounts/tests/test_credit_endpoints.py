@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.accounts.models import CreditPackage, CreditPurchase, UserCreditBalance
+from apps.accounts.models import CreditPackage, CreditPurchase, UserCreditBalance, UserProfile
 
 User = get_user_model()
 
@@ -68,6 +68,21 @@ class CreditCheckoutEndpointTests(TestCase):
                 format='json',
             )
         self.assertEqual(r.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    def test_demo_user_cannot_start_credit_checkout(self) -> None:
+        demo = User.objects.create_user(
+            username='demo-c@example.com',
+            email='demo-c@example.com',
+            password='TestPass123!',
+        )
+        UserProfile.objects.filter(user=demo).update(is_demo=True)
+        self.client.force_authenticate(user=demo)
+        r = self.client.post(
+            '/api/auth/stripe/credits-checkout/',
+            {'package_slug': 'pack_1k'},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_valid_slug_creates_pending_purchase_and_returns_url(self) -> None:
         fake_session = {'id': 'cs_test_xyz', 'url': 'https://checkout.stripe.com/abc'}

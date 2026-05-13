@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CreditCard, Loader2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../lib/authContext';
 import { Alert, Button, Card } from '../../components/ui';
@@ -69,6 +69,58 @@ export const SubscriptionPage = () => {
   const currentPlanSlug = user?.subscription?.plan_slug ?? null;
   const currentPlanName = user?.subscription?.plan_name || user?.subscription?.plan_slug || null;
   const currentCredits = user?.credits_balance ?? 0;
+  const isDemo = user?.is_demo_account === true;
+
+  if (isDemo) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-6 px-2 py-4 sm:py-8">
+        <header className="text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-800 ring-1 ring-amber-100">
+            Demo-Konto
+          </span>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Plan &amp; Aufladung
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Abos und Einmalzahlungen sind für Demo-Zugänge nicht verfügbar. Zum dauerhaften Konto wechselst du in den{' '}
+            <Link to="/app/settings" className="font-semibold text-violet-700 hover:underline">
+              Einstellungen
+            </Link>
+            .
+          </p>
+        </header>
+        <Alert tone="info">
+          Du nutzt die Plattform mit dem bereitgestellten Demo-Guthaben. Monatliche Gutschriften entfallen; nach Ende des
+          Guthabens ist kein Produktivzugang mehr möglich, bis du dein Konto vervollständigst oder ein reguläres Abo buchst.
+        </Alert>
+        <Card className="!p-6">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Aktuelles Guthaben</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+            {currentCredits.toLocaleString('de-DE')}{' '}
+            <span className="text-base font-semibold text-slate-500">Credits</span>
+          </p>
+          {hasAccess ? (
+            <p className="mt-3 text-sm text-slate-600">Mit diesem Guthaben kannst du Arbeitsblätter und Boards wie gewohnt erstellen.</p>
+          ) : (
+            <p className="mt-3 text-sm text-amber-900">
+              Kein aktiver Zugang — vermutlich ist das Demo-Guthaben aufgebraucht.
+            </p>
+          )}
+        </Card>
+        <p className="text-center text-xs text-slate-500">
+          <button
+            type="button"
+            className="text-violet-700 hover:underline"
+            onClick={() => {
+              void logout().then(() => navigate('/login', { replace: true }));
+            }}
+          >
+            Abmelden
+          </button>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-10 px-2 py-4 sm:py-8">

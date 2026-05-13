@@ -19,3 +19,12 @@ def ensure_user_subscription_row(sender, instance: User, created: bool, **kwargs
     from apps.accounts.services.subscription import ensure_user_subscription
 
     ensure_user_subscription(instance)
+
+
+@receiver(post_save, sender=User)
+def ensure_user_profile_row(sender, instance: User, created: bool, **kwargs) -> None:
+    if not created:
+        return
+    from apps.accounts.models import UserProfile
+
+    UserProfile.objects.get_or_create(user=instance, defaults={'is_demo': False})

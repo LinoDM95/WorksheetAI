@@ -95,11 +95,38 @@ class ChangeEmailSerializer(serializers.Serializer):
         return attrs
 
 
+class FinalizeDemoAccountSerializer(serializers.Serializer):
+    """Demo-Konto in ein reguläres Konto überführen (gleiche User-PK, Inhalte bleiben)."""
+
+    new_email = serializers.EmailField()
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    new_password_confirm = serializers.CharField(write_only=True)
+    current_password = serializers.CharField(write_only=True)
+
+    def validate_new_email(self, value: str) -> str:
+        return value.lower().strip()
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError(
+                {'new_password_confirm': 'Die neuen Passwörter stimmen nicht überein.'}
+            )
+        user = self.context['request'].user
+        if not user.check_password(attrs['current_password']):
+            raise serializers.ValidationError({'current_password': 'Das aktuelle Passwort ist falsch.'})
+        new_email = attrs['new_email']
+        if User.objects.filter(username=new_email).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError({'new_email': 'Diese E-Mail ist bereits registriert.'})
+        return attrs
+
+
 class UserSerializer(serializers.ModelSerializer):
     credits_balance = serializers.SerializerMethodField()
     credits_reference_cap = serializers.SerializerMethodField()
     subscription = serializers.SerializerMethodField()
     has_platform_access = serializers.SerializerMethodField()
+    is_demo_account = serializers.SerializerMethodField()
+    demo_must_set_own_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -112,6 +139,8 @@ class UserSerializer(serializers.ModelSerializer):
             'credits_reference_cap',
             'subscription',
             'has_platform_access',
+            'is_demo_account',
+            'demo_must_set_own_password',
             'is_staff',
             'is_superuser',
         ]
@@ -121,14 +150,27 @@ class UserSerializer(serializers.ModelSerializer):
 
         return user_has_platform_access(obj)
 
+    def get_is_demo_account(self, obj: User) -> bool:
+        from apps.accounts.services.demo_accounts import profile_is_demo
+
+        return profile_is_demo(obj)
+
+    def get_demo_must_set_own_password(self, obj: User) -> bool:
+        from apps.accounts.services.demo_accounts import demo_must_set_own_password
+
+        return demo_must_set_own_password(obj)
+
     def get_subscription(self, obj: User) -> dict | None:
         from apps.accounts.services.subscription import get_subscription_api_payload
 
         return get_subscription_api_payload(obj)
 
     def get_credits_reference_cap(self, obj: User) -> int:
+        from apps.accounts.services.demo_accounts import demo_credit_cap, profile_is_demo
         from apps.accounts.services.subscription import effective_monthly_credit_grant
 
+        if profile_is_demo(obj):
+            return int(demo_credit_cap())
         return int(effective_monthly_credit_grant(obj))
 
     def get_credits_balance(self, obj: User) -> int:

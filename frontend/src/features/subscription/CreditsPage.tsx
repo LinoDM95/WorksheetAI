@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Sparkles, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../lib/authContext';
 import { Alert, Button, Card } from '../../components/ui';
@@ -27,6 +27,39 @@ export const CreditsPage = () => {
       });
     }
   }, [purchase, refreshAuth, searchParams, setSearchParams]);
+
+  const isDemo = user?.is_demo_account === true;
+
+  if (isDemo) {
+    const balance = user?.credits_balance ?? 0;
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-6 px-2 py-4 sm:py-8">
+        <header className="text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-800 ring-1 ring-amber-100">
+            Demo-Konto
+          </span>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Credit-Aufladung
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Einmalzahlungen sind für Demo-Zugänge deaktiviert. Vervollständige dein Konto in den{' '}
+            <Link to="/app/settings" className="font-semibold text-violet-700 hover:underline">
+              Einstellungen
+            </Link>
+            {' '}
+            („Demo-Zugang beenden“).
+          </p>
+        </header>
+        <Card className="!p-6 text-center">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Aktuelles Guthaben</p>
+          <p className="mt-2 font-display text-4xl font-bold tabular-nums text-slate-900">
+            {balance.toLocaleString('de-DE')}{' '}
+            <span className="text-lg font-semibold text-slate-500">Credits</span>
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   const balance = user?.credits_balance ?? 0;
   const monthlyGrant = user?.subscription?.monthly_credit_grant ?? 0;
