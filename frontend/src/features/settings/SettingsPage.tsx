@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CreditCard, KeyRound, Loader2, Mail, UserCircle } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -45,6 +45,8 @@ export const SettingsPage = () => {
   const [portalLoading, setPortalLoading] = useState(false);
   const [billingErr, setBillingErr] = useState<string | null>(null);
 
+  const [demoFirstName, setDemoFirstName] = useState('');
+  const [demoLastName, setDemoLastName] = useState('');
   const [demoNewEmail, setDemoNewEmail] = useState('');
   const [demoNewPw, setDemoNewPw] = useState('');
   const [demoNewPw2, setDemoNewPw2] = useState('');
@@ -107,6 +109,8 @@ export const SettingsPage = () => {
     setDemoLoading(true);
     try {
       await api.post('/auth/demo/finalize/', {
+        first_name: demoFirstName.trim(),
+        last_name: demoLastName.trim(),
         new_email: demoNewEmail.trim(),
         new_password: demoNewPw,
         new_password_confirm: demoNewPw2,
@@ -114,7 +118,7 @@ export const SettingsPage = () => {
       });
       setDemoMsg({
         tone: 'ok',
-        text: 'Dein Konto ist jetzt vollständig. Du wirst zur Anmeldung weitergeleitet.',
+        text: 'Dein eigener Login ist angelegt. Du wirst zur Anmeldung weitergeleitet — danach wählst du Plan oder Credits.',
       });
       await logout();
       navigate('/login?demo=converted', { replace: true });
@@ -127,7 +131,16 @@ export const SettingsPage = () => {
     } finally {
       setDemoLoading(false);
     }
-  }, [demoNewEmail, demoNewPw, demoNewPw2, demoCurPw, logout, navigate]);
+  }, [
+    demoFirstName,
+    demoLastName,
+    demoNewEmail,
+    demoNewPw,
+    demoNewPw2,
+    demoCurPw,
+    logout,
+    navigate,
+  ]);
 
   const onCheckout = useCallback(async (slug: SubscriptionPlanSlug) => {
     setBillingErr(null);
@@ -159,6 +172,18 @@ export const SettingsPage = () => {
 
   const subscription = user?.subscription;
 
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      window.location.hash === '#account-uebernehmen-demo'
+    ) {
+      document.getElementById('account-uebernehmen-demo')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
+  }, [isDemo]);
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8 px-4 py-8 sm:px-6">
       <div>
@@ -180,14 +205,15 @@ export const SettingsPage = () => {
       </div>
 
       {isDemo ? (
-        <Card className="!p-5 sm:!p-6">
+        <Card className="!p-5 sm:!p-6" id="account-uebernehmen-demo">
           <div className="mb-4 flex items-center gap-2 text-slate-900">
             <UserCircle size={18} className="text-violet-600" aria-hidden />
-            <h3 className="text-[15px] font-bold">Demo-Zugang beenden</h3>
+            <h3 className="text-[15px] font-bold">Account übernehmen</h3>
           </div>
           <p className="mb-4 text-sm text-slate-600">
-            Lege die E-Mail und das Passwort für dein dauerhaftes Konto fest. Deine Arbeitsblätter und Boards bleiben
-            erhalten. Anschließend kannst du ein Abo oder Aufladungen wie gewohnt nutzen.
+            Wandle diesen Demo-Zugang in dein eigenes Konto um: Vor- und Nachname, E-Mail und ein neues Passwort.
+            Arbeitsblätter und Boards bleiben erhalten. Anschließend meldest du dich neu an und kannst ein Abo
+            abschließen oder Credits kaufen.
           </p>
           {demoMsg ? (
             <Alert tone={demoMsg.tone === 'ok' ? 'success' : 'error'} className="mb-4">
@@ -195,6 +221,26 @@ export const SettingsPage = () => {
             </Alert>
           ) : null}
           <div className="space-y-4">
+            <Field label="Vorname" htmlFor="demo-fn" required>
+              <TextInput
+                id="demo-fn"
+                type="text"
+                autoComplete="given-name"
+                value={demoFirstName}
+                onChange={(e) => setDemoFirstName(e.target.value)}
+                placeholder="Vorname"
+              />
+            </Field>
+            <Field label="Nachname" htmlFor="demo-ln" required>
+              <TextInput
+                id="demo-ln"
+                type="text"
+                autoComplete="family-name"
+                value={demoLastName}
+                onChange={(e) => setDemoLastName(e.target.value)}
+                placeholder="Nachname"
+              />
+            </Field>
             <Field label="Neue E-Mail (Anmeldename)" htmlFor="demo-email" required>
               <TextInput
                 id="demo-email"
@@ -238,11 +284,16 @@ export const SettingsPage = () => {
               size="sm"
               loading={demoLoading}
               disabled={
-                !demoNewEmail.trim() || !demoNewPw || demoNewPw !== demoNewPw2 || !demoCurPw
+                !demoFirstName.trim() ||
+                !demoLastName.trim() ||
+                !demoNewEmail.trim() ||
+                !demoNewPw ||
+                demoNewPw !== demoNewPw2 ||
+                !demoCurPw
               }
               onClick={() => void submitFinalizeDemo()}
             >
-              Konto vervollständigen
+              Account übernehmen
             </Button>
           </div>
         </Card>
@@ -375,8 +426,8 @@ export const SettingsPage = () => {
 
         {isDemo ? (
           <p className="mt-2 text-sm text-slate-600">
-            Demo-Konten können hier kein Abo abschließen und keine Zahlungen auslösen. Beende zuerst den Demo-Zugang
-            oben und lege E-Mail und Passwort fest — danach stehen dir die üblichen Optionen zur Verfügung.
+            Demo-Konten können hier kein Abo abschließen und keine Zahlungen auslösen. Übernimm zuerst dein Konto im
+            Abschnitt &quot;Account übernehmen&quot; weiter oben — danach kannst du Plan oder Aufladungen wählen.
           </p>
         ) : null}
 
@@ -405,8 +456,8 @@ export const SettingsPage = () => {
             </p>
           ) : !bypassPaywall && isDemo ? (
             <p className="text-amber-800">
-              Kein Zugang mehr — Demo-Guthaben ist aufgebraucht oder der Zugang wurde eingeschränkt. Beende den
-              Demo-Zugang oben oder wende dich an den Veranstalter.
+              Kein Zugang mehr — Demo-Guthaben ist aufgebraucht oder der Zugang wurde eingeschränkt. Übernimm oder
+              wende dich an den Veranstalter.
             </p>
           ) : null}
         </div>

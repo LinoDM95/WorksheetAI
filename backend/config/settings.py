@@ -95,7 +95,6 @@ DISABLE_API_THROTTLE = env.bool('DISABLE_API_THROTTLE', default=DEBUG)
 if API_REQUIRE_AUTH:
     _DEFAULT_API_PERMISSIONS = (
         'rest_framework.permissions.IsAuthenticated',
-        'apps.accounts.permissions.DemoOwnPasswordGate',
         'apps.accounts.permissions.HasActivePaidSubscription',
     )
 else:

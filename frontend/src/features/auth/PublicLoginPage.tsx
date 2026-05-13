@@ -50,6 +50,9 @@ export const PublicLoginPage = () => {
   const [busy, setBusy] = useState(false);
 
   const afterAuthTarget = useMemo(() => {
+    if (searchParams.get('demo') === 'converted') {
+      return '/app/abonnement';
+    }
     const raw = searchParams.get('next');
     return sanitizeAuthRedirectNext(raw) ?? DEFAULT_AUTH_REDIRECT;
   }, [searchParams]);

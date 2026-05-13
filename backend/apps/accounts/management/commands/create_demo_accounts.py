@@ -88,7 +88,7 @@ class Command(BaseCommand):
                 u = User.objects.create_user(username=email, email=email, password=password, first_name='', last_name='')
                 UserProfile.objects.update_or_create(
                     user=u,
-                    defaults={'is_demo': True, 'demo_must_set_own_password': True},
+                    defaults={'is_demo': True, 'demo_must_set_own_password': False},
                 )
                 bc, _ = UserCreditBalance.objects.get_or_create(user=u, defaults={'balance': credits})
                 if bc.balance != credits:

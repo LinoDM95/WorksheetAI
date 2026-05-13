@@ -1,6 +1,12 @@
 import { api } from './api';
 import type { WorksheetLibraryItem } from '../types';
 
+export const worksheetsLibraryCommentsQueryKey = (worksheetId: string) =>
+  ['worksheets', 'library-comments', worksheetId] as const;
+
+export const worksheetLibraryEntryQueryKey = (worksheetId: string) =>
+  ['worksheets', 'library-entry', worksheetId] as const;
+
 
 /** Geteilter Cache für alle Listen-Ansichten (Dashboard, „Meine Arbeitsblätter“). */
 export const WORKSHEET_LIST_QUERY_KEY = ['worksheets', 'list'] as const;

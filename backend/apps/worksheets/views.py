@@ -1,19 +1,26 @@
-from rest_framework import viewsets, decorators, response, status
+from datetime import timedelta
+
+from rest_framework import viewsets, decorators, response, status, exceptions
 import copy
 
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
+from django.utils import timezone
+from django.utils.html import strip_tags
 
 from apps.ai.error_mapper import AIErrorMapper
 from apps.accounts.permissions import APIPaywallMixin
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
-from .models import Worksheet
+from .models import Worksheet, WorksheetLibraryComment, WorksheetRating
 from .serializers import (
     WorksheetSerializer,
     WorksheetRevisionSerializer,
     build_curriculum_usage_payload,
     WorksheetLibraryEntrySerializer,
+    WorksheetLibraryCommentCreateSerializer,
+    WorksheetLibraryCommentSerializer,
+    worksheet_library_entry_detail_dict,
 )
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.creative_html_pipeline import (
@@ -72,16 +79,183 @@ class WorksheetViewSet(APIPaywallMixin, viewsets.ModelViewSet):
             user = resolve_worksheet_owner(request.user)
         except ValueError:
             return response.Response([])
-        qs = Worksheet.objects.filter(
-            library_public=True,
-            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
-        ).select_related('owner', 'pattern')
+        qs = (
+            Worksheet.objects.filter(
+                library_public=True,
+                library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+            )
+            .select_related('owner', 'pattern')
+            .annotate(
+                avg_rating=Avg('ratings__stars'),
+                rating_count=Count('ratings', distinct=True),
+                comment_count=Count('library_comments', distinct=True),
+            )
+        )
         scope = (request.query_params.get('scope') or 'all').strip().lower()
         if scope == 'mine':
             qs = qs.filter(owner=user)
         qs = qs.order_by('-library_published_at', '-created_at')
         return response.Response(
             WorksheetLibraryEntrySerializer(qs, many=True, context={'request': request}).data,
+        )
+
+    @decorators.action(detail=True, methods=['get'], url_path='library-entry')
+    def library_entry(self, request, pk=None):
+        try:
+            resolve_worksheet_owner(request.user)
+        except ValueError:
+            return response.Response(
+                {'detail': 'Authentifizierung erforderlich.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        qs = (
+            Worksheet.objects.filter(
+                pk=pk,
+                library_public=True,
+                library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+            )
+            .select_related('owner', 'pattern')
+            .annotate(
+                avg_rating=Avg('ratings__stars'),
+                rating_count=Count('ratings', distinct=True),
+                comment_count=Count('library_comments', distinct=True),
+            )
+        )
+        ws = qs.first()
+        if not ws:
+            raise exceptions.NotFound()
+        payload = worksheet_library_entry_detail_dict(ws, request)
+        return response.Response(payload)
+
+    @decorators.action(detail=True, methods=['get', 'post'], url_path='library-comments')
+    def library_comments(self, request, pk=None):
+        ws = Worksheet.objects.filter(
+            pk=pk,
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+        ).first()
+        if not ws:
+            raise exceptions.NotFound()
+
+        if request.method == 'GET':
+            rows = ws.library_comments.order_by('-created_at')[:200]
+            return response.Response(WorksheetLibraryCommentSerializer(rows, many=True).data)
+
+        try:
+            user = resolve_worksheet_owner(request.user)
+        except ValueError:
+            return response.Response(
+                {'detail': 'Authentifizierung erforderlich.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ser = WorksheetLibraryCommentCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return response.Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        raw_text = ser.validated_data['text']
+        text = strip_tags(raw_text).strip()
+        if not text:
+            return response.Response(
+                {'detail': 'Bitte einen kurzen Text ohne HTML eingeben.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(text) > 2000:
+            text = text[:2000]
+
+        hour_ago = timezone.now() - timedelta(hours=1)
+        recent_n = WorksheetLibraryComment.objects.filter(
+            worksheet=ws, user=user, created_at__gte=hour_ago
+        ).count()
+        if recent_n >= 24:
+            return response.Response(
+                {'detail': 'Zu viele Kommentare in kurzer Zeit. Bitte später erneut versuchen.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        c = WorksheetLibraryComment.objects.create(worksheet=ws, user=user, body=text)
+        return response.Response(
+            WorksheetLibraryCommentSerializer(c).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(detail=True, methods=['post'], url_path='rate')
+    def rate(self, request, pk=None):
+        ws = Worksheet.objects.filter(
+            pk=pk,
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+        ).first()
+        if not ws:
+            raise exceptions.NotFound()
+        body = request.data if isinstance(request.data, dict) else {}
+        stars = body.get('stars')
+        try:
+            s = int(stars)
+        except (TypeError, ValueError):
+            return response.Response(
+                {'detail': 'Bewertung: bitte Sterne 1–5 angeben.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if s not in (1, 2, 3, 4, 5):
+            return response.Response(
+                {'detail': 'Bewertung: bitte Sterne 1–5 angeben.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = resolve_worksheet_owner(request.user)
+        WorksheetRating.objects.update_or_create(worksheet=ws, user=user, defaults={'stars': s})
+        agg = ws.ratings.aggregate(avg_rating=Avg('stars'), rating_count=Count('id'))
+        avg = agg['avg_rating']
+        return response.Response({
+            'stars': s,
+            'avg_rating': round(float(avg), 2) if avg is not None else None,
+            'rating_count': agg['rating_count'],
+        })
+
+    @decorators.action(detail=True, methods=['post'], url_path='adopt-from-library')
+    def adopt_from_library(self, request, pk=None):
+        original = Worksheet.objects.filter(
+            pk=pk,
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+        ).first()
+        if not original:
+            raise exceptions.NotFound()
+        user = resolve_worksheet_owner(request.user)
+
+        lt_raw = (original.library_listing_title or original.title or '').strip()
+        base_title = lt_raw or 'Arbeitsblatt'
+        suffix = ' (übernommen)'
+        max_base = max(0, 255 - len(suffix))
+        new_title = f'{base_title[:max_base]}{suffix}'
+
+        clone = Worksheet.objects.create(
+            owner=user,
+            pattern=original.pattern,
+            title=new_title,
+            subject=original.subject,
+            grade=original.grade,
+            topic=(original.library_listing_topic or original.topic or '').strip()[:255],
+            page_setup=copy.deepcopy(original.page_setup) if isinstance(original.page_setup, dict) else {},
+            content=copy.deepcopy(original.content) if isinstance(original.content, dict) else {},
+            render_model=(
+                copy.deepcopy(original.render_model) if isinstance(original.render_model, dict) else {}
+            ),
+            status='draft',
+            generation_meta=(
+                copy.deepcopy(original.generation_meta) if isinstance(original.generation_meta, dict) else {}
+            ),
+            library_public=False,
+            library_listing_title='',
+            library_listing_topic='',
+            library_listing_description='',
+            library_moderation_status=Worksheet.LibraryModerationStatus.NONE,
+            library_published_at=None,
+            source_worksheet=original,
+        )
+        create_initial_revision_if_absent(clone, user=user, prompt='(Aus Bibliothek übernommen)')
+        return response.Response(
+            WorksheetSerializer(clone, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
         )
 
     @decorators.action(detail=True, methods=['post'], url_path='preview-render')

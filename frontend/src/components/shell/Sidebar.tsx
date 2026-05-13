@@ -155,10 +155,14 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
         <nav className="flex flex-col gap-0.5">
           <NavItemLink
             item={{
-              to: '/app/abonnement',
+              to:
+                user?.is_demo_account === true
+                  ? '/app/settings#account-uebernehmen-demo'
+                  : '/app/abonnement',
               label: 'Plan & Credits',
               icon: Sparkles,
-              matchPrefix: '/app/abonnement',
+              matchPrefix:
+                user?.is_demo_account === true ? '/app/settings' : '/app/abonnement',
             }}
             railMode={railMode}
             onNavigate={() => drawerMode && onClose()}

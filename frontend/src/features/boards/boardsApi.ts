@@ -273,6 +273,10 @@ export const backofficeDeleteBoard = (boardId: string) =>
 export const backofficeDeleteBoardLibraryComment = (boardId: string, commentId: string) =>
   api.delete(`/auth/backoffice/boards/${boardId}/comments/${commentId}/`).then((r) => r.data);
 
+/** Staff: Bibliotheks-Kommentar löschen (Arbeitsblatt). */
+export const backofficeDeleteWorksheetLibraryComment = (worksheetId: string, commentId: string) =>
+  api.delete(`/auth/backoffice/worksheets/${worksheetId}/comments/${commentId}/`).then((r) => r.data);
+
 /** Staff: Arbeitsblatt aus öffentlicher Bibliothek nehmen. */
 export const backofficeUnpublishWorksheet = (worksheetId: string) =>
   api.post(`/auth/backoffice/worksheets/${worksheetId}/unpublish/`).then((r) => r.data);

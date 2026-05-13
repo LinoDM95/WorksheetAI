@@ -5,7 +5,7 @@ import json
 from django.conf import settings
 from django.utils import timezone
 
-from .models import Worksheet, WorksheetRevision
+from .models import Worksheet, WorksheetLibraryComment, WorksheetRating, WorksheetRevision
 from .services.render_model import build_render_model
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.creative_html_pipeline import (
@@ -306,6 +306,37 @@ class WorksheetSerializer(serializers.ModelSerializer):
         return instance
 
 
+class WorksheetLibraryCommentSerializer(serializers.ModelSerializer):
+    text = serializers.CharField(source='body', read_only=True)
+    author_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorksheetLibraryComment
+        fields = ('id', 'text', 'author_label', 'created_at')
+        read_only_fields = fields
+
+    @staticmethod
+    def get_author_label(_obj: WorksheetLibraryComment) -> str:
+        return 'Anonym'
+
+
+class WorksheetLibraryCommentCreateSerializer(serializers.Serializer):
+    text = serializers.CharField(required=True, max_length=2000, allow_blank=False)
+
+
+def worksheet_library_entry_detail_dict(ws: Worksheet, request) -> dict:
+    """Katalog-Felder plus Inhalt/Render-Modell für die Community-Vorschau."""
+    ctx = {'request': request}
+    lite = WorksheetLibraryEntrySerializer(ws, context=ctx)
+    heavy = WorksheetSerializer(ws, context=ctx)
+    out = dict(lite.data)
+    d = dict(heavy.data)
+    out['content'] = d['content']
+    out['render_model'] = d['render_model']
+    out['page_setup'] = d['page_setup']
+    return out
+
+
 class WorksheetRevisionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorksheetRevision
@@ -342,6 +373,10 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
     planned_duration_minutes = serializers.SerializerMethodField()
     page_setup = serializers.JSONField(read_only=True)
     thumbnail_render_model = serializers.SerializerMethodField()
+    avg_rating = serializers.FloatField(read_only=True, allow_null=True)
+    rating_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    comment_count = serializers.IntegerField(read_only=True, required=False, default=0)
+    my_stars = serializers.SerializerMethodField()
 
     class Meta:
         model = Worksheet
@@ -359,7 +394,18 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
             'viewer_is_owner',
             'page_setup',
             'thumbnail_render_model',
+            'avg_rating',
+            'rating_count',
+            'comment_count',
+            'my_stars',
         )
+
+    def get_my_stars(self, obj: Worksheet) -> int | None:
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            return None
+        r = WorksheetRating.objects.filter(worksheet=obj, user=request.user).first()
+        return r.stars if r else None
 
     def get_kind(self, obj: Worksheet) -> str:
         return 'worksheet'

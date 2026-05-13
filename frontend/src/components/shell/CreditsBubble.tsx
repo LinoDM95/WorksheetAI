@@ -12,6 +12,7 @@ export const CreditsBubble = () => {
 
   const capRaw = user.credits_reference_cap ?? 0;
   const bal = user.credits_balance ?? 0;
+  const isDemoAccount = user.is_demo_account === true;
   const fillRatio = capRaw > 0 ? Math.min(1, Math.max(0, bal / capRaw)) : 0;
   const fillPct = Math.round(fillRatio * 100);
 
@@ -25,8 +26,14 @@ export const CreditsBubble = () => {
     <div className="relative shrink-0 overflow-visible">
       <button
         type="button"
-        aria-label={`Credits — aktuell ${labelExact}. ${labelCap}. Klicken, um Credits aufzuladen.`}
-        onClick={() => navigate('/app/credits')}
+        aria-label={
+          isDemoAccount
+            ? `Credits — ${labelExact}. Als Demo ohne Kauf. Öffnet Einstellungen zur Kontenübernahme.`
+            : `Credits — aktuell ${labelExact}. ${labelCap}. Klicken, um Credits aufzuladen.`
+        }
+        onClick={() =>
+          isDemoAccount ? navigate('/app/settings#account-uebernehmen-demo') : navigate('/app/credits')
+        }
         className={cn(
           'group relative z-[2] block h-11 w-11 shrink-0 cursor-pointer overflow-visible rounded-full sm:h-12 sm:w-12',
           'shadow-[0_2px_10px_rgba(15,23,42,0.08)] transition-transform hover:scale-105 active:scale-95',
@@ -79,7 +86,9 @@ export const CreditsBubble = () => {
         >
           <span className="tabular-nums">{bal.toLocaleString('de-DE')}</span>{' '}
           <span className="font-medium text-slate-500">Credits</span>
-          <span className="ml-1.5 font-medium text-violet-700">· aufladen</span>
+          <span className="ml-1.5 font-medium text-violet-700">
+            {isDemoAccount ? '· Übernehmen' : '· aufladen'}
+          </span>
         </span>
       </button>
     </div>

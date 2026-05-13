@@ -9,7 +9,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import DemoOwnPasswordGate
 from apps.accounts.services.credit_purchases import (
     build_stripe_line_items,
     get_active_credit_package,
@@ -26,12 +25,18 @@ VALID_CHECKOUT_SLUGS = frozenset({'basic_5', 'starter_10', 'pro_20'})
 
 
 class StripeCheckoutSessionView(APIView):
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         if profile_is_demo(request.user):
             return Response(
-                {'detail': 'Demo-Konten können kein Abo abschließen. Bitte Konto in den Einstellungen vervollständigen.'},
+                {
+                    'detail': (
+                        'Demo-Konten können kein Abo abschließen. Übernimm zuerst dein Konto unter '
+                        'Einstellungen (Abschnitt „Account übernehmen“). Danach kannst du einen '
+                        'Plan wählen und bezahlen.'
+                    )
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
         plan_slug = (request.data.get('plan_slug') or '').strip()
@@ -93,7 +98,7 @@ class StripeCheckoutSessionView(APIView):
 
 
 class StripeBillingPortalView(APIView):
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         if profile_is_demo(request.user):
@@ -147,7 +152,7 @@ class StripeBillingPortalView(APIView):
 
 class CreditPackageListView(APIView):
     """Liste aktiver Credit-Pakete für die Frontend-Anzeige (öffentlich nutzbar)."""
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         return Response({'packages': list_active_credit_packages()})
@@ -155,12 +160,17 @@ class CreditPackageListView(APIView):
 
 class StripeCreditCheckoutView(APIView):
     """Einmalkauf eines Credit-Pakets (Stripe ``mode=payment``)."""
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         if profile_is_demo(request.user):
             return Response(
-                {'detail': 'Demo-Konten können keine Zahlungen auslösen. Bitte Konto vervollständigen oder neues Konto anlegen.'},
+                {
+                    'detail': (
+                        'Demo-Konten können keine Zahlungen auslösen. Übernimm zuerst dein Konto in '
+                        'den Einstellungen — danach kannst du Credits kaufen.'
+                    )
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
         slug = (request.data.get('package_slug') or '').strip()

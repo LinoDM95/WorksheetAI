@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from apps.boards.models import Board, BoardLibraryComment
 from apps.boards.serializers import BoardDetailSerializer, BoardLibraryEntrySerializer
 from apps.boards.services.library_public_snapshot import copy_live_bundle_to_library_snapshot
-from apps.worksheets.models import Worksheet
+from apps.worksheets.models import Worksheet, WorksheetLibraryComment
 from apps.worksheets.serializers import WorksheetLibraryEntrySerializer, WorksheetSerializer
 
 
@@ -197,6 +197,17 @@ class BackofficeBoardLibraryCommentDestroyView(APIView):
 
     def delete(self, request, board_pk, comment_pk):
         c = BoardLibraryComment.objects.filter(pk=comment_pk, board_id=board_pk).first()
+        if not c:
+            return Response({'detail': 'Nicht gefunden.'}, status=404)
+        c.delete()
+        return Response(status=204)
+
+
+class BackofficeWorksheetLibraryCommentDestroyView(APIView):
+    permission_classes = [IsStaffUser]
+
+    def delete(self, request, worksheet_pk, comment_pk):
+        c = WorksheetLibraryComment.objects.filter(pk=comment_pk, worksheet_id=worksheet_pk).first()
         if not c:
             return Response({'detail': 'Nicht gefunden.'}, status=404)
         c.delete()

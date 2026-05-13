@@ -7,6 +7,7 @@ import {
   backofficeDeleteBoard,
   backofficeDeleteBoardLibraryComment,
   backofficeDeleteWorksheet,
+  backofficeDeleteWorksheetLibraryComment,
   backofficeUnpublishBoard,
   backofficeUnpublishWorksheet,
   createBoardFolder,
@@ -282,6 +283,11 @@ describe('boardsApi', () => {
     it('backofficeDeleteBoardLibraryComment', async () => {
       await backofficeDeleteBoardLibraryComment('b1', 'c1');
       expect(deleteSpy).toHaveBeenCalledWith('/auth/backoffice/boards/b1/comments/c1/');
+    });
+
+    it('backofficeDeleteWorksheetLibraryComment', async () => {
+      await backofficeDeleteWorksheetLibraryComment('w1', 'c1');
+      expect(deleteSpy).toHaveBeenCalledWith('/auth/backoffice/worksheets/w1/comments/c1/');
     });
 
     it('backofficeUnpublishWorksheet', async () => {

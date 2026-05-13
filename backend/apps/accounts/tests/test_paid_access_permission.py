@@ -10,7 +10,6 @@ _PAYWALLED_REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ('apps.accounts.authentication.CookieJWTAuthentication',),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
-        'apps.accounts.permissions.DemoOwnPasswordGate',
         'apps.accounts.permissions.HasActivePaidSubscription',
     ),
 }
@@ -84,27 +83,3 @@ class PaidAccessPermissionTests(TestCase):
         self.client.force_authenticate(user=u)
         r = self.client.get('/api/worksheets/')
         self.assertEqual(r.status_code, 200)
-
-    def test_demo_must_set_password_blocks_worksheets_until_set(self) -> None:
-        u = User.objects.create_user(
-            username='demo-pending@example.com',
-            email='demo-pending@example.com',
-            password='InitPass999!',
-        )
-        UserProfile.objects.filter(user=u).update(is_demo=True, demo_must_set_own_password=True)
-        UserCreditBalance.objects.filter(user=u).update(balance=250)
-        self.client.force_authenticate(user=u)
-        r = self.client.get('/api/worksheets/')
-        self.assertEqual(r.status_code, 403)
-        s = self.client.post(
-            '/api/auth/demo/set-own-password/',
-            {
-                'current_password': 'InitPass999!',
-                'new_password': 'Chosen888888!',
-                'new_password_confirm': 'Chosen888888!',
-            },
-            format='json',
-        )
-        self.assertEqual(s.status_code, 200)
-        r2 = self.client.get('/api/worksheets/')
-        self.assertEqual(r2.status_code, 200)

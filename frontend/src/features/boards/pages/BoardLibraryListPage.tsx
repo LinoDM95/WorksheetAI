@@ -180,9 +180,19 @@ function BoardLibraryCatalogCard({
   );
 }
 
-function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; index: number }) {
+function WorksheetLibraryCatalogCard({
+  ws,
+  index,
+  libraryScope,
+}: {
+  ws: WorksheetLibraryItem;
+  index: number;
+  libraryScope: BoardLibraryScope;
+}) {
   const isViewerOwner = Boolean(ws.viewer_is_owner);
   const gradeLine = [ws.subject, ws.grade ? `Klasse ${ws.grade}` : ''].filter(Boolean).join(' · ');
+  const com = ws.comment_count ?? 0;
+  const ratingCompact = ws.avg_rating != null ? ws.avg_rating.toFixed(1) : null;
   return (
     <motion.article
       initial={{ opacity: 0, y: 10 }}
@@ -191,8 +201,12 @@ function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; 
       className="min-w-0"
     >
       <Link
-        to={`/app/worksheets/${ws.id}`}
-        aria-label={`${ws.title || 'Arbeitsblatt'} — öffnen`}
+        to={`worksheets/${ws.id}`}
+        aria-label={
+          libraryScope === 'mine'
+            ? `${ws.title || 'Arbeitsblatt'} — Vorschau öffnen`
+            : `${ws.title || 'Arbeitsblatt'} — Community-Vorschau öffnen`
+        }
         className={cn(
           'group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[var(--color-bg-card)]',
           'shadow-sm outline-none ring-indigo-400/80 transition-[transform,box-shadow,border-color] duration-150',
@@ -230,9 +244,19 @@ function WorksheetLibraryCatalogCard({ ws, index }: { ws: WorksheetLibraryItem; 
             <p className="line-clamp-2 text-[12px] leading-snug text-slate-600">{ws.description.trim()}</p>
           ) : null}
           <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
-            <p className="text-[12px] text-slate-400">Druck & Vorschau im Editor</p>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-slate-500">
+              <span className="inline-flex items-center gap-1 tabular-nums text-slate-700">
+                <Star size={13} strokeWidth={2} className="shrink-0 text-amber-500" aria-hidden />
+                <span className="font-medium">{ratingCompact ?? '—'}</span>
+                <span className="font-normal text-slate-400">({ws.rating_count ?? 0})</span>
+              </span>
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <MessageCircle size={13} strokeWidth={2} className="shrink-0 text-indigo-500" aria-hidden />
+                {com}
+              </span>
+            </div>
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-100/90 transition-[background-color,color] group-hover:bg-violet-600 group-hover:text-white group-hover:ring-violet-500">
-              Öffnen
+              Ansehen
               <ChevronRight size={14} className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
             </span>
           </div>
@@ -359,7 +383,9 @@ export function BoardLibraryListPage() {
       if (subjectFilter && !matchesLibrarySubjectFilter(w.subject, subjectFilter)) return false;
       if (gradeFilter && !matchesLibraryGradeFilter(w.grade, gradeFilter)) return false;
       if (techFilter) return false;
-      if (min != null && !Number.isNaN(min)) return false;
+      if (min != null && !Number.isNaN(min)) {
+        if (w.avg_rating == null || w.avg_rating < min) return false;
+      }
       return true;
     });
 
@@ -372,16 +398,16 @@ export function BoardLibraryListPage() {
         break;
       case 'top_rated':
         list.sort((a, b) => {
-          const av = a.kind === 'board' ? (a.avg_rating ?? -1) : -1;
-          const bv = b.kind === 'board' ? (b.avg_rating ?? -1) : -1;
+          const av = 'avg_rating' in a ? (a.avg_rating ?? -1) : -1;
+          const bv = 'avg_rating' in b ? (b.avg_rating ?? -1) : -1;
           if (bv !== av) return bv - av;
           return pub(b) - pub(a);
         });
         break;
       case 'most_rated':
         list.sort((a, b) => {
-          const ac = a.kind === 'board' ? a.rating_count : 0;
-          const bc = b.kind === 'board' ? b.rating_count : 0;
+          const ac = 'rating_count' in a ? a.rating_count ?? 0 : 0;
+          const bc = 'rating_count' in b ? b.rating_count ?? 0 : 0;
           if (bc !== ac) return bc - ac;
           return pub(b) - pub(a);
         });
@@ -819,6 +845,7 @@ export function BoardLibraryListPage() {
                           key={`ws-${row.id}`}
                           ws={row}
                           index={si * 30 + i}
+                          libraryScope={libraryScope}
                         />
                       ),
                     )}
@@ -848,7 +875,7 @@ export function BoardLibraryListPage() {
                       libraryScope={libraryScope}
                     />
                   ) : (
-                    <WorksheetLibraryCatalogCard key={`ws-${row.id}`} ws={row} index={i} />
+                    <WorksheetLibraryCatalogCard key={`ws-${row.id}`} ws={row} index={i} libraryScope={libraryScope} />
                   ),
                 )}
               </div>

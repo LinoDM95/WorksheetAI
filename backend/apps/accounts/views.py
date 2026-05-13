@@ -5,7 +5,6 @@ from django.conf import settings
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import IsAuthenticated
 
-from apps.accounts.permissions import DemoOwnPasswordGate
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -96,31 +95,24 @@ class FinalizeDemoAccountView(APIView):
 
     def post(self, request):
         from apps.accounts.models import UserProfile
-        from apps.accounts.services.demo_accounts import demo_must_set_own_password, profile_is_demo
+        from apps.accounts.services.demo_accounts import profile_is_demo
 
         if not profile_is_demo(request.user):
             return Response(
                 {'detail': 'Dieses Konto ist kein Demo-Zugang.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if demo_must_set_own_password(request.user):
-            return Response(
-                {
-                    'detail': (
-                        'Bitte setze zuerst ein eigenes Passwort für dein Demo-Konto '
-                        '(Hinweis nach der Anmeldung), bevor du es in ein dauerhaftes Konto umwandelst.'
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         ser = FinalizeDemoAccountSerializer(data=request.data, context={'request': request})
         ser.is_valid(raise_exception=True)
         u = request.user
-        new_email = ser.validated_data['new_email']
+        data = ser.validated_data
+        new_email = data['new_email']
         u.email = new_email
         u.username = new_email
-        u.set_password(ser.validated_data['new_password'])
-        u.save(update_fields=['email', 'username', 'password'])
+        u.first_name = (data.get('first_name') or '').strip()
+        u.last_name = (data.get('last_name') or '').strip()
+        u.set_password(data['new_password'])
+        u.save(update_fields=['email', 'username', 'first_name', 'last_name', 'password'])
         UserProfile.objects.filter(user_id=u.pk).update(
             is_demo=False,
             demo_must_set_own_password=False,
@@ -129,8 +121,9 @@ class FinalizeDemoAccountView(APIView):
         return Response(
             {
                 'detail': (
-                    'Dein Konto ist jetzt ein reguläres Nutzerkonto. Bitte melde dich mit der '
-                    'neuen E-Mail-Adresse und dem neuen Passwort erneut an.'
+                    'Dein eigenes Konto ist bereit. Bitte melde dich mit der neuen E-Mail-Adresse '
+                    'und dem neuen Passwort erneut an — im nächsten Schritt wählst du dort einen '
+                    'Plan oder lädst Credits auf.'
                 ),
                 'reauth_required': True,
             },
@@ -152,37 +145,8 @@ class MeView(generics.RetrieveAPIView):
         return self.request.user
 
 
-class DemoSetOwnPasswordView(APIView):
-    """Demo mit Initial-Passwort: erstes eigenes Passwort setzen (Hebel für API-Gate)."""
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        from apps.accounts.models import UserProfile
-        from apps.accounts.services.demo_accounts import demo_must_set_own_password, profile_is_demo
-
-        if not profile_is_demo(request.user):
-            return Response(
-                {'detail': 'Nur für Demo-Konten.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if not demo_must_set_own_password(request.user):
-            return Response(
-                {'detail': 'Du hast bereits ein eigenes Passwort gesetzt.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        ser = ChangePasswordSerializer(data=request.data, context={'request': request})
-        ser.is_valid(raise_exception=True)
-        user = request.user
-        user.set_password(ser.validated_data['new_password'])
-        user.save()
-        UserProfile.objects.filter(user_id=user.pk).update(demo_must_set_own_password=False)
-        _blacklist_all_refresh_tokens_for_user(user)
-        return Response({'detail': 'Passwort gespeichert. Bitte kurz neu anmelden.'}, status=status.HTTP_200_OK)
-
-
 class ChangePasswordView(APIView):
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         from apps.accounts.services.demo_accounts import profile_is_demo
@@ -192,7 +156,8 @@ class ChangePasswordView(APIView):
                 {
                     'detail': (
                         'Demo-Konten können das Passwort hier nicht ändern. '
-                        'Nutze „Demo beenden“ — dort setzt du E-Mail und Passwort für dein dauerhaftes Konto.'
+                        'Übernimm dein Konto unter Einstellungen (Abschnitt „Account übernehmen“) — '
+                        'dort legst du E-Mail, Name und Passwort für dein dauerhaftes Konto fest.'
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -207,7 +172,7 @@ class ChangePasswordView(APIView):
 
 
 class ChangeEmailView(APIView):
-    permission_classes = [IsAuthenticated, DemoOwnPasswordGate]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         from apps.accounts.services.demo_accounts import profile_is_demo
@@ -217,7 +182,7 @@ class ChangeEmailView(APIView):
                 {
                     'detail': (
                         'Demo-Konten können die E-Mail hier nicht ändern. '
-                        'Nutze „Demo beenden“ weiter unten auf dieser Seite.'
+                        'Nutze den Abschnitt „Account übernehmen“ weiter oben auf dieser Seite.'
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,

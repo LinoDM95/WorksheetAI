@@ -6,9 +6,10 @@ const BOARD_LIB_INDEX_RELOAD_KEY = '__wl_board_library_index_f5__';
 
 export function BoardLibraryWorkspace() {
   const location = useLocation();
-  const preview = useMatch({ path: '/app/boards/library/:libraryBoardId', end: true });
+  const worksheetPreview = useMatch({ path: '/app/boards/library/worksheets/:libraryWorksheetId', end: true });
+  const boardPreview = useMatch({ path: '/app/boards/library/:libraryBoardId', end: true });
   const indexExact = useMatch({ path: '/app/boards/library', end: true });
-  const isPreview = Boolean(preview);
+  const isPreview = Boolean(worksheetPreview ?? boardPreview);
 
   useEffect(() => {
     const inSubtree = /^\/app\/boards\/library(\/|$)/.test(location.pathname);
@@ -33,11 +34,24 @@ export function BoardLibraryWorkspace() {
       fullBleed
       layoutVariant="focus"
       topbar={{
-        title: isPreview ? 'Board-Vorschau' : 'Bibliothek',
-        subtitle: isPreview
-          ? 'Live testen wie im Unterricht — ohne sichtbare Namen von Autor:innen oder Kommentar:innen'
-          : 'Marktplatz für interaktive Boards — ausprobieren, bewerten und Ideen übernehmen',
-        breadcrumbs: isPreview ? ['Smartboard', 'Bibliothek', 'Vorschau'] : ['Smartboard', 'Bibliothek'],
+        title:
+          isPreview && worksheetPreview
+            ? 'Arbeitsblatt-Vorschau'
+            : isPreview
+              ? 'Board-Vorschau'
+              : 'Bibliothek',
+        subtitle:
+          isPreview && worksheetPreview
+            ? 'A4 durchblättern, bewerten, kommentieren — ohne sichtbare Namen von Autor:innen oder Kommentar:innen'
+            : isPreview
+              ? 'Live testen wie im Unterricht — ohne sichtbare Namen von Autor:innen oder Kommentar:innen'
+              : 'Öffentliche Inhalte entdecken — Boards und Arbeitsblätter',
+        breadcrumbs:
+          isPreview && worksheetPreview
+            ? ['Smartboard', 'Bibliothek', 'Arbeitsblatt-Vorschau']
+            : isPreview
+              ? ['Smartboard', 'Bibliothek', 'Vorschau']
+              : ['Smartboard', 'Bibliothek'],
       }}
     >
       <Outlet />

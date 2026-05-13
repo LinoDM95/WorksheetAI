@@ -95,7 +95,21 @@ export type WorksheetLibraryItem={
   viewer_is_owner:boolean;
   page_setup?: PageSetup;
   thumbnail_render_model?: Record<string, unknown> | null;
+  avg_rating?: number | null;
+  rating_count?: number;
+  comment_count?: number;
+  my_stars?: number | null;
 };
+
+export type WorksheetLibraryPreview = WorksheetLibraryItem & Pick<Worksheet, 'content' | 'render_model' | 'page_setup'>;
+
+export type WorksheetLibraryCommentRow = {
+  id: string;
+  text: string;
+  author_label: string;
+  created_at: string;
+};
+
 export type Pattern={
   id:string;key:string;name:string;description:string;status:string;blueprint:any;preview_svg:string;
   /** Vom Backend: Standard-Bibliothek ohne Einzelkauf */

@@ -82,16 +82,20 @@ export const SubscriptionPage = () => {
             Plan &amp; Aufladung
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Abos und Einmalzahlungen sind für Demo-Zugänge nicht verfügbar. Zum dauerhaften Konto wechselst du in den{' '}
-            <Link to="/app/settings" className="font-semibold text-violet-700 hover:underline">
+            Abos und Einmalzahlungen sind für Demo-Zugänge nicht verfügbar. Übernimm dein Konto in den{' '}
+            <Link
+              to="/app/settings#account-uebernehmen-demo"
+              className="font-semibold text-violet-700 hover:underline"
+            >
               Einstellungen
-            </Link>
-            .
+            </Link>{' '}
+            (Abschnitt „Account übernehmen“).
           </p>
         </header>
         <Alert tone="info">
           Du nutzt die Plattform mit dem bereitgestellten Demo-Guthaben. Monatliche Gutschriften entfallen; nach Ende des
-          Guthabens ist kein Produktivzugang mehr möglich, bis du dein Konto vervollständigst oder ein reguläres Abo buchst.
+          Guthabens ist kein Produktivzugang mehr möglich, bis du dein Konto übernommen oder ein reguläres Abo
+          abgeschlossen hast.
         </Alert>
         <Card className="!p-6">
           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Aktuelles Guthaben</p>

@@ -36,6 +36,13 @@ class Worksheet(models.Model):
         default=LibraryModerationStatus.NONE,
         db_index=True,
     )
+    source_worksheet = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='derived_worksheets',
+    )
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
     def __str__(self): return self.title
@@ -43,6 +50,63 @@ class Worksheet(models.Model):
     def is_catalog_listed(self) -> bool:
         return self.library_public and self.library_moderation_status == self.LibraryModerationStatus.APPROVED
 
+
+class WorksheetRating(models.Model):
+    """Sterne-Bewertung (1–5) eines öffentlich bibliotheks-gelisteten Arbeitsblatts pro Nutzer."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    worksheet = models.ForeignKey(
+        Worksheet,
+        on_delete=models.CASCADE,
+        related_name='ratings',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='worksheet_ratings',
+    )
+    stars = models.PositiveSmallIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = (
+            models.UniqueConstraint(
+                fields=('worksheet', 'user'),
+                name='worksheet_rating_worksheet_user_uniq',
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f'{self.stars}★ für {self.worksheet_id}'
+
+
+class WorksheetLibraryComment(models.Model):
+    """Community-Kommentar zu einem öffentlich gelisteten Arbeitsblatt."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    worksheet = models.ForeignKey(
+        Worksheet,
+        on_delete=models.CASCADE,
+        related_name='library_comments',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='worksheet_library_comments',
+    )
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['worksheet', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'Kommentar {self.pk} zu {self.worksheet_id}'
 
 class WorksheetRevision(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

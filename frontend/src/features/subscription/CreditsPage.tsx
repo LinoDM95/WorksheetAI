@@ -42,12 +42,14 @@ export const CreditsPage = () => {
             Credit-Aufladung
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Einmalzahlungen sind für Demo-Zugänge deaktiviert. Vervollständige dein Konto in den{' '}
-            <Link to="/app/settings" className="font-semibold text-violet-700 hover:underline">
+            Einmalzahlungen sind für Demo-Zugänge deaktiviert. Übernimm dein Konto unter{' '}
+            <Link
+              to="/app/settings#account-uebernehmen-demo"
+              className="font-semibold text-violet-700 hover:underline"
+            >
               Einstellungen
-            </Link>
-            {' '}
-            („Demo-Zugang beenden“).
+            </Link>{' '}
+            (Abschnitt „Account übernehmen“).
           </p>
         </header>
         <Card className="!p-6 text-center">

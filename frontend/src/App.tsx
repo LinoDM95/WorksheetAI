@@ -10,12 +10,12 @@ import { CurriculaRoutes } from './features/curricula/CurriculaRoutes';
 import { BoardsRoutes } from './features/boards/BoardsRoutes';
 import { BoardLibraryWorkspace } from './features/boards/pages/BoardLibraryWorkspace';
 import { BoardLibraryCommunityPreviewPage } from './features/boards/pages/BoardLibraryCommunityPreviewPage';
+import { WorksheetLibraryCommunityPreviewPage } from './features/worksheets/library/WorksheetLibraryCommunityPreviewPage';
 import { BoardLibraryListPage } from './features/boards/pages/BoardLibraryListPage';
 import { BoardPlayPage } from './features/boards/pages/BoardPlayPage';
 import { StudentBoardPage } from './features/boards/pages/StudentBoardPage';
 import { PasswordForgotPage } from './features/auth/PasswordForgotPage';
 import { PasswordResetConfirmPage } from './features/auth/PasswordResetConfirmPage';
-import { DemoSetOwnPasswordPage } from './features/auth/DemoSetOwnPasswordPage';
 import { PublicLoginPage } from './features/auth/PublicLoginPage';
 import { DatenschutzPage, ImpressumPage } from './features/legal/LegalNoticePages';
 import { BackofficePage } from './features/backoffice/BackofficePage';
@@ -163,11 +163,6 @@ const ProtectedAppLayout = () => {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
-  const demoOwnPwPath =
-    location.pathname === '/app/demo-passwort' || location.pathname.startsWith('/app/demo-passwort/');
-  if (user.demo_must_set_own_password && !demoOwnPwPath) {
-    return <Navigate to="/app/demo-passwort" replace />;
-  }
   const subscriptionPath =
     location.pathname === '/app/abonnement' || location.pathname.startsWith('/app/abonnement/');
   const creditsPath =
@@ -201,7 +196,6 @@ export default function App() {
         <Route path="/s/:token" element={<StudentBoardPage />} />
         <Route path="/app" element={<ProtectedAppLayout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
-          <Route path="demo-passwort" element={<DemoSetOwnPasswordPage />} />
         <Route
           path="abonnement"
           element={
@@ -262,6 +256,7 @@ export default function App() {
         <Route path="boards/:id/play" element={<BoardPlayPage />} />
         <Route path="boards/library" element={<BoardLibraryWorkspace />}>
           <Route index element={<BoardLibraryListPage />} />
+          <Route path="worksheets/:libraryWorksheetId" element={<WorksheetLibraryCommunityPreviewPage />} />
           <Route path=":libraryBoardId" element={<BoardLibraryCommunityPreviewPage />} />
         </Route>
         <Route path="boards/*" element={<BoardWorkspaceShell />} />
@@ -269,7 +264,7 @@ export default function App() {
         <Route
           path="settings"
           element={
-            <ShellRoute topbar={{ title: 'Einstellungen', subtitle: 'Konto, Passwort und Zahlungen' }}>
+            <ShellRoute topbar={{ title: 'Einstellungen', subtitle: 'Account übernehmen, Konto, Passwort und Zahlungen' }}>
               <SettingsPage />
             </ShellRoute>
           }

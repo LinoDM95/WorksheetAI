@@ -98,6 +98,8 @@ class ChangeEmailSerializer(serializers.Serializer):
 class FinalizeDemoAccountSerializer(serializers.Serializer):
     """Demo-Konto in ein reguläres Konto überführen (gleiche User-PK, Inhalte bleiben)."""
 
+    first_name = serializers.CharField(max_length=150, trim_whitespace=True)
+    last_name = serializers.CharField(max_length=150, trim_whitespace=True)
     new_email = serializers.EmailField()
     new_password = serializers.CharField(write_only=True, validators=[validate_password])
     new_password_confirm = serializers.CharField(write_only=True)
@@ -107,6 +109,10 @@ class FinalizeDemoAccountSerializer(serializers.Serializer):
         return value.lower().strip()
 
     def validate(self, attrs):
+        if not (attrs.get('first_name') or '').strip():
+            raise serializers.ValidationError({'first_name': 'Bitte einen Vornamen angeben.'})
+        if not (attrs.get('last_name') or '').strip():
+            raise serializers.ValidationError({'last_name': 'Bitte einen Nachnamen angeben.'})
         if attrs['new_password'] != attrs['new_password_confirm']:
             raise serializers.ValidationError(
                 {'new_password_confirm': 'Die neuen Passwörter stimmen nicht überein.'}
@@ -126,7 +132,6 @@ class UserSerializer(serializers.ModelSerializer):
     subscription = serializers.SerializerMethodField()
     has_platform_access = serializers.SerializerMethodField()
     is_demo_account = serializers.SerializerMethodField()
-    demo_must_set_own_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -140,7 +145,6 @@ class UserSerializer(serializers.ModelSerializer):
             'subscription',
             'has_platform_access',
             'is_demo_account',
-            'demo_must_set_own_password',
             'is_staff',
             'is_superuser',
         ]
@@ -154,11 +158,6 @@ class UserSerializer(serializers.ModelSerializer):
         from apps.accounts.services.demo_accounts import profile_is_demo
 
         return profile_is_demo(obj)
-
-    def get_demo_must_set_own_password(self, obj: User) -> bool:
-        from apps.accounts.services.demo_accounts import demo_must_set_own_password
-
-        return demo_must_set_own_password(obj)
 
     def get_subscription(self, obj: User) -> dict | None:
         from apps.accounts.services.subscription import get_subscription_api_payload
