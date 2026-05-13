@@ -100,6 +100,7 @@ def _resolve_worksheet_listing(instance: Worksheet, data: dict) -> tuple[str, st
 
 
 class WorksheetSerializer(serializers.ModelSerializer):
+    planned_duration_minutes = serializers.IntegerField(write_only=True, required=False, allow_null=True, min_value=5, max_value=90)
     pattern_name = serializers.CharField(source='pattern.name', read_only=True)
     curriculum_warning = serializers.SerializerMethodField()
     curriculum_show_usage = serializers.SerializerMethodField()
@@ -110,7 +111,7 @@ class WorksheetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model=Worksheet
-        fields=['id','title','subject','grade','topic','page_setup','content','render_model','status',
+        fields=['id','planned_duration_minutes','title','subject','grade','topic','page_setup','content','render_model','status',
                 'generation_meta','pattern','pattern_name','created_at','updated_at',
                 'curriculum_warning','curriculum_show_usage','curriculum_usage_panel',
                 'library_public','library_listing_title','library_listing_topic','library_listing_description',
@@ -198,6 +199,8 @@ class WorksheetSerializer(serializers.ModelSerializer):
         MOD = Worksheet.LibraryModerationStatus
         listing_keys = ('library_listing_title', 'library_listing_topic', 'library_listing_description')
         listing_in = any(k in validated_data for k in listing_keys)
+        has_planned_duration = 'planned_duration_minutes' in validated_data
+        planned_duration_value = validated_data.pop('planned_duration_minutes') if has_planned_duration else None
 
         if 'library_public' in validated_data:
             wants = bool(validated_data['library_public'])
@@ -257,6 +260,14 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 c, _ = apply_page_overflow_reflow(c, page_setup=instance.page_setup)
             validated_data['content'] = c
         instance = super().update(instance, validated_data)
+        if has_planned_duration:
+            meta = copy.deepcopy(instance.generation_meta) if isinstance(instance.generation_meta, dict) else {}
+            if planned_duration_value is None:
+                meta.pop('time_budget_minutes', None)
+            else:
+                meta['time_budget_minutes'] = int(planned_duration_value)
+            instance.generation_meta = meta
+            instance.save(update_fields=['generation_meta', 'updated_at'])
         if 'library_public' in validated_data:
             now_catalog = instance.is_catalog_listed()
             if now_catalog and not was_catalog:

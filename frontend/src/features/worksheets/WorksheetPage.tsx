@@ -12,6 +12,7 @@ import { A4WorksheetRenderer, type PageLayoutOverflowInfo } from './A4WorksheetR
 import { normalizeContentForEdit } from './WorksheetContentEditor';
 import { WorksheetEditSidebar } from './WorksheetEditSidebar';
 import { WorksheetDetailPageHeader } from './WorksheetDetailPageHeader';
+import { WorksheetDetailMetaPanel } from './WorksheetDetailMetaPanel';
 import { ResizableEditorDock } from '../../components/ResizableEditorDock';
 import { useResizableEditorDock } from '../../lib/useResizableEditorDock';
 import { WORKSHEET_LIST_QUERY_KEY, WORKSHEETS_REVISIONS_QUERY_KEY, worksheetsLibraryQueryKey } from '../../lib/listQueries';
@@ -21,6 +22,7 @@ import { backofficeDeleteWorksheet, backofficeUnpublishWorksheet } from '../boar
 import { useDominantA4PageInScroll } from './useDominantA4PageInScroll';
 import { clearPendingFirstOpenWorksheet } from './lib/worksheetFirstOpenHighlight';
 import { applyWorksheetRevision, deleteWorksheetRevision, fetchWorksheetRevisions } from './worksheetsApi';
+import { resolveGradeFromWizard } from '../wizard/wizardState';
 
 const MAX_DRAFT_UNDO = 10;
 
@@ -89,6 +91,15 @@ export function WorksheetPage() {
   const [staffLibBusy, setStaffLibBusy] = useState(false);
   const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
 
+  const [metaTitle, setMetaTitle] = useState('');
+  const [metaSubject, setMetaSubject] = useState('');
+  const [metaTopic, setMetaTopic] = useState('');
+  const [metaGradeFrom, setMetaGradeFrom] = useState('');
+  const [metaGradeTo, setMetaGradeTo] = useState('');
+  const [metaDuration, setMetaDuration] = useState('');
+  const [metaFormError, setMetaFormError] = useState<string | null>(null);
+  const [metaSavePending, setMetaSavePending] = useState(false);
+
   useEffect(() => {
     worksheetIdRef.current = id;
   }, [id]);
@@ -121,6 +132,32 @@ export function WorksheetPage() {
       void queryClient.invalidateQueries({ queryKey: WORKSHEETS_REVISIONS_QUERY_KEY(id!) });
     },
   });
+
+  useEffect(() => {
+    if (!ws) return;
+    setMetaTitle(ws.title || '');
+    setMetaSubject(ws.subject || '');
+    setMetaTopic(ws.topic || '');
+    const g = ws.grade;
+    if (g != null && Number.isFinite(Number(g))) {
+      const s = String(Math.round(Number(g)));
+      setMetaGradeFrom(s);
+      setMetaGradeTo(s);
+    } else {
+      setMetaGradeFrom('');
+      setMetaGradeTo('');
+    }
+    const meta = ws.generation_meta as Record<string, unknown> | undefined;
+    const rawTb = meta?.time_budget_minutes;
+    let dm: number | null = null;
+    if (typeof rawTb === 'number' && Number.isFinite(rawTb)) dm = rawTb;
+    else if (rawTb != null) {
+      const n = parseInt(String(rawTb), 10);
+      if (!Number.isNaN(n)) dm = n;
+    }
+    setMetaDuration(dm != null && dm > 0 ? String(dm) : '');
+    setMetaFormError(null);
+  }, [ws]);
 
   const revisionPreview = useMemo((): WorksheetRevision | null => {
     if (!ws || previewRevisionId === null) return null;
@@ -354,6 +391,78 @@ export function WorksheetPage() {
       setSaving(false);
     }
   };
+
+  const handleSaveWorksheetMeta = useCallback(async () => {
+    if (!id || !ws || ws.viewer_is_owner === false || revisionPreview) return;
+    setMetaFormError(null);
+    const ttl = metaTitle.trim();
+    const subj = metaSubject.trim();
+    const top = metaTopic.trim();
+    if (!ttl) {
+      setMetaFormError('Titel ist ein Pflichtfeld.');
+      return;
+    }
+    if (!subj) {
+      setMetaFormError('Fach ist ein Pflichtfeld.');
+      return;
+    }
+    if (!top) {
+      setMetaFormError('Thema ist ein Pflichtfeld.');
+      return;
+    }
+    if (!metaGradeFrom || !metaGradeTo) {
+      setMetaFormError('Bitte Klassenstufe „von“ und „bis“ wählen.');
+      return;
+    }
+    const gf = parseInt(metaGradeFrom, 10);
+    const gt = parseInt(metaGradeTo, 10);
+    if (Number.isNaN(gf) || Number.isNaN(gt) || gf < 1 || gf > 13 || gt < 1 || gt > 13) {
+      setMetaFormError('Klassenstufen müssen zwischen 1 und 13 liegen.');
+      return;
+    }
+    const gradeResult = resolveGradeFromWizard(metaGradeFrom, metaGradeTo);
+    if (gradeResult.gradeValue == null) {
+      setMetaFormError('Klassenstufe ist ungültig.');
+      return;
+    }
+    const d = parseInt(metaDuration.trim(), 10);
+    if (!metaDuration.trim() || Number.isNaN(d) || d < 5 || d > 90) {
+      setMetaFormError('Geplante Dauer: bitte eine ganze Zahl zwischen 5 und 90.');
+      return;
+    }
+    setMetaSavePending(true);
+    setErr('');
+    try {
+      const r = await api.patch(`/worksheets/${id}/`, {
+        title: ttl.slice(0, 255),
+        subject: subj.slice(0, 120),
+        topic: top,
+        grade: gradeResult.gradeValue,
+        planned_duration_minutes: d,
+      });
+      setWs(r.data);
+      void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (err as Error)?.message ||
+        'Speichern fehlgeschlagen.';
+      setMetaFormError(String(detail));
+    } finally {
+      setMetaSavePending(false);
+    }
+  }, [
+    id,
+    ws,
+    revisionPreview,
+    metaTitle,
+    metaSubject,
+    metaTopic,
+    metaGradeFrom,
+    metaGradeTo,
+    metaDuration,
+    queryClient,
+  ]);
 
   const handleDraftFromSheet = useCallback((action: SetStateAction<Record<string, unknown>>) => {
     setDraft((prev) => {
@@ -846,6 +955,27 @@ export function WorksheetPage() {
             onDeleteRevisionEntry={handleConfirmDeleteRevisionEntry}
           />
         </div>
+
+        {!isReadOnly && !revisionPreview ? (
+          <WorksheetDetailMetaPanel
+            worksheet={ws}
+            metaTitle={metaTitle}
+            setMetaTitle={setMetaTitle}
+            metaSubject={metaSubject}
+            setMetaSubject={setMetaSubject}
+            metaTopic={metaTopic}
+            setMetaTopic={setMetaTopic}
+            metaGradeFrom={metaGradeFrom}
+            setMetaGradeFrom={setMetaGradeFrom}
+            metaGradeTo={metaGradeTo}
+            setMetaGradeTo={setMetaGradeTo}
+            metaDuration={metaDuration}
+            setMetaDuration={setMetaDuration}
+            metaFormError={metaFormError}
+            onSaveMeta={() => void handleSaveWorksheetMeta()}
+            savePending={metaSavePending}
+          />
+        ) : null}
 
       <div className="relative z-0 flex min-h-0 flex-1 flex-col print:h-auto print:min-h-0 print:overflow-visible">
         <div

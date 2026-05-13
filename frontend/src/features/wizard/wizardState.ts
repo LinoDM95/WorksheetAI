@@ -50,6 +50,7 @@ export type WizardState = {
   creativeShowSheetHeader: boolean;
 
   /* Step 2 — Inhalt */
+  worksheetTitle: string;
   topic: string;
   subject: string;
   gradeFrom: string;
@@ -77,6 +78,7 @@ export type WizardState = {
 export const INITIAL_WIZARD_STATE: WizardState = {
   worksheetMode: 'standard',
   creativeShowSheetHeader: false,
+  worksheetTitle: '',
   topic: '',
   subject: '',
   gradeFrom: '',
@@ -95,7 +97,8 @@ export const INITIAL_WIZARD_STATE: WizardState = {
   margins: { top: 12, right: 12, bottom: 12, left: 12 },
   marginLinked: true,
   marginValue: 12,
-  renderer: 'auto',
+  /** Standard-Arbeitsblätter: fest LaTeX/KaTeX-Pipeline (keine UI-Auswahl). Kreativ: immer html. */
+  renderer: 'latex',
 };
 
 export const buildPageSetup = (state: WizardState): PageSetup => {
@@ -188,7 +191,8 @@ export const wizardReducer = (state: WizardState, action: WizardAction): WizardS
   }
 };
 
-const resolveGradeFromWizard = (
+/** Öffentliche Hilfe: Mittelpunkt der Stufen-Spanne für die DB (`grade`). */
+export const resolveGradeFromWizard = (
   gradeFrom: string,
   gradeTo: string,
 ): { gradeValue: number | null; gradeBand: string | null } => {
@@ -206,10 +210,17 @@ const resolveGradeFromWizard = (
 };
 
 export const validateWizardInhaltStep = (state: WizardState): string | null => {
+  if (!state.worksheetTitle.trim()) return 'Bitte einen Arbeitsblatt-Titel angeben.';
   if (!state.topic.trim()) return 'Bitte ein Thema angeben.';
   if (!state.subject.trim()) return 'Bitte ein Fach wählen.';
   if (!state.gradeFrom.trim() || !state.gradeTo.trim()) {
     return 'Bitte Klassenstufe von und bis wählen.';
+  }
+  const durRaw = state.duration.trim();
+  if (!durRaw) return 'Bitte die geplante Dauer (Minuten) angeben.';
+  const n = Number(durRaw);
+  if (!Number.isInteger(n) || n < 5 || n > 90) {
+    return 'Geplante Dauer: bitte eine ganze Zahl zwischen 5 und 90.';
   }
   if (!state.teacherPrompt.trim()) return 'Bitte den Lehrer-Prompt / Zusatzwünsche ausfüllen.';
   return null;
@@ -228,8 +239,11 @@ export const buildGeneratePayload = (state: WizardState): GenerateWorksheetPaylo
   const difficulty = state.difficulty.trim() || 'standard';
   const worksheetType = state.worksheetType.trim() || 'practice';
   const language = state.language.trim() || 'de';
+  const wt = state.worksheetTitle.trim();
+
   const payload: GenerateWorksheetPayload = {
     worksheet_mode: mode,
+    ...(wt ? { worksheet_title: wt } : {}),
     topic: state.topic,
     subject_name: state.subject,
     grade_value: gradeValue,

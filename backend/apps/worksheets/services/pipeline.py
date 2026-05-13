@@ -209,11 +209,8 @@ class WorksheetGenerator(WorksheetPipeline):
 
     @staticmethod
     def apply_inbox_listing_defaults(content: dict[str, Any], payload: dict[str, Any]) -> None:
-        """Neue KI-Blätter: leeres Listen-Fach (Ohne Ordner), Fach als Dokument-Untertitel.
+        """Subtitle aus Auftrags-Fach, falls das KI-Dokument noch keinen Untertitel setzt."""
 
-        ``Worksheet.subject`` bleibt leer, damit die Explorer-Gruppierung mit Boards parity hat.
-        Sichtbares Fach kommt aus ``content['subtitle']`` (Render-Modell), ggf. aus dem Auftrag.
-        """
         if not isinstance(content, dict):
             return
         payload_subj = (payload.get('subject_name') or payload.get('subject') or '').strip()
@@ -365,11 +362,17 @@ class WorksheetGenerator(WorksheetPipeline):
                     meta['time_budget_minutes'] = tbi
             except (TypeError, ValueError):
                 pass
+        explicit_title = str(self.payload.get('worksheet_title') or '').strip()[:255]
+        if explicit_title:
+            if isinstance(content, dict):
+                content['title'] = explicit_title
+        ws_title = explicit_title or str(content.get('title') or 'Arbeitsblatt')[:255]
+        subject_val = str(self.payload.get('subject_name') or self.payload.get('subject') or '').strip()[:120]
         worksheet = Worksheet.objects.create(
             owner=self.user,
             pattern=self.pattern,
-            title=content.get('title', 'Arbeitsblatt'),
-            subject='',
+            title=ws_title,
+            subject=subject_val,
             grade=self.payload.get('grade_value') or self.payload.get('grade'),
             topic=self.payload.get('topic', ''),
             page_setup=self.page_setup,

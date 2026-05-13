@@ -63,6 +63,12 @@ describe('buildPageSetup', () => {
     expect(setup.width_mm).toBe(210);
     expect(setup.height_mm).toBe(297);
     expect(setup.orientation).toBe('portrait');
+    expect(setup.renderer).toBe('html');
+  });
+
+  it('Initial-State: Standard nutzt Renderer latex nur im Wizard (Seiten-Setup bleibt Web/html)', () => {
+    expect(INITIAL_WIZARD_STATE.renderer).toBe('latex');
+    expect(INITIAL_WIZARD_STATE.worksheetMode).toBe('standard');
   });
 
   it('Landscape: 297×210', () => {
@@ -161,32 +167,87 @@ describe('wizardReducer', () => {
 });
 
 describe('validateWizardInhaltStep', () => {
+  const withTitle = { ...INITIAL_WIZARD_STATE, worksheetTitle: 'Arbeitsblatt 1' };
+
+  it('rejects ohne Arbeitsblatt-Titel', () => {
+    expect(validateWizardInhaltStep({ ...INITIAL_WIZARD_STATE })).toMatch(/Arbeitsblatt-Titel|Titel angeben|Titel/i);
+  });
+
   it('rejects ohne topic', () => {
-    expect(validateWizardInhaltStep({ ...INITIAL_WIZARD_STATE })).toMatch(/Thema/);
+    expect(validateWizardInhaltStep(withTitle)).toMatch(/Thema/);
   });
 
   it('rejects ohne subject', () => {
-    expect(validateWizardInhaltStep({ ...INITIAL_WIZARD_STATE, topic: 'X' })).toMatch(/Fach/);
+    expect(validateWizardInhaltStep({ ...withTitle, topic: 'X' })).toMatch(/Fach/);
   });
 
   it('rejects ohne Klassenstufe', () => {
     expect(
       validateWizardInhaltStep({
-        ...INITIAL_WIZARD_STATE,
+        ...withTitle,
         topic: 'X',
         subject: 'Mathe',
       }),
     ).toMatch(/Klassenstufe/);
   });
 
-  it('rejects ohne teacherPrompt', () => {
+  it('rejects ohne Dauer', () => {
     expect(
       validateWizardInhaltStep({
-        ...INITIAL_WIZARD_STATE,
+        ...withTitle,
         topic: 'X',
         subject: 'Mathe',
         gradeFrom: '5',
         gradeTo: '5',
+      }),
+    ).toMatch(/Dauer/);
+  });
+
+  it('rejects bei Dauer außerhalb 5–90 oder nicht ganzzahlig', () => {
+    expect(
+      validateWizardInhaltStep({
+        ...withTitle,
+        topic: 'X',
+        subject: 'Mathe',
+        gradeFrom: '5',
+        gradeTo: '5',
+        duration: '4',
+        teacherPrompt: 'x',
+      }),
+    ).toMatch(/5 und 90/);
+    expect(
+      validateWizardInhaltStep({
+        ...withTitle,
+        topic: 'X',
+        subject: 'Mathe',
+        gradeFrom: '5',
+        gradeTo: '5',
+        duration: '91',
+        teacherPrompt: 'x',
+      }),
+    ).toMatch(/5 und 90/);
+    expect(
+      validateWizardInhaltStep({
+        ...withTitle,
+        topic: 'X',
+        subject: 'Mathe',
+        gradeFrom: '5',
+        gradeTo: '5',
+        duration: '30.5',
+        teacherPrompt: 'x',
+      }),
+    ).toMatch(/5 und 90/);
+  });
+
+  it('rejects ohne teacherPrompt', () => {
+    expect(
+      validateWizardInhaltStep({
+        ...withTitle,
+        topic: 'X',
+        subject: 'Mathe',
+        gradeFrom: '5',
+        gradeTo: '5',
+        duration: '45',
       }),
     ).toMatch(/Lehrer/);
   });
@@ -194,11 +255,12 @@ describe('validateWizardInhaltStep', () => {
   it('liefert null wenn alles ok', () => {
     expect(
       validateWizardInhaltStep({
-        ...INITIAL_WIZARD_STATE,
+        ...withTitle,
         topic: 'X',
         subject: 'Mathe',
         gradeFrom: '5',
         gradeTo: '5',
+        duration: '45',
         teacherPrompt: 'Mach das gut.',
       }),
     ).toBeNull();
@@ -208,6 +270,7 @@ describe('validateWizardInhaltStep', () => {
 describe('buildGeneratePayload', () => {
   const ready: WizardState = {
     ...INITIAL_WIZARD_STATE,
+    worksheetTitle: 'Klassenarbeit Brüche',
     topic: 'Brüche',
     subject: 'Mathe',
     gradeFrom: '5',
@@ -226,6 +289,12 @@ describe('buildGeneratePayload', () => {
     const p = buildGeneratePayload(ready);
     expect(p.grade_value).toBe(6);
     expect(p.grade_band).toBe('5–7');
+    expect((p as { worksheet_title?: string }).worksheet_title).toBe('Klassenarbeit Brüche');
+  });
+
+  it('ohne worksheetTitle kein Feld worksheet_title', () => {
+    const p = buildGeneratePayload({ ...ready, worksheetTitle: '' });
+    expect((p as { worksheet_title?: string }).worksheet_title).toBeUndefined();
   });
 
   it('grade_band wird bei gradeFrom===gradeTo zur Einzelzahl', () => {

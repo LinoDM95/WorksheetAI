@@ -23,7 +23,6 @@ import {
   buildGeneratePayload,
   validateWizardInhaltStep,
   type WizardOrientation,
-  type WizardRenderer,
   type WizardState,
   type WorksheetWizardMode,
 } from './wizardState';
@@ -137,6 +136,7 @@ export function WizardPage() {
       return;
     }
     const subtitle =
+      (state.worksheetTitle && state.worksheetTitle.trim()) ||
       (state.topic && state.topic.trim()) ||
       (state.subject && state.subject.trim()) ||
       undefined;
@@ -294,6 +294,8 @@ const StepModus = ({
     actions.setField('worksheetMode', mode);
     if (mode === 'creative') {
       actions.setField('renderer', 'html');
+    } else {
+      actions.setField('renderer', 'latex');
     }
   };
   return (
@@ -386,6 +388,17 @@ const StepInhalt = ({
       ) : null}
 
       <div className="space-y-5">
+        <Field label="Arbeitsblatt-Titel" htmlFor="w-sheet-title" required>
+          <TextInput
+            id="w-sheet-title"
+            value={state.worksheetTitle}
+            onChange={(e) => set('worksheetTitle', e.target.value)}
+            placeholder="Erscheint in deiner Liste und Überschrift"
+            maxLength={255}
+            aria-required
+          />
+        </Field>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Fach" htmlFor="w-subject" required>
             <select
@@ -497,20 +510,18 @@ const StepInhalt = ({
               <option value="expert">Experte</option>
             </select>
           </Field>
-          <Field label="Dauer (optional)" htmlFor="w-duration">
-            <select
+          <Field label="Geplante Dauer (Min.)" htmlFor="w-duration" required>
+            <TextInput
               id="w-duration"
-              className={selectClassName}
+              type="number"
+              min={5}
+              max={90}
               value={state.duration}
               onChange={(e) => set('duration', e.target.value)}
-            >
-              <option value="">Bitte wählen …</option>
-              {['15', '30', '45', '60', '90'].map((d) => (
-                <option key={d} value={d}>
-                  {d} Min
-                </option>
-              ))}
-            </select>
+              placeholder="z. B. 45"
+              className="tabular-nums"
+              aria-required
+            />
           </Field>
           <Field label="Sprache (optional)" htmlFor="w-lang">
             <select
@@ -661,28 +672,14 @@ const StepDesign = ({
         <div className="divider my-5" />
 
         {state.worksheetMode === 'standard' ? (
-          <>
-            <SectionHeading>Renderer</SectionHeading>
-            <p className="mb-3 text-[12.5px] leading-relaxed text-slate-600">
-              Ziel-Pipeline für spätere Bearbeitung und Druckweg.{' '}
-              <strong className="font-medium">Kreativ</strong>-Arbeitsblätter sind immer{' '}
-              <strong className="font-medium">HTML</strong> (ohne eigene Auswahl).
-            </p>
-            <RadioGroup
-              value={state.renderer}
-              onChange={(id) => set('renderer', id as WizardRenderer)}
-              columns={3}
-              options={[
-                { id: 'auto', label: 'Auto', sub: 'Empfohlen' },
-                { id: 'html', label: 'HTML', sub: 'Web-Vorschau' },
-                { id: 'latex', label: 'LaTeX', sub: 'Druckqualität' },
-              ]}
-            />
-          </>
+          <p className="mb-4 text-[12.5px] leading-relaxed text-slate-600">
+            Im <strong className="font-medium">Standardmodus</strong> nutzt die App automatisch die Arbeitsblatt-Pipeline
+            mit Vorlagen-Matching und <strong className="font-medium">LaTeX/KaTeX</strong> für Formeln — ohne
+            Renderer-Auswahl. Druck und PDF entsprechen der Seiten-Vorschau.
+          </p>
         ) : null}
         {state.worksheetMode === 'creative' ? (
           <>
-            <div className="divider my-5" />
             <SectionHeading>Vorgegebener Kopfbereich</SectionHeading>
             <p className="mb-3 text-[12.5px] leading-relaxed text-slate-600">
               Standard zeigt über dem gestalteten Inhalt weiterhin einen <strong className="font-medium">festen Kopf</strong> mit
@@ -755,7 +752,8 @@ const StepGenerieren = ({
       <div>
         <div className="text-[15px] font-bold text-emerald-800">Bereit zur Generierung</div>
         <div className="mt-1 text-[13px] text-slate-700">
-          „{state.topic}“ · {state.subject} · {formatWizardGradeSummary(state)} ·{' '}
+          „{state.worksheetTitle.trim() || state.topic}“ · {state.subject} · {formatWizardGradeSummary(state)}
+          {` · ca. ${state.duration.trim()} Min`} ·{' '}
           {state.worksheetMode === 'creative' ? (
             <>
               Modus: Kreativ (HTML/CSS)
@@ -769,7 +767,7 @@ const StepGenerieren = ({
     </div>
     <p className="text-[13.5px] leading-relaxed text-slate-600">
       Starte die KI mit <strong className="font-medium">Fertigstellen &amp; Generieren</strong> unten. Danach wechselt die
-      Ansicht zur Arbeitsblatt-Galerie: Das neue Blatt erscheint unter „Ohne Ordner“ und ist grün hervorgehoben, bis du es
+      Ansicht zur Arbeitsblatt-Galerie: Das neue Blatt erscheint unter dem gewählten Fach und ist grün hervorgehoben, bis du es
       einmal öffnest. Über die Benachrichtigung oder die Liste gelangst du zum Editor; PDF und Druck erreichst du dort.
     </p>
     {generating ? (

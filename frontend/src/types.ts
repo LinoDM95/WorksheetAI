@@ -122,6 +122,8 @@ export type GenerateWorksheetPayload={
   worksheet_mode?:'standard'|'creative';
   /** Kreativ: fester App-Kopfbereich (Titel/Untertitel über dem HTML). Standard true. */
   creative_show_sheet_header?:boolean;
+  /** Optionaler Arbeitslistentitel vor der KI; ohne Eintrag nutzt die Pipeline den KI-Titel. */
+  worksheet_title?:string;
   topic:string;subject_name:string;grade_value:number|null;
   /** Optional, z. B. „8–10“ für die KI; `grade_value` bleibt ein repräsentativer Punkt für DB/Audience. */
   grade_band?:string|null;
