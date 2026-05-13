@@ -54,6 +54,18 @@ Die **jeweils gültigen Haupt-Prompts und Produktregeln** haben **immer Vorrang*
 - **Fehlerfreundlichkeit:** kurze, hilfreiche Hinweise bei Fehlbedienung — ohne belehrenden Fließtext.
 - **Minimalismus (visuelle Oberfläche):** so viel **Gestaltung** wie für **Klarheit und Motivation** nötig — nicht mehr **reine Deko**. **Gleichzeitig:** Das ist **kein** Aufruf, auf **passende** Technik zu verzichten — **Libraries, Szenen-Engines** und **strukturierten Code** wie im **Hauptprompt** (Qualität vor Kurzcode) sind davon **nicht** betroffen.
 
+### 2.5 Professionelle Illustration & Oberfläche (nur interaktives Board — HTML/CSS/JS)
+
+**Ziel:** Die **erste** sichtbare Version soll im Klassenzimmer **präsentationsreif** wirken — wie gepflegtes **Lernmaterial**, nicht wie schneller Wireframe, Zufallsparrott oder generische Demo-Grafik.
+
+- **Kein „erst hässlich“:** Farben, Typografie und Illustrationen **direkt** auf **Beamer-/Smartboard-Lesbarkeit** auslegen (grobe Silhouetten, klare Kontraste).
+- **Typografie-Stufen** (Orientierung für **1280×720**): **Titel** ca. **28–36px**, **Zwischenüberschrift** **18–24px**, **Fließtext** **15–18px**, **kleinere Hinweise/Legenden** **≥13px**; **höchstens 3–4 Stufen**; **Zeilenabstand** für Fließ ca. **1.35–1.5**. Kein Mikrotext für Pflichtinformationen.
+- **Farb-System:** wenige, klare Rollen — **Seitenhintergrund**, **1–2 Oberflächen** (Karten/Bereiche), **ein** dominanter **Akzent** für Primäraktionen/Hervorhebung, **Text** mit ausreichendem Kontrast. **Kein** wildes Nebeneinander unzusammenhängender **Akzentfarben** pro Zeile.
+- **SVG & Zeichnungen:** sinnvolle **viewBox**; **einheitliche** Strichstärken (z. B. **2px** für Details, **2.5–3px** für tragende Umrisse — **max. zwei** Gewichte pro Szene); **`stroke-linecap`** und **`stroke-linejoin`** typischerweise **`round`**; Illustrationen **mit Flächenfüllung** oder **2–3 Farbstufen** statt nur „nackter“ Linienkrakel; sehr dezente **Tiefenwirkung** (minimaler Schatten oder Farbverlauf), **ohne** überladene Effekte.
+- **roughjs:** nur **bewusst** — passt zu einem **explorativen** oder **entdeckenden** Unterrichtsthema; bei **sachlichen** Inhalten eher **klare SVG-Pfade**, **Chart.js**, **d3** oder **Phaser/Pixi**-Graphics mit **sauberer Silhouette**.
+- **Buttons & Karten:** **ein** konsistenter **Randradius** fürs Board; leichte **Elevation** (Schatten oder klare Kontur), **ein** erkennbares Muster für **primary / secondary / ruhig**; **`:active`** und **`:focus-visible`** **sichtbar**, ohne bunte Spielerei.
+- **Wiederholung vermeiden:** dieselben **Abstands-Inkremente** (z. B. **8 / 12 / 16 / 24px**) und dieselbe **grafische Sprache** (z. B. „flache Karten mit Akzentstreifen“) über die **gesamte** Bühne.
+
 ---
 
 ## 3. Nur wenn du JSON für Bausteine ausgibst (`slot_contents` / `content`)

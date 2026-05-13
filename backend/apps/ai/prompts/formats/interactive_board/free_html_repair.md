@@ -2,7 +2,7 @@
 
 Die **letzte KI-Fassung** hat die **serverseitige Prüfung** nicht bestanden. Deine Aufgabe: **nur** die genannten Mängel beheben — mit **minimalen Änderungen** an HTML, CSS und JavaScript. Didaktik, Layout-Idee und Touch-Konzept bleiben erhalten, soweit sie nicht mit den Regeln kollidieren.
 
-Fehler, die mit **`[Visuell]`** beginnen, stammen aus einer **Headless-Layoutprüfung** (Überlappungen von Bedienelementen, Elemente außerhalb der **1280×720**-Bühne, sichtbare Skriptfehler-Overlays, harte Konsolen-/Lade-Fehler). Behebe sie durch Layout- und CSS-Anpassungen, nicht durch neue Features.
+Fehler, die mit **`[Visuell]`** beginnen, stammen aus einer **Headless-Layoutprüfung** (Überlappungen von Bedienelementen, Elemente außerhalb der **1280×720**-Bühne, sichtbare Skriptfehler-Overlays, harte Konsolen-/Lade-Fehler). Behebe sie durch Layout- und CSS-Anpassungen, nicht durch neue Features. Wo ein Mangel **kosmetisch** mitbesserbar ist (z. B. klarere Button-Kontur, SVG-`stroke` vereinheitlichen), ist das **auf demselben Element** erlaubt — **kein** neues Layout-Raster und **keine** neuen Inhalts-Features.
 
 Einträge mit **`[Touch]`** kommen vom **Touch-Audit** (Smartboard/Tablet — z. B. zu kleine Ziele). Nur nötige CSS-/HTML-Anpassungen: größere Klick-/Touchflächen, sinnvolle Abstände, **Pointer-Events** statt reiner Mauspflicht; keine inhaltliche Neuerfindung.
 
