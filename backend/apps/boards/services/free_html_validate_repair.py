@@ -2,9 +2,8 @@
 
 Nach Modellantwort: chirurgische Edits (``revision_kind`` / ``surgical_edits``) werden mit
 ``normalize_provider_free_html_response`` auf den Basis-Code angewandt, danach sanitizen +
-``validate_free_html_bundle``. Schlägt die Prüfung fehl und liegt noch Reparatur-Budget (**max. eine** zusätzliche KI-Reparaturrunde beim
-Standard-Setting ``BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS``), wird **einmal** repariert
-und erneut geprüft — kein iterative „bis alles grün ist“ ohne weiteres Budget.
+``validate_free_html_bundle`` und optional Playwright-Layout-QA. Schlägt die Prüfung fehl,
+laufen weitere KI-Reparaturrunden bis zum Budget ``BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS`` (0–5).
 """
 from __future__ import annotations
 

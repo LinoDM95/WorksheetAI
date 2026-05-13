@@ -51,6 +51,9 @@ export type Worksheet={
   library_listing_description?: string;
   library_moderation_status?: 'none' | 'pending' | 'approved' | 'rejected';
   library_published_at?: string | null;
+  library_snapshot_at?: string | null;
+  /** Gespeicherter Arbeitsstand weicht vom öffentlichen Bibliotheks-Snapshot ab. */
+  library_public_live_differs?: boolean;
   viewer_is_owner?: boolean;
   /** Neueste gespeicherte Revision (KI/Manuell); gleich dem Dropdown-Wert „Aktueller Stand“. */
   revision_head_id?: string | null;
@@ -58,6 +61,8 @@ export type Worksheet={
   can_revise_with_ai?: boolean;
   /** Nur bei GET /worksheets/ (Liste): erste Seite für Karten-Vorschau. */
   thumbnail_render_model?: Record<string, unknown> | null;
+  /** Nur Eigentümer-Galerie: Ordnerzuordnung (Fach bleibt unabhängig). */
+  folder?: { id: string; path: string } | null;
 };
 
 export type WorksheetRevision = {

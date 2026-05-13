@@ -88,6 +88,10 @@ export function WorksheetPage() {
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [libraryModalMode, setLibraryModalMode] = useState<'publish' | 'edit_listing' | null>(null);
   const [libraryModalError, setLibraryModalError] = useState<string | null>(null);
+  const [libraryBannerMessage, setLibraryBannerMessage] = useState<{
+    tone: 'error' | 'info';
+    text: string;
+  } | null>(null);
   const [staffLibBusy, setStaffLibBusy] = useState(false);
   const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
 
@@ -701,7 +705,10 @@ export function WorksheetPage() {
       ? 'Einreichung zurückziehen'
       : 'Aus öffentlicher Bibliothek nehmen';
 
-  const runLibraryListingPatch = async (body: Record<string, unknown>) => {
+  const runLibraryListingPatch = async (
+    body: Record<string, unknown>,
+    opts?: { onSuccess?: () => void },
+  ) => {
     if (!id) return;
     setLibraryBusy(true);
     setLibraryModalError(null);
@@ -709,6 +716,7 @@ export function WorksheetPage() {
     try {
       const r = await api.patch<Worksheet>(`/worksheets/${id}/`, body);
       setWs(r.data);
+      opts?.onSuccess?.();
       void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('all') });
       void queryClient.invalidateQueries({ queryKey: worksheetsLibraryQueryKey('mine') });
       void queryClient.invalidateQueries({ queryKey: WORKSHEET_LIST_QUERY_KEY });
@@ -720,6 +728,52 @@ export function WorksheetPage() {
     } finally {
       setLibraryBusy(false);
     }
+  };
+
+  const handleSubmitWorksheetLibraryUpdate = () => {
+    if (!id || !ws) return;
+    const lt = (ws.library_listing_title || ws.title || '').trim();
+    const lk = (ws.library_listing_topic || ws.topic || '').trim();
+    const ld = (ws.library_listing_description || '').trim();
+    if (!lt || !lk || !ld) {
+      setLibraryBannerMessage({
+        tone: 'error',
+        text:
+          'Bitte zuerst unter „Bibliotheks-Texte“ einen öffentlichen Titel, ein Thema und eine Beschreibung hinterlegen.',
+      });
+      return;
+    }
+    setLibraryBannerMessage(null);
+    void runLibraryListingPatch(
+      {
+        library_public: true,
+        library_listing_title: lt,
+        library_listing_topic: lk,
+        library_listing_description: ld,
+      },
+      {
+        onSuccess: () =>
+          setLibraryBannerMessage({
+            tone: 'info',
+            text: 'Update wurde zur Prüfung eingereicht. Die öffentliche Fassung bleibt vorerst die zuletzt freigegebene.',
+          }),
+      },
+    ).catch(() => {});
+  };
+
+  const handleSyncWorksheetLibrarySnapshot = () => {
+    if (!id) return;
+    setLibraryBannerMessage(null);
+    void runLibraryListingPatch(
+      { library_sync_public_snapshot: true },
+      {
+        onSuccess: () =>
+          setLibraryBannerMessage({
+            tone: 'info',
+            text: 'Die öffentliche Bibliotheksfassung wurde mit dem aktuellen Arbeitsstand abgeglichen.',
+          }),
+      },
+    ).catch(() => {});
   };
 
   const handleLibraryPublishOpen = () => {
@@ -932,6 +986,9 @@ export function WorksheetPage() {
             onLibraryPublish={() => handleLibraryPublishOpen()}
             onLibraryWithdraw={() => void handleLibraryWithdraw()}
             onLibraryListingEdit={libListed && !isReadOnly ? () => handleLibraryListingEditOpen() : undefined}
+            onSubmitLibraryUpdate={libListed && !isReadOnly ? handleSubmitWorksheetLibraryUpdate : undefined}
+            onSyncPublicLibrarySnapshot={libListed && !isReadOnly ? handleSyncWorksheetLibrarySnapshot : undefined}
+            libraryBannerMessage={libraryBannerMessage}
             staffLibBusy={staffLibBusy}
             onStaffUnpublish={() => void handleStaffUnpublishWorksheet()}
             onStaffDelete={() => void handleStaffDeleteWorksheet()}

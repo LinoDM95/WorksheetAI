@@ -6,8 +6,17 @@ und gibt eine erweiterte Liste verbotener JS-Muster vor.
 """
 from __future__ import annotations
 
+import logging
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 from typing import Any
+
+from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 MAX_HTML_LEN = 80_000
 MAX_CSS_LEN = 120_000
@@ -242,6 +251,41 @@ def warn_css(css: str) -> list[str]:
     return warns
 
 
+def _nodejs_syntax_errors(j: str) -> list[str]:
+    if not getattr(settings, 'BOARDS_JS_SYNTAX_CHECK_NODE', True):
+        return []
+    if not shutil.which('node'):
+        return []
+    path: str | None = None
+    try:
+        fd, path = tempfile.mkstemp(suffix='_board.js', text=True)
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            handle.write(j)
+        proc = subprocess.run(
+            ['node', '--check', path],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return []
+        raw = (proc.stderr or proc.stdout or '').strip()
+        line = raw.splitlines()[0][:300] if raw else 'Syntaxfehler (keine Details).'
+        return [f'JavaScript-Syntax: {line}']
+    except subprocess.TimeoutExpired:
+        return ['JavaScript-Syntaxprüfung (node --check) hat das Zeitlimit überschritten.']
+    except OSError as exc:
+        logger.warning('JavaScript-Syntaxprüfung: node --check nicht ausführbar: %s', exc)
+        return []
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
 def validate_javascript(js: str) -> list[str]:
     errs: list[str] = []
     j = js or ''
@@ -250,6 +294,8 @@ def validate_javascript(js: str) -> list[str]:
     for label, pattern in _FORBIDDEN_JS_PATTERNS:
         if pattern.search(j):
             errs.append(f'JavaScript enthält nicht erlaubtes Muster: {label}.')
+    if len(j) <= MAX_JS_LEN and j.strip():
+        errs.extend(_nodejs_syntax_errors(j))
     return errs
 
 

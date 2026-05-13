@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -81,6 +82,7 @@ class WorksheetLibraryListingApiTests(TestCase):
         data = r.json()
         self.assertTrue(data['library_public'])
         self.assertEqual(data['library_moderation_status'], 'approved')
+        self.assertIsNotNone(data.get('library_snapshot_at'))
 
     def test_library_list_uses_listing_title(self) -> None:
         User = get_user_model()
@@ -105,3 +107,101 @@ class WorksheetLibraryListingApiTests(TestCase):
         self.assertEqual(rows[0]['title'], 'Katalogtitel')
         self.assertEqual(rows[0]['topic'], 'KTopic')
         self.assertEqual(rows[0]['description'], 'KDesc')
+
+    def test_approved_live_edit_keeps_snapshot_until_staff_sync_or_reapprove(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        ws = Worksheet.objects.create(
+            owner=self.user,
+            title='Privat',
+            subject='Bio',
+            topic='Thema',
+            content={'title': 'ORIGINAL', 'pages': []},
+            render_model={'version': 'a', 'pages': [{'tasks': [], 'hints': [], 'solution': '', 'page_index': 0}]},
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+            library_listing_title='Listetitel',
+            library_listing_topic='Listtopic',
+            library_listing_description='ListeDesc',
+            library_published_at=timezone.now(),
+        )
+        ws.library_snapshot_subject = ws.subject or ''
+        ws.library_snapshot_grade = ws.grade
+        ws.library_snapshot_topic = ws.topic or ''
+        ws.library_snapshot_generation_meta = dict(ws.generation_meta) if ws.generation_meta else {}
+        ws.library_snapshot_content = dict(ws.content) if ws.content else {}
+        ws.library_snapshot_render_model = dict(ws.render_model) if ws.render_model else {}
+        ws.library_snapshot_page_setup = dict(ws.page_setup) if ws.page_setup else {}
+        ws.library_snapshot_at = timezone.now()
+        ws.save()
+        patch_url = f'/api/worksheets/{ws.id}/'
+
+        teacher_client = APIClient()
+        teacher_client.force_authenticate(user=self.user)
+        r_t = teacher_client.patch(
+            patch_url,
+            {
+                'content': {
+                    'title': 'GEÄNDERT',
+                    'pages': [],
+                },
+            },
+            format='json',
+        )
+        self.assertEqual(r_t.status_code, status.HTTP_200_OK)
+
+        detail = teacher_client.get(f'/api/worksheets/{ws.id}/library-entry/').json()
+        self.assertEqual(detail['content'].get('title'), 'ORIGINAL')
+
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
+        self.client.force_authenticate(user=self.user)
+        rs = self.client.patch(
+            patch_url,
+            {'library_sync_public_snapshot': True},
+            format='json',
+        )
+        self.assertEqual(rs.status_code, status.HTTP_200_OK)
+        detail_after = teacher_client.get(f'/api/worksheets/{ws.id}/library-entry/').json()
+        self.assertEqual(detail_after['content'].get('title'), 'GEÄNDERT')
+
+    def test_non_staff_snapshot_sync_forbidden(self) -> None:
+        self.client.force_authenticate(user=self.user)
+        ws = Worksheet.objects.create(
+            owner=self.user,
+            title='Privat',
+            topic='Thema',
+            content={'title': 'X', 'pages': []},
+            render_model={'version': 'a', 'pages': [{'tasks': [], 'hints': [], 'solution': '', 'page_index': 0}]},
+            library_public=True,
+            library_moderation_status=Worksheet.LibraryModerationStatus.APPROVED,
+            library_listing_title='L',
+            library_listing_topic='T',
+            library_listing_description='D.',
+            library_published_at=timezone.now(),
+            library_snapshot_at=timezone.now(),
+        )
+        r = self.client.patch(
+            f'/api/worksheets/{ws.id}/',
+            {'library_sync_public_snapshot': True},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_snapshot_sync_requires_catalog_listed(self) -> None:
+        User = get_user_model()
+        staff = User.objects.create_user('staff_ws_syn2', password='x', is_staff=True)
+        client = APIClient()
+        client.force_authenticate(user=staff)
+        ws = Worksheet.objects.create(
+            owner=staff,
+            title='Privat',
+            topic='Thema',
+            content={'title': 'X', 'pages': []},
+            render_model={'version': 'a', 'pages': [{'tasks': [], 'hints': [], 'solution': '', 'page_index': 0}]},
+        )
+        r = client.patch(
+            f'/api/worksheets/{ws.id}/',
+            {'library_sync_public_snapshot': True},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)

@@ -1,6 +1,31 @@
 import { api } from '../../lib/api';
 import type { Worksheet, WorksheetLibraryCommentRow, WorksheetLibraryPreview, WorksheetRevision } from '../../types';
 
+export type WorksheetFolderDto = {
+  id: string;
+  parent: string | null;
+  name: string;
+  sort_order: number;
+  path: string;
+};
+
+export const fetchWorksheetFolders = () =>
+  api.get<WorksheetFolderDto[] | { results: WorksheetFolderDto[] }>('/worksheets/folders/').then((r) => {
+    const raw = (r.data as { results?: WorksheetFolderDto[] }).results ?? r.data;
+    return Array.isArray(raw) ? (raw as WorksheetFolderDto[]) : [];
+  });
+
+export const createWorksheetFolder = (payload: { name: string; parent?: string | null }) =>
+  api.post<WorksheetFolderDto>('/worksheets/folders/', payload).then((r) => r.data);
+
+export const deleteWorksheetFolder = (folderId: string) =>
+  api.delete(`/worksheets/folders/${folderId}/`).then((r) => r.data);
+
+export const updateWorksheetFolder = (
+  folderId: string,
+  body: { name?: string; parent?: string | null; sort_order?: number },
+) => api.patch<WorksheetFolderDto>(`/worksheets/folders/${folderId}/`, body).then((r) => r.data);
+
 export const fetchWorksheetRevisions = (id: string) =>
   api.get<WorksheetRevision[]>(`/worksheets/${id}/revisions/`).then((r) => r.data);
 

@@ -5,7 +5,13 @@ import json
 from django.conf import settings
 from django.utils import timezone
 
-from .models import Worksheet, WorksheetLibraryComment, WorksheetRating, WorksheetRevision
+from .models import (
+    Worksheet,
+    WorksheetFolder,
+    WorksheetLibraryComment,
+    WorksheetRating,
+    WorksheetRevision,
+)
 from .services.render_model import build_render_model
 from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
 from .services.creative_html_pipeline import (
@@ -25,6 +31,12 @@ from .services.worksheet_revision_head import (
     worksheet_metadata_snapshot,
 )
 from .services.worksheet_thumbnail_preview import first_page_render_model_for_thumbnail
+from .services.library_public_snapshot import (
+    copy_live_worksheet_to_library_snapshot,
+    worksheet_bundle_for_library_consumer,
+    worksheet_catalog_thumbnail_render_model,
+    worksheet_public_live_differs_from_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +49,7 @@ def _worksheet_content_is_creative_html(content: dict) -> bool:
     return is_creative_html_content(content) or worksheet_pages_are_creative_html_shape(content)
 
 
-def _planned_duration_from_worksheet(obj: Worksheet) -> int | None:
-    meta = obj.generation_meta if isinstance(obj.generation_meta, dict) else {}
+def _planned_duration_from_generation_meta(meta: dict) -> int | None:
     raw = meta.get('time_budget_minutes')
     if raw is not None:
         try:
@@ -48,6 +59,11 @@ def _planned_duration_from_worksheet(obj: Worksheet) -> int | None:
         except (TypeError, ValueError):
             pass
     return None
+
+
+def _planned_duration_from_worksheet(obj: Worksheet) -> int | None:
+    meta = obj.generation_meta if isinstance(obj.generation_meta, dict) else {}
+    return _planned_duration_from_generation_meta(meta)
 
 
 def build_curriculum_usage_payload(worksheet: Worksheet) -> dict:
@@ -99,6 +115,63 @@ def _resolve_worksheet_listing(instance: Worksheet, data: dict) -> tuple[str, st
     )
 
 
+def _resolve_worksheet_folder_for_owner(*, raw_folder_id, user) -> WorksheetFolder | None:
+    if raw_folder_id in (None, '', 'null'):
+        return None
+    try:
+        owner = resolve_worksheet_owner(user)
+    except ValueError as exc:
+        raise serializers.ValidationError({'folder_id': 'Authentifizierung erforderlich.'}) from exc
+    folder = WorksheetFolder.objects.filter(pk=raw_folder_id, owner_id=owner.id).first()
+    if not folder:
+        raise serializers.ValidationError({'folder_id': 'Ordner nicht gefunden oder keine Berechtigung.'})
+    return folder
+
+
+class WorksheetFolderBriefSerializer(serializers.ModelSerializer):
+    path = serializers.CharField(source='path_label', read_only=True)
+
+    class Meta:
+        model = WorksheetFolder
+        fields = ('id', 'path')
+        read_only_fields = fields
+
+
+class WorksheetFolderSerializer(serializers.ModelSerializer):
+    path = serializers.CharField(source='path_label', read_only=True)
+
+    class Meta:
+        model = WorksheetFolder
+        fields = ('id', 'parent', 'name', 'sort_order', 'path')
+        read_only_fields = ('id', 'path')
+
+    def validate_parent(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        if not request:
+            return value
+        owner = resolve_worksheet_owner(request.user)
+        if value.owner_id != owner.id:
+            raise serializers.ValidationError('Ungültiger übergeordneter Ordner.')
+        return value
+
+    def validate(self, attrs):
+        parent = attrs.get('parent')
+        if parent is None and 'parent' not in attrs:
+            return attrs
+        instance = getattr(self, 'instance', None)
+        if instance is not None and parent is not None:
+            walk = parent
+            while walk is not None:
+                if walk.pk == instance.pk:
+                    raise serializers.ValidationError(
+                        {'parent': 'Ein Ordner kann nicht sich selbst oder seine Unterordner überordnen.'},
+                    )
+                walk = walk.parent
+        return attrs
+
+
 class WorksheetSerializer(serializers.ModelSerializer):
     planned_duration_minutes = serializers.IntegerField(write_only=True, required=False, allow_null=True, min_value=5, max_value=90)
     pattern_name = serializers.CharField(source='pattern.name', read_only=True)
@@ -108,6 +181,9 @@ class WorksheetSerializer(serializers.ModelSerializer):
     viewer_is_owner = serializers.SerializerMethodField()
     revision_head_id = serializers.SerializerMethodField()
     can_revise_with_ai = serializers.SerializerMethodField()
+    folder = WorksheetFolderBriefSerializer(read_only=True)
+    library_snapshot_at = serializers.DateTimeField(read_only=True)
+    library_public_live_differs = serializers.SerializerMethodField()
 
     class Meta:
         model=Worksheet
@@ -116,9 +192,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 'curriculum_warning','curriculum_show_usage','curriculum_usage_panel',
                 'library_public','library_listing_title','library_listing_topic','library_listing_description',
                 'library_moderation_status','library_published_at','viewer_is_owner',
-                'revision_head_id','can_revise_with_ai']
+                'revision_head_id','can_revise_with_ai','folder',
+                'library_snapshot_at','library_public_live_differs']
         read_only_fields=['owner','created_at','updated_at','generation_meta','library_published_at','viewer_is_owner','library_moderation_status',
-                         'revision_head_id','can_revise_with_ai']
+                         'revision_head_id','can_revise_with_ai','library_snapshot_at','library_public_live_differs']
 
     def get_viewer_is_owner(self, obj: Worksheet) -> bool:
         request = self.context.get('request')
@@ -136,6 +213,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
         return worksheet_matches_revision_head(obj)
 
     @staticmethod
+    def get_library_public_live_differs(obj: Worksheet) -> bool:
+        return worksheet_public_live_differs_from_snapshot(obj)
+
+    @staticmethod
     def get_curriculum_warning(obj: Worksheet) -> str | None:
         meta = obj.generation_meta if isinstance(obj.generation_meta, dict) else {}
         w = meta.get('curriculum_warning')
@@ -150,6 +231,68 @@ class WorksheetSerializer(serializers.ModelSerializer):
         return build_curriculum_usage_payload(obj)
 
     def to_representation(self, instance):
+        request = self.context.get('request')
+        viewer = getattr(request, 'user', None) if request else None
+        owner_view = bool(
+            viewer and getattr(viewer, 'is_authenticated', False) and instance.owner_id == viewer.id,
+        )
+        force_snap = bool(self.context.get('worksheet_force_library_snapshot'))
+        use_snap = force_snap or (
+            instance.is_catalog_listed()
+            and getattr(instance, 'library_snapshot_at', None) is not None
+            and not owner_view
+        )
+
+        if use_snap:
+            snap_c, snap_rm, snap_ps = worksheet_bundle_for_library_consumer(instance)
+            instance_view = instance
+            req = {
+                'theme': (snap_rm or {}).get('theme', 'neutral'),
+                'creativity': (snap_rm or {}).get('creativity', 'balanced'),
+                'show_sheet_header': (snap_rm or {}).get('show_sheet_header', True),
+            }
+            content = copy.deepcopy(snap_c) if isinstance(snap_c, dict) else {}
+            render_model_candidate = snap_rm if isinstance(snap_rm, dict) else {}
+            page_setup_eff = snap_ps if isinstance(snap_ps, dict) else {}
+            if _worksheet_content_is_creative_html(content):
+                c2, _ = repair_creative_html_worksheet(copy.deepcopy(content), page_setup_eff)
+                render_out = (
+                    render_model_candidate
+                    if self._render_model_usable(render_model_candidate)
+                    else build_creative_html_render_model(c2, page_setup_eff, req)
+                )
+            else:
+                render_out = (
+                    render_model_candidate
+                    if self._render_model_usable(render_model_candidate)
+                    else build_render_model(content, page_setup_eff, instance_view.pattern, req)
+                )
+
+            lite = serializers.ModelSerializer.to_representation(self, instance_view)
+            lite['subject'] = (instance.library_snapshot_subject or '').strip()
+            lite['grade'] = instance.library_snapshot_grade
+            lite['topic'] = (instance.library_snapshot_topic or '').strip()
+            lite['page_setup'] = page_setup_eff
+            lite['content'] = content
+            lite['render_model'] = render_out
+            lite['generation_meta'] = (
+                copy.deepcopy(instance.library_snapshot_generation_meta)
+                if isinstance(instance.library_snapshot_generation_meta, dict)
+                else {}
+            )
+            ct = content.get('title') if isinstance(content, dict) else None
+            if ct:
+                lite['title'] = str(ct)[:255]
+
+            lite['thumbnail_render_model'] = first_page_render_model_for_thumbnail(render_out)
+            lite['library_snapshot_at'] = serializers.DateTimeField().to_representation(
+                instance.library_snapshot_at,
+            )
+            lite['library_public_live_differs'] = self.get_library_public_live_differs(instance)
+            lite['viewer_is_owner'] = owner_view
+            lite.pop('folder', None)
+            return lite
+
         data = super().to_representation(instance)
         req = {
             'theme': (instance.render_model or {}).get('theme', 'neutral'),
@@ -178,6 +321,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
                     data['render_model'] = {'version': 'fallback', 'pages': [], 'solutions': []}
         if self.context.get('worksheet_list'):
             data['thumbnail_render_model'] = first_page_render_model_for_thumbnail(data.get('render_model'))
+
+        viewer = getattr(request, 'user', None) if request else None
+        if not viewer or not getattr(viewer, 'is_authenticated', False) or instance.owner_id != viewer.id:
+            data.pop('folder', None)
         return data
 
     @staticmethod
@@ -192,11 +339,53 @@ class WorksheetSerializer(serializers.ModelSerializer):
     def _content_snapshot_equal(a: dict, b: dict) -> bool:
         return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
+    def validate(self, attrs):
+        raw_in = getattr(self, 'initial_data', None)
+        req = self.context.get('request')
+        if isinstance(raw_in, dict) and raw_in.get('library_sync_public_snapshot') is True:
+            if not req or not getattr(req.user, 'is_staff', False):
+                raise serializers.ValidationError(
+                    {
+                        'library_sync_public_snapshot': (
+                            'Die öffentliche Bibliotheksfassung kann nur von Administrator:innen ohne '
+                            'erneute Prüfung aktualisiert werden.'
+                        ),
+                    },
+                )
+            inst = getattr(self, 'instance', None)
+            if inst is None or not inst.is_catalog_listed():
+                raise serializers.ValidationError(
+                    {
+                        'library_sync_public_snapshot': (
+                            'Die öffentliche Fassung kann nur aktualisiert werden, wenn das Arbeitsblatt '
+                            'bereits in der Bibliothek steht.'
+                        ),
+                    },
+                )
+        attrs = super().validate(attrs)
+        request = self.context.get('request')
+        data = getattr(self, 'initial_data', None)
+        if isinstance(data, dict) and 'folder_id' in data:
+            attrs['folder'] = _resolve_worksheet_folder_for_owner(
+                raw_folder_id=data.get('folder_id'),
+                user=request.user if request else None,
+            )
+        return attrs
+
+    def create(self, validated_data):
+        return super().create(validated_data)
+
     def update(self, instance, validated_data):
+        raw_sync = getattr(self, 'initial_data', None)
+        sync_snapshot_requested = (
+            isinstance(raw_sync, dict) and raw_sync.get('library_sync_public_snapshot') is True
+        )
         content = validated_data.get('content')
         request = self.context.get('request')
         is_staff = bool(request and getattr(request.user, 'is_staff', False))
         MOD = Worksheet.LibraryModerationStatus
+        was_catalog_before = instance.is_catalog_listed()
+        staff_library_snapshot_after_save = False
         listing_keys = ('library_listing_title', 'library_listing_topic', 'library_listing_description')
         listing_in = any(k in validated_data for k in listing_keys)
         has_planned_duration = 'planned_duration_minutes' in validated_data
@@ -216,6 +405,8 @@ class WorksheetSerializer(serializers.ModelSerializer):
                 if is_staff:
                     validated_data['library_moderation_status'] = MOD.APPROVED
                     validated_data['library_public'] = True
+                    if not was_catalog_before:
+                        staff_library_snapshot_after_save = True
                 else:
                     validated_data['library_moderation_status'] = MOD.PENDING
                     validated_data['library_public'] = False
@@ -243,7 +434,6 @@ class WorksheetSerializer(serializers.ModelSerializer):
             if 'library_listing_description' in validated_data:
                 validated_data['library_listing_description'] = ld[:_LISTING_CAP_DESC]
 
-        was_catalog = instance.is_catalog_listed()
         prev_manual_rev: tuple[dict, dict, dict] | None = None
         if 'content' in validated_data:
             prev_manual_rev = (
@@ -270,7 +460,7 @@ class WorksheetSerializer(serializers.ModelSerializer):
             instance.save(update_fields=['generation_meta', 'updated_at'])
         if 'library_public' in validated_data:
             now_catalog = instance.is_catalog_listed()
-            if now_catalog and not was_catalog:
+            if now_catalog and not was_catalog_before:
                 instance.library_published_at = timezone.now()
             elif not now_catalog:
                 instance.library_published_at = None
@@ -302,7 +492,10 @@ class WorksheetSerializer(serializers.ModelSerializer):
             if prev_manual_rev is not None:
                 prev_c, prev_rm, prev_meta = prev_manual_rev
                 new_c = instance.content if isinstance(instance.content, dict) else {}
-                if not self._content_snapshot_equal(prev_c, new_c):
+                new_rm = instance.render_model if isinstance(instance.render_model, dict) else {}
+                content_changed = not self._content_snapshot_equal(prev_c, new_c)
+                render_changed = not self._content_snapshot_equal(prev_rm, new_rm)
+                if content_changed or render_changed:
                     try:
                         u = resolve_worksheet_owner(request.user) if request else None
                     except ValueError:
@@ -314,6 +507,20 @@ class WorksheetSerializer(serializers.ModelSerializer):
                         prev_render_model=prev_rm,
                         prev_meta=prev_meta,
                     )
+        snapshot_fields = [
+            'library_snapshot_content',
+            'library_snapshot_render_model',
+            'library_snapshot_page_setup',
+            'library_snapshot_generation_meta',
+            'library_snapshot_subject',
+            'library_snapshot_grade',
+            'library_snapshot_topic',
+            'library_snapshot_at',
+            'updated_at',
+        ]
+        if sync_snapshot_requested or staff_library_snapshot_after_save:
+            copy_live_worksheet_to_library_snapshot(instance)
+            instance.save(update_fields=snapshot_fields)
         return instance
 
 
@@ -339,7 +546,7 @@ def worksheet_library_entry_detail_dict(ws: Worksheet, request) -> dict:
     """Katalog-Felder plus Inhalt/Render-Modell für die Community-Vorschau."""
     ctx = {'request': request}
     lite = WorksheetLibraryEntrySerializer(ws, context=ctx)
-    heavy = WorksheetSerializer(ws, context=ctx)
+    heavy = WorksheetSerializer(ws, context={**ctx, 'worksheet_force_library_snapshot': True})
     out = dict(lite.data)
     d = dict(heavy.data)
     out['content'] = d['content']
@@ -376,13 +583,14 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
 
     kind = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
     topic = serializers.SerializerMethodField()
     description = serializers.SerializerMethodField()
     grade = serializers.SerializerMethodField()
     owner_label = serializers.SerializerMethodField()
     viewer_is_owner = serializers.SerializerMethodField()
     planned_duration_minutes = serializers.SerializerMethodField()
-    page_setup = serializers.JSONField(read_only=True)
+    page_setup = serializers.SerializerMethodField()
     thumbnail_render_model = serializers.SerializerMethodField()
     avg_rating = serializers.FloatField(read_only=True, allow_null=True)
     rating_count = serializers.IntegerField(read_only=True, required=False, default=0)
@@ -436,7 +644,17 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
         return (obj.library_listing_description or '').strip()
 
     def get_grade(self, obj: Worksheet) -> str:
-        return str(obj.grade) if obj.grade is not None else ''
+        if getattr(obj, 'library_snapshot_at', None) is not None:
+            g = obj.library_snapshot_grade
+        else:
+            g = obj.grade
+        return str(g) if g is not None else ''
+
+    @staticmethod
+    def get_subject(obj: Worksheet) -> str:
+        if getattr(obj, 'library_snapshot_at', None) is not None:
+            return (obj.library_snapshot_subject or '').strip()
+        return (obj.subject or '').strip()
 
     def get_owner_label(self, obj: Worksheet) -> str:
         o = obj.owner
@@ -456,8 +674,20 @@ class WorksheetLibraryEntrySerializer(serializers.ModelSerializer):
         return obj.owner_id == request.user.id
 
     def get_planned_duration_minutes(self, obj: Worksheet) -> int | None:
+        if getattr(obj, 'library_snapshot_at', None) is not None:
+            meta = (
+                obj.library_snapshot_generation_meta
+                if isinstance(obj.library_snapshot_generation_meta, dict)
+                else {}
+            )
+            return _planned_duration_from_generation_meta(meta)
         return _planned_duration_from_worksheet(obj)
 
     @staticmethod
+    def get_page_setup(obj: Worksheet) -> dict:
+        _c, _rm, ps = worksheet_bundle_for_library_consumer(obj)
+        return ps if isinstance(ps, dict) else {}
+
+    @staticmethod
     def get_thumbnail_render_model(obj: Worksheet) -> dict | None:
-        return first_page_render_model_for_thumbnail(obj.render_model)
+        return worksheet_catalog_thumbnail_render_model(obj)

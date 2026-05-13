@@ -12,17 +12,18 @@ from apps.accounts.permissions import APIPaywallMixin
 from apps.accounts.services.credits import enforce_positive_ai_credits_balance
 from apps.patterns.models import WorksheetPattern
 
-from .models import Worksheet, WorksheetLibraryComment, WorksheetRating
+from .models import Worksheet, WorksheetFolder, WorksheetLibraryComment, WorksheetRating
 from .serializers import (
     WorksheetSerializer,
     WorksheetRevisionSerializer,
+    WorksheetFolderSerializer,
     build_curriculum_usage_payload,
     WorksheetLibraryEntrySerializer,
     WorksheetLibraryCommentCreateSerializer,
     WorksheetLibraryCommentSerializer,
     worksheet_library_entry_detail_dict,
 )
-from .services.content_blocks import apply_page_coalesce_to_content, apply_page_overflow_reflow
+from .services.library_public_snapshot import worksheet_bundle_for_library_consumer
 from .services.creative_html_pipeline import (
     build_creative_html_render_model,
     is_creative_html_content,
@@ -43,12 +44,26 @@ from .services.worksheet_revision_head import (
 from .owner import resolve_worksheet_owner
 
 
+class WorksheetFolderViewSet(APIPaywallMixin, viewsets.ModelViewSet):
+    serializer_class = WorksheetFolderSerializer
+
+    def get_queryset(self):
+        try:
+            owner = resolve_worksheet_owner(self.request.user)
+        except ValueError:
+            return WorksheetFolder.objects.none()
+        return WorksheetFolder.objects.filter(owner=owner)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=resolve_worksheet_owner(self.request.user))
+
+
 class WorksheetViewSet(APIPaywallMixin, viewsets.ModelViewSet):
     serializer_class = WorksheetSerializer
 
     def get_queryset(self):
         user = resolve_worksheet_owner(self.request.user)
-        qs = Worksheet.objects.select_related('pattern').prefetch_related('curriculum_usages')
+        qs = Worksheet.objects.select_related('pattern', 'folder').prefetch_related('curriculum_usages')
         if self.action in ('update', 'partial_update', 'destroy'):
             return qs.filter(owner=user)
         if self.action == 'retrieve':
@@ -228,22 +243,35 @@ class WorksheetViewSet(APIPaywallMixin, viewsets.ModelViewSet):
         max_base = max(0, 255 - len(suffix))
         new_title = f'{base_title[:max_base]}{suffix}'
 
+        lib_c, lib_rm, lib_ps = worksheet_bundle_for_library_consumer(original)
+        adopt_topic = (original.library_listing_topic or original.topic or '').strip()[:255]
+        if getattr(original, 'library_snapshot_at', None) is not None:
+            adopt_subject = (original.library_snapshot_subject or '').strip()
+            adopt_grade = original.library_snapshot_grade
+            adopt_gmeta = (
+                copy.deepcopy(original.library_snapshot_generation_meta)
+                if isinstance(original.library_snapshot_generation_meta, dict)
+                else {}
+            )
+        else:
+            adopt_subject = (original.subject or '').strip()
+            adopt_grade = original.grade
+            adopt_gmeta = (
+                copy.deepcopy(original.generation_meta) if isinstance(original.generation_meta, dict) else {}
+            )
+
         clone = Worksheet.objects.create(
             owner=user,
             pattern=original.pattern,
             title=new_title,
-            subject=original.subject,
-            grade=original.grade,
-            topic=(original.library_listing_topic or original.topic or '').strip()[:255],
-            page_setup=copy.deepcopy(original.page_setup) if isinstance(original.page_setup, dict) else {},
-            content=copy.deepcopy(original.content) if isinstance(original.content, dict) else {},
-            render_model=(
-                copy.deepcopy(original.render_model) if isinstance(original.render_model, dict) else {}
-            ),
+            subject=adopt_subject[:120],
+            grade=adopt_grade,
+            topic=adopt_topic,
+            page_setup=copy.deepcopy(lib_ps) if isinstance(lib_ps, dict) else {},
+            content=copy.deepcopy(lib_c) if isinstance(lib_c, dict) else {},
+            render_model=copy.deepcopy(lib_rm) if isinstance(lib_rm, dict) else {},
             status='draft',
-            generation_meta=(
-                copy.deepcopy(original.generation_meta) if isinstance(original.generation_meta, dict) else {}
-            ),
+            generation_meta=adopt_gmeta,
             library_public=False,
             library_listing_title='',
             library_listing_topic='',
@@ -497,6 +525,7 @@ class WorksheetViewSet(APIPaywallMixin, viewsets.ModelViewSet):
             subject=ws.subject,
             grade=ws.grade,
             topic=ws.topic,
+            folder=ws.folder,
             page_setup=copy.deepcopy(ws.page_setup) if isinstance(ws.page_setup, dict) else {},
             content=copy.deepcopy(ws.content) if isinstance(ws.content, dict) else {},
             render_model=copy.deepcopy(ws.render_model) if isinstance(ws.render_model, dict) else {},

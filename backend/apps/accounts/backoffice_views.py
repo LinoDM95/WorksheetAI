@@ -13,6 +13,7 @@ from apps.boards.serializers import BoardDetailSerializer, BoardLibraryEntrySeri
 from apps.boards.services.library_public_snapshot import copy_live_bundle_to_library_snapshot
 from apps.worksheets.models import Worksheet, WorksheetLibraryComment
 from apps.worksheets.serializers import WorksheetLibraryEntrySerializer, WorksheetSerializer
+from apps.worksheets.services.library_public_snapshot import copy_live_worksheet_to_library_snapshot
 
 
 class IsStaffUser(BasePermission):
@@ -224,7 +225,23 @@ class BackofficeWorksheetApproveView(APIView):
         ws.library_moderation_status = Worksheet.LibraryModerationStatus.APPROVED
         ws.library_public = True
         ws.library_published_at = timezone.now()
-        ws.save(update_fields=['library_moderation_status', 'library_public', 'library_published_at', 'updated_at'])
+        copy_live_worksheet_to_library_snapshot(ws)
+        ws.save(
+            update_fields=[
+                'library_moderation_status',
+                'library_public',
+                'library_published_at',
+                'library_snapshot_content',
+                'library_snapshot_render_model',
+                'library_snapshot_page_setup',
+                'library_snapshot_generation_meta',
+                'library_snapshot_subject',
+                'library_snapshot_grade',
+                'library_snapshot_topic',
+                'library_snapshot_at',
+                'updated_at',
+            ],
+        )
         return Response(WorksheetSerializer(ws, context={'request': request}).data)
 
 

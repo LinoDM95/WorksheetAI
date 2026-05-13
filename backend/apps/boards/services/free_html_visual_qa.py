@@ -13,6 +13,30 @@ from .visual_resource_registry import filter_used_libraries
 
 logger = logging.getLogger(__name__)
 
+
+def _console_error_is_resource_failure(msg: str) -> bool:
+    lower = msg.lower()
+    return any(x in lower for x in ('failed to load', '404', 'net::err', 'refused to load'))
+
+
+def _console_error_is_runtime_hard(msg: str) -> bool:
+    lower = msg.lower()
+    if _console_error_is_resource_failure(msg):
+        return True
+    return any(
+        x in lower
+        for x in (
+            'syntaxerror',
+            'unexpected token',
+            'unexpected end',
+            'referenceerror',
+            'typeerror',
+            'rangeerror',
+            'urierror',
+        )
+    )
+
+
 LAYOUT_EVAL_JS = """
 () => {
   const errors = [];
@@ -32,9 +56,9 @@ LAYOUT_EVAL_JS = """
 
   const scrollExcess = root.scrollHeight - root.clientHeight;
   if (scrollExcess > 10) {
-    warnings.push(
+    errors.push(
       '#board-root hat vertikalen Überlauf (' + Math.round(scrollExcess) +
-      'px). Inhalt ggf. straffen oder Bereiche scrollbar strukturieren.'
+      'px). Inhalt straffen oder ohne Seiten-Scroll in 1280×720 unterbringen.'
     );
   }
 
@@ -192,7 +216,7 @@ def run_visual_layout_qa(bundle: dict[str, Any], *, document_base_href: str) -> 
 
             page.on('pageerror', on_page_error)
             page.set_content(doc, wait_until='load', timeout=90_000)
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1200)
             try:
                 result = page.evaluate(LAYOUT_EVAL_JS)
             except Exception as exc:
@@ -208,8 +232,10 @@ def run_visual_layout_qa(bundle: dict[str, Any], *, document_base_href: str) -> 
     for pe in page_errors[:5]:
         err_list.append(f'JavaScript-Fehler beim Rendern: {pe}')
     for ce in console_errors[:5]:
-        if any(x in ce.lower() for x in ('failed to load', '404', 'net::err', 'refused to load')):
+        if _console_error_is_resource_failure(ce):
             err_list.append(f'Ressourcenfehler (Konsole): {ce}')
+        elif _console_error_is_runtime_hard(ce):
+            err_list.append(f'JavaScript-Fehler (Konsole): {ce}')
         else:
             warn_list.append(f'Konsole: {ce}')
 

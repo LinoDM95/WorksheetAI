@@ -1,9 +1,51 @@
+from __future__ import annotations
+
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
 from apps.boards.models import REVISION_MODE_CHOICES
 
 from apps.patterns.models import WorksheetPattern
+
+
+class WorksheetFolder(models.Model):
+    """Eigene Galerie-Struktur für Arbeitsblätter — hierarchische Ordner pro Lehrkraft (unabhängig vom Feld „Fach“)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='worksheet_folders',
+    )
+    parent = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='children',
+    )
+    name = models.CharField(max_length=120)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        constraints = (
+            models.UniqueConstraint(
+                fields=('owner', 'parent', 'name'),
+                name='worksheet_folder_owner_parent_name_uniq',
+            ),
+        )
+
+    def path_label(self) -> str:
+        parts: list[str] = []
+        node: WorksheetFolder | None = self
+        while node is not None:
+            parts.append(node.name)
+            node = node.parent
+        return ' / '.join(reversed(parts))
+
+    def __str__(self) -> str:
+        return self.path_label()
 
 
 class Worksheet(models.Model):
@@ -15,6 +57,13 @@ class Worksheet(models.Model):
 
     id=models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner=models.ForeignKey(User, on_delete=models.CASCADE, related_name='worksheets')
+    folder = models.ForeignKey(
+        WorksheetFolder,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='worksheets',
+    )
     pattern=models.ForeignKey(WorksheetPattern, null=True, blank=True, on_delete=models.SET_NULL)
     title=models.CharField(max_length=255)
     subject=models.CharField(max_length=120, blank=True)
@@ -30,6 +79,14 @@ class Worksheet(models.Model):
     library_listing_topic = models.CharField(max_length=220, blank=True)
     library_listing_description = models.TextField(blank=True)
     library_published_at=models.DateTimeField(null=True, blank=True)
+    library_snapshot_at = models.DateTimeField(null=True, blank=True)
+    library_snapshot_content = models.JSONField(default=dict, blank=True)
+    library_snapshot_render_model = models.JSONField(default=dict, blank=True)
+    library_snapshot_page_setup = models.JSONField(default=dict, blank=True)
+    library_snapshot_generation_meta = models.JSONField(default=dict, blank=True)
+    library_snapshot_subject = models.CharField(max_length=120, blank=True)
+    library_snapshot_grade = models.PositiveSmallIntegerField(null=True, blank=True)
+    library_snapshot_topic = models.CharField(max_length=255, blank=True)
     library_moderation_status=models.CharField(
         max_length=20,
         choices=LibraryModerationStatus.choices,

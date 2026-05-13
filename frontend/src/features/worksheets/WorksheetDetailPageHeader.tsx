@@ -1,7 +1,7 @@
 import { ArrowLeft, Download, Globe2, Trash2, Undo2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { Badge, Button } from '../../components/ui';
+import { Alert, Badge, Button } from '../../components/ui';
 import { formatDate } from '../../lib/formatDate';
 import { formatDateTime } from '../../lib/formatDate';
 import { revisionVLabel } from '../../lib/revisionVLabel';
@@ -20,6 +20,9 @@ export type WorksheetDetailPageHeaderProps = {
   onLibraryPublish: () => void;
   onLibraryWithdraw: () => void;
   onLibraryListingEdit?: () => void;
+  onSubmitLibraryUpdate?: () => void;
+  onSyncPublicLibrarySnapshot?: () => void;
+  libraryBannerMessage?: { tone: 'error' | 'info'; text: string } | null;
   staffLibBusy: boolean;
   onStaffUnpublish?: () => void | Promise<void>;
   onStaffDelete?: () => void | Promise<void>;
@@ -52,6 +55,9 @@ export function WorksheetDetailPageHeader({
   onLibraryPublish,
   onLibraryWithdraw,
   onLibraryListingEdit,
+  onSubmitLibraryUpdate,
+  onSyncPublicLibrarySnapshot,
+  libraryBannerMessage = null,
   staffLibBusy,
   onStaffUnpublish,
   onStaffDelete,
@@ -77,10 +83,12 @@ export function WorksheetDetailPageHeader({
   const subtitleParts = [subjectLine, ws.grade != null ? `Klasse ${ws.grade}` : null].filter(
     Boolean,
   ) as string[];
-  const publicLabel =
-    ws.library_published_at != null && String(ws.library_published_at).trim() !== ''
-      ? formatDateTime(ws.library_published_at)
-      : '—';
+  const publicOnlineLabel =
+    ws.library_snapshot_at != null && String(ws.library_snapshot_at).trim() !== ''
+      ? formatDateTime(ws.library_snapshot_at)
+      : ws.library_published_at != null && String(ws.library_published_at).trim() !== ''
+        ? formatDateTime(ws.library_published_at)
+        : '—';
   const catalogListingTitle =
     (ws.library_listing_title || '').trim() || (ws.title || '').trim() || '—';
 
@@ -245,46 +253,98 @@ export function WorksheetDetailPageHeader({
       ) : null}
 
       {!readOnly && libListed ? (
-        <div className="mt-1 rounded-xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50 to-teal-50/90 px-3 py-2.5 ring-1 ring-emerald-200/70">
-          <div className="flex min-w-0 flex-1 gap-2">
-            <Globe2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
-            <div className="min-w-0">
-              <p className="text-xs font-bold tracking-wide text-emerald-950">Öffentlich in der Bibliothek</p>
-              <p className="mt-0.5 text-sm font-semibold text-emerald-900">
-                Freigegeben: <span className="tabular-nums text-emerald-950">{publicLabel}</span>
-              </p>
-              <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-emerald-800/90">
-                <span className="font-medium">Eintrag:</span> {catalogListingTitle}
-              </p>
-              <p className="mt-2 text-[11px] text-emerald-800/80">
-                Änderungen am Arbeitsblatt sind erst nach erneuter Einreichung bzw. Freigabe für alle sichtbar.
-              </p>
+        <div className="mt-1 space-y-2">
+          {libraryBannerMessage ? (
+            <Alert tone={libraryBannerMessage.tone === 'error' ? 'error' : 'info'}>
+              {libraryBannerMessage.text}
+            </Alert>
+          ) : null}
+          <div className="rounded-xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50 to-teal-50/90 px-3 py-2.5 ring-1 ring-emerald-200/70">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
+              <div className="flex min-w-0 flex-1 gap-2">
+                <Globe2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold tracking-wide text-emerald-950">Öffentlich in der Bibliothek</p>
+                  <p className="mt-0.5 text-sm font-semibold text-emerald-900">
+                    Öffentliche Fassung:{' '}
+                    <span className="tabular-nums text-emerald-950">{publicOnlineLabel}</span>
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-emerald-800/90">
+                    <span className="font-medium">Eintrag:</span> {catalogListingTitle}
+                  </p>
+                  {ws.library_public_live_differs ? (
+                    <p className="mt-2 text-[11px] font-semibold text-amber-900">
+                      Hinweis: Dein gespeicherter Stand unterscheidet sich von dieser öffentlichen Fassung.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-emerald-800/80">
+                      Gespeicherter Stand und öffentliche Fassung stimmen überein.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 lg:items-end">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  {userIsStaff ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      loading={libraryBusy}
+                      disabled={libraryBusy || !onSyncPublicLibrarySnapshot}
+                      onClick={() => onSyncPublicLibrarySnapshot?.()}
+                    >
+                      Öffentliche Fassung aktualisieren
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      loading={libraryBusy}
+                      disabled={
+                        libraryBusy ||
+                        !ws.library_public_live_differs ||
+                        ws.library_moderation_status !== 'approved' ||
+                        !onSubmitLibraryUpdate
+                      }
+                      title={
+                        ws.library_moderation_status !== 'approved'
+                          ? 'Nur bei freigegebenem Bibliothekseintrag möglich.'
+                          : undefined
+                      }
+                      onClick={() => onSubmitLibraryUpdate?.()}
+                    >
+                      Update zur Freigabe einreichen
+                    </Button>
+                  )}
+                  {onLibraryListingEdit ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      loading={libraryBusy}
+                      disabled={libraryBusy}
+                      onClick={onLibraryListingEdit}
+                    >
+                      Bibliotheks-Texte
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    loading={libraryBusy}
+                    disabled={libraryBusy}
+                    onClick={onLibraryWithdraw}
+                  >
+                    {libraryWithdrawLabel}
+                  </Button>
+                </div>
+                <span className="text-[11px] text-emerald-900/85 lg:text-right">
+                  Sichtbar im Reiter „Bibliothek“ unter Arbeitsblätter.
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {onLibraryListingEdit ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                loading={libraryBusy}
-                disabled={libraryBusy}
-                onClick={onLibraryListingEdit}
-              >
-                Bibliotheks-Texte
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              loading={libraryBusy}
-              disabled={libraryBusy}
-              onClick={onLibraryWithdraw}
-            >
-              {libraryWithdrawLabel}
-            </Button>
-            <span className="text-[11px] text-emerald-900/85">Sichtbar im Reiter „Bibliothek“ unter Arbeitsblätter.</span>
           </div>
         </div>
       ) : !readOnly ? (

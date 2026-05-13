@@ -10,6 +10,7 @@ export const worksheetLibraryEntryQueryKey = (worksheetId: string) =>
 
 /** Geteilter Cache für alle Listen-Ansichten (Dashboard, „Meine Arbeitsblätter“). */
 export const WORKSHEET_LIST_QUERY_KEY = ['worksheets', 'list'] as const;
+export const WORKSHEETS_FOLDERS_QUERY_KEY = ['worksheets', 'folders'] as const;
 export const WORKSHEETS_REVISIONS_QUERY_KEY = (id: string) => ['worksheets', 'revisions', id] as const;
 
 export const fetchWorksheetList = async <T>(): Promise<T[]> => {

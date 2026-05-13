@@ -268,8 +268,10 @@ BOARDS_FREE_HTML_REPAIR_TEMPERATURE = env.float('BOARDS_FREE_HTML_REPAIR_TEMPERA
 # Optionaler zweiter Durchlauf nach erfolgreicher Validierung: nur CSS/SVG-Kosmetik (siehe ``repair_visual_polish``).
 BOARDS_VISUAL_POLISH_TEMPERATURE = env.float('BOARDS_VISUAL_POLISH_TEMPERATURE', default=0.35)
 # Nach Erst- oder Revisions-Generierung: max. zusätzliche KI-Reparaturrunden bei serverseitigen Validierungsfehlern (0–5).
-# Standard jetzt **1**: ein einziger struktureller Reparatur-Versuch, kein iterative „bis grün“.
-BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=1)
+# Standard **2**: ein erster Versuch nach Initialfehlern, ein weiterer nach ggf. verbleibenden Layout-/JS-Fehlern.
+BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS = env.int('BOARDS_FREE_HTML_MAX_REPAIR_ATTEMPTS', default=2)
+# Wenn True und ``node`` im PATH: zusätzliche Parse-Prüfung des Board-JavaScript (node --check) vor der Auslieferung.
+BOARDS_JS_SYNTAX_CHECK_NODE = env.bool('BOARDS_JS_SYNTAX_CHECK_NODE', default=True)
 # Pro HTML-/CSS-/JS-Block im Nachprompt (`build_free_html_revision_prompt`); zu klein → Slides am Ende „verschwinden“.
 AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS = env.int('AI_BOARD_FREE_HTML_REVISION_BLOCK_MAX_CHARS', default=200_000)
 # Revision/Repair: Auszug aus generation_prompt im KI-Prompt (vollständiger Text bleibt am Board-Modell).

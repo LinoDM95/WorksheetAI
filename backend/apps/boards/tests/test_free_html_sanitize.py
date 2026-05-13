@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import unittest
+
 from django.test import SimpleTestCase
 
 from apps.boards.services import free_html_sanitize as san
@@ -47,6 +50,19 @@ class SanitizeCssJsTests(SimpleTestCase):
     def test_validate_js_rejects_fetch(self) -> None:
         errs = san.validate_javascript("fetch('/api')")
         self.assertTrue(any('fetch' in e.lower() for e in errs))
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js nicht im PATH')
+    def test_validate_js_syntax_invalid_token(self) -> None:
+        errs = san.validate_javascript("const broken = ;")
+        self.assertTrue(
+            any('syntax' in e.lower() or 'unexpected' in e.lower() for e in errs),
+            errs,
+        )
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js nicht im PATH')
+    def test_validate_js_syntax_valid(self) -> None:
+        errs = san.validate_javascript("(function () { return 1; })();")
+        self.assertFalse(any('JavaScript-Syntax' in e for e in errs))
 
     def test_sanitize_bundle_merges_warnings_and_caps_notes(self) -> None:
         long_notes = 'x' * 9000
