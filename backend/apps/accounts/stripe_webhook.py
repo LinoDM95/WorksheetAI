@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from apps.accounts.services.credit_purchases import apply_credit_purchase_from_session
 from apps.accounts.services.stripe_billing import (
     apply_user_subscription_from_stripe,
     get_stripe_module,
@@ -83,6 +84,9 @@ def stripe_webhook_view(request):
         if etype == 'checkout.session.completed':
             sess = data_obj
             mode = str(sess.get('mode') or '')
+            if mode == 'payment':
+                apply_credit_purchase_from_session(sess)
+                return HttpResponse(status=200)
             if mode != 'subscription':
                 return HttpResponse(status=200)
             uid_raw = (sess.get('metadata') or {}).get('user_id')

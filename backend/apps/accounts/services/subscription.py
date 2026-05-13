@@ -142,6 +142,47 @@ def grant_monthly_credits(
     return credits_to_add
 
 
+def grant_monthly_credits_if_due(user: Any) -> int:
+    """Lazy monatliche Gutschrift für aktive Abos (idempotent pro Kalendermonat).
+
+    Wird bei jedem ``/auth/me/`` aufgerufen — fängt Fälle ab, in denen kein
+    Stripe-Webhook ankommt (manuell freigeschaltete Abos, Stripe-Ausfall).
+
+    Anti-Doppel-Buchung: Wenn ``last_monthly_grant_at`` bereits im aktuellen
+    Kalendermonat liegt, wird nicht erneut gebucht — egal aus welchem Pfad
+    (Stripe-Invoice oder vorheriger Lazy-Grant) die letzte Buchung stammte.
+    Gibt die Anzahl gebuchter Credits zurück (0 wenn nichts zu tun).
+    """
+    from apps.accounts.models import UserCreditBalance
+
+    if user is None or not getattr(user, 'is_authenticated', False):
+        return 0
+    if getattr(user, 'is_staff', False):
+        return 0
+    sub = get_user_subscription(user)
+    if not subscription_grants_credits(sub):
+        return 0
+    if int(sub.plan.monthly_credit_grant or 0) <= 0:
+        return 0
+
+    get_or_create_balance_for_user(user)
+    now = timezone.now()
+    bal = UserCreditBalance.objects.filter(user=user).first()
+    if bal and bal.last_monthly_grant_at:
+        last = bal.last_monthly_grant_at
+        if (last.year, last.month) == (now.year, now.month):
+            return 0
+
+    return grant_monthly_credits(user, grant_key=now.strftime('%Y-%m'))
+
+
+def get_or_create_balance_for_user(user: Any):
+    """Indirekt-Import-Wrapper (vermeidet zirkuläre Imports)."""
+    from apps.accounts.services.credits import get_or_create_balance
+
+    return get_or_create_balance(user)
+
+
 def grant_invoice_credits(user: Any, *, grant_key: str, amount: int) -> int:
     """Idempotente Gutschrift für ``invoice.paid`` (Betrag aus Rechnung). Ohne Abo-Status-Check."""
     from apps.accounts.models import UserCreditBalance

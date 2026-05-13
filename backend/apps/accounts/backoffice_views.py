@@ -40,15 +40,28 @@ class BackofficeBoardPreviewView(APIView):
     permission_classes = [IsStaffUser]
 
     def get(self, request, pk):
-        board = Board.objects.filter(pk=pk).first()
+        board = Board.objects.filter(pk=pk).select_related('owner').first()
         if not board:
             return Response({'detail': 'Nicht gefunden.'}, status=404)
         if board.library_moderation_status != Board.LibraryModerationStatus.PENDING:
             return Response({'detail': 'Für dieses Board liegt keine Einreichung zur Freigabe vor.'}, status=400)
+        owner = board.owner
+        owner_label = ''
+        if owner:
+            owner_label = (
+                getattr(owner, 'get_full_name', lambda: '')() or owner.get_username() or owner.email or ''
+            )
         return Response(
             {
+                'id': str(board.id),
                 'title': board.title or '',
                 'board_type': board.board_type,
+                'subject': board.subject or '',
+                'grade': board.grade or '',
+                'topic': board.topic or '',
+                'owner_label': owner_label,
+                'library_listing_description': getattr(board, 'library_listing_description', '') or '',
+                'updated_at': board.updated_at.isoformat() if getattr(board, 'updated_at', None) else None,
                 'html': board.html or '',
                 'css': board.css or '',
                 'javascript': board.javascript or '',
@@ -59,12 +72,17 @@ class BackofficeBoardPreviewView(APIView):
 
 
 class BackofficeWorksheetPreviewView(APIView):
-    """Arbeitsblatt-Rohdaten (content) zur Prüfung vor Bibliotheks-Freigabe."""
+    """Vollständige Arbeitsblatt-Daten (inkl. ``render_model``) zur Prüfung vor Bibliotheks-Freigabe.
+
+    Nutzt ``WorksheetSerializer``, damit das Backoffice-Modal denselben ``A4WorksheetRenderer``
+    verwenden kann wie die reguläre Worksheet-Detailseite (sichere Wiederverwendung, kein eigener
+    Render-Pfad).
+    """
 
     permission_classes = [IsStaffUser]
 
     def get(self, request, pk):
-        ws = Worksheet.objects.filter(pk=pk).select_related('pattern').first()
+        ws = Worksheet.objects.filter(pk=pk).select_related('pattern', 'owner').first()
         if not ws:
             return Response({'detail': 'Nicht gefunden.'}, status=404)
         if ws.library_moderation_status != Worksheet.LibraryModerationStatus.PENDING:
@@ -72,20 +90,15 @@ class BackofficeWorksheetPreviewView(APIView):
                 {'detail': 'Für dieses Arbeitsblatt liegt keine Einreichung zur Freigabe vor.'},
                 status=400,
             )
-        pattern_key = None
-        if ws.pattern_id and ws.pattern:
-            pattern_key = getattr(ws.pattern, 'key', None)
-        return Response(
-            {
-                'title': ws.title or '',
-                'subject': ws.subject or '',
-                'grade': ws.grade,
-                'topic': ws.topic or '',
-                'pattern_key': pattern_key,
-                'page_setup': ws.page_setup if isinstance(ws.page_setup, dict) else {},
-                'content': ws.content if isinstance(ws.content, dict) else {},
-            },
-        )
+        data = WorksheetSerializer(ws, context={'request': request}).data
+        owner_label = ''
+        owner = getattr(ws, 'owner', None)
+        if owner:
+            owner_label = (
+                getattr(owner, 'get_full_name', lambda: '')() or owner.get_username() or owner.email or ''
+            )
+        data['owner_label'] = owner_label
+        return Response(data)
 
 
 class BackofficePendingView(APIView):

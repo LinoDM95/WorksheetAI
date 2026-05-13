@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Check, X, Loader2, FileCode2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Check, Eye, Loader2, Trash2, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Button, Card, PageHeader } from '../../components/ui';
 import type { BoardLibraryItem } from '../boards/types';
 import type { WorksheetLibraryItem } from '../../types';
-import { cn } from '../../lib/cn';
 import {
   BackofficeSourcePreviewModal,
   type BackofficePreviewTarget,
 } from './BackofficeSourcePreviewModal';
+import { useBackofficeModerationActions } from './useBackofficeModerationActions';
 
 type PendingPayload = {
   boards: BoardLibraryItem[];
@@ -17,59 +17,22 @@ type PendingPayload = {
 };
 
 export function BackofficePage() {
-  const qc = useQueryClient();
   const [sourcePreview, setSourcePreview] = useState<BackofficePreviewTarget | null>(null);
   const pending = useQuery({
     queryKey: ['backoffice', 'pending'],
     queryFn: async () => (await api.get<PendingPayload>('/auth/backoffice/pending/')).data,
   });
 
-  const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['backoffice', 'pending'] });
-    void qc.invalidateQueries({ queryKey: ['boards'] });
-    void qc.invalidateQueries({ queryKey: ['worksheets'] });
-    void qc.invalidateQueries({ queryKey: ['library'] });
-  };
+  const moderation = useBackofficeModerationActions();
 
-  const approveBoard = useMutation({
-    mutationFn: async (id: string) => api.post(`/auth/backoffice/boards/${id}/approve/`),
-    onSuccess: invalidate,
-  });
-  const rejectBoard = useMutation({
-    mutationFn: async (id: string) => api.post(`/auth/backoffice/boards/${id}/reject/`),
-    onSuccess: invalidate,
-  });
-  const deleteBoard = useMutation({
-    mutationFn: async (id: string) => api.delete(`/auth/backoffice/boards/${id}/`),
-    onSuccess: invalidate,
-  });
-
-  const approveWs = useMutation({
-    mutationFn: async (id: string) => api.post(`/auth/backoffice/worksheets/${id}/approve/`),
-    onSuccess: invalidate,
-  });
-  const rejectWs = useMutation({
-    mutationFn: async (id: string) => api.post(`/auth/backoffice/worksheets/${id}/reject/`),
-    onSuccess: invalidate,
-  });
-  const deleteWs = useMutation({
-    mutationFn: async (id: string) => api.delete(`/auth/backoffice/worksheets/${id}/`),
-    onSuccess: invalidate,
-  });
-
-  const busy =
-    approveBoard.isPending ||
-    rejectBoard.isPending ||
-    deleteBoard.isPending ||
-    approveWs.isPending ||
-    rejectWs.isPending ||
-    deleteWs.isPending;
+  const boards = pending.data?.boards ?? [];
+  const worksheets = pending.data?.worksheets ?? [];
 
   return (
     <div className="mx-auto w-full max-w-[1200px] space-y-6 px-3 pb-12 pt-4 sm:px-4">
       <PageHeader
         title="Backoffice"
-        subtitle="Einreichungen prüfen — vor der Freigabe den Quelltext (Board: HTML/CSS/JS, Arbeitsblatt: JSON) ansehen."
+        subtitle="Einreichungen prüfen — Smartboards interaktiv testen, Arbeitsblätter als A4 ansehen, Quelltext einsehen und freigeben."
       />
 
       <BackofficeSourcePreviewModal
@@ -88,136 +51,191 @@ export function BackofficePage() {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-[15px] font-bold text-slate-900">Smartboards — Warteschlange</h2>
-        {pending.data && pending.data.boards.length === 0 ? (
+        <h2 className="text-[15px] font-bold text-slate-900">
+          Smartboards{' '}
+          <span className="ml-1 text-[12px] font-medium text-slate-500">
+            ({boards.length})
+          </span>
+        </h2>
+        {pending.data && boards.length === 0 ? (
           <p className="text-sm text-slate-500">Keine offenen Board-Einreichungen.</p>
         ) : null}
         <div className="space-y-3">
-          {(pending.data?.boards ?? []).map((b) => (
-            <Card key={b.id} className="!p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">{b.title || 'Ohne Titel'}</p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
-                    {[b.subject, b.grade].filter(Boolean).join(' · ') || '—'} · {b.owner_label}
-                  </p>
-                  {b.topic ? <p className="mt-1 line-clamp-2 text-[12px] text-slate-600">{b.topic}</p> : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<FileCode2 size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => setSourcePreview({ kind: 'board', id: b.id })}
-                  >
-                    Code prüfen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    leftIcon={<Check size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => approveBoard.mutate(b.id)}
-                  >
-                    Freigeben
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<X size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => rejectBoard.mutate(b.id)}
-                  >
-                    Ablehnen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className={cn('text-red-700 hover:bg-red-50')}
-                    leftIcon={<Trash2 size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm('Board unwiderruflich löschen?')) deleteBoard.mutate(b.id);
-                    }}
-                  >
-                    Löschen
-                  </Button>
-                </div>
-              </div>
-            </Card>
+          {boards.map((b) => (
+            <ModerationCard
+              key={b.id}
+              title={b.title || 'Ohne Titel'}
+              meta={[b.subject, b.grade, b.board_type].filter(Boolean).join(' · ') || '—'}
+              ownerLabel={b.owner_label}
+              topic={b.topic}
+              description={b.description}
+              busy={moderation.busy}
+              isApproving={
+                moderation.approve.isPending && moderation.approve.variables?.id === b.id
+              }
+              isRejecting={
+                moderation.reject.isPending && moderation.reject.variables?.id === b.id
+              }
+              isDeleting={
+                moderation.destroy.isPending && moderation.destroy.variables?.id === b.id
+              }
+              onOpen={() => setSourcePreview({ kind: 'board', id: b.id })}
+              onApprove={() => moderation.approve.mutate({ kind: 'board', id: b.id })}
+              onReject={() => moderation.reject.mutate({ kind: 'board', id: b.id })}
+              onDelete={() => {
+                if (window.confirm('Board unwiderruflich löschen?')) {
+                  moderation.destroy.mutate({ kind: 'board', id: b.id });
+                }
+              }}
+            />
           ))}
         </div>
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-[15px] font-bold text-slate-900">Arbeitsblätter — Warteschlange</h2>
-        {pending.data && pending.data.worksheets.length === 0 ? (
+        <h2 className="text-[15px] font-bold text-slate-900">
+          Arbeitsblätter{' '}
+          <span className="ml-1 text-[12px] font-medium text-slate-500">
+            ({worksheets.length})
+          </span>
+        </h2>
+        {pending.data && worksheets.length === 0 ? (
           <p className="text-sm text-slate-500">Keine offenen Arbeitsblatt-Einreichungen.</p>
         ) : null}
         <div className="space-y-3">
-          {(pending.data?.worksheets ?? []).map((w) => (
-            <Card key={w.id} className="!p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">{w.title || 'Ohne Titel'}</p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
-                    {[w.subject, w.grade ? `Kl. ${w.grade}` : ''].filter(Boolean).join(' · ') || '—'} ·{' '}
-                    {w.owner_label}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<FileCode2 size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => setSourcePreview({ kind: 'worksheet', id: w.id })}
-                  >
-                    Code prüfen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    leftIcon={<Check size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => approveWs.mutate(w.id)}
-                  >
-                    Freigeben
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<X size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => rejectWs.mutate(w.id)}
-                  >
-                    Ablehnen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className={cn('text-red-700 hover:bg-red-50')}
-                    leftIcon={<Trash2 size={14} aria-hidden />}
-                    disabled={busy}
-                    onClick={() => {
-                      if (window.confirm('Arbeitsblatt unwiderruflich löschen?')) deleteWs.mutate(w.id);
-                    }}
-                  >
-                    Löschen
-                  </Button>
-                </div>
-              </div>
-            </Card>
+          {worksheets.map((w) => (
+            <ModerationCard
+              key={w.id}
+              title={w.title || 'Ohne Titel'}
+              meta={[w.subject, w.grade ? `Kl. ${w.grade}` : ''].filter(Boolean).join(' · ') || '—'}
+              ownerLabel={w.owner_label}
+              topic={w.topic}
+              description={w.description}
+              busy={moderation.busy}
+              isApproving={
+                moderation.approve.isPending && moderation.approve.variables?.id === w.id
+              }
+              isRejecting={
+                moderation.reject.isPending && moderation.reject.variables?.id === w.id
+              }
+              isDeleting={
+                moderation.destroy.isPending && moderation.destroy.variables?.id === w.id
+              }
+              onOpen={() => setSourcePreview({ kind: 'worksheet', id: w.id })}
+              onApprove={() => moderation.approve.mutate({ kind: 'worksheet', id: w.id })}
+              onReject={() => moderation.reject.mutate({ kind: 'worksheet', id: w.id })}
+              onDelete={() => {
+                if (window.confirm('Arbeitsblatt unwiderruflich löschen?')) {
+                  moderation.destroy.mutate({ kind: 'worksheet', id: w.id });
+                }
+              }}
+            />
           ))}
         </div>
       </section>
     </div>
+  );
+}
+
+type ModerationCardProps = {
+  title: string;
+  meta: string;
+  ownerLabel?: string;
+  topic?: string;
+  description?: string;
+  busy: boolean;
+  isApproving: boolean;
+  isRejecting: boolean;
+  isDeleting: boolean;
+  onOpen: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onDelete: () => void;
+};
+
+function ModerationCard(props: ModerationCardProps) {
+  const {
+    title,
+    meta,
+    ownerLabel,
+    topic,
+    description,
+    busy,
+    isApproving,
+    isRejecting,
+    isDeleting,
+    onOpen,
+    onApprove,
+    onReject,
+    onDelete,
+  } = props;
+  return (
+    <Card className="!p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 cursor-pointer rounded-md text-left transition-colors hover:bg-slate-50 -mx-2 px-2 py-1"
+          aria-label={`„${title}“ öffnen und prüfen`}
+        >
+          <p className="font-semibold text-slate-900">{title}</p>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            {meta}
+            {ownerLabel ? ` · ${ownerLabel}` : ''}
+          </p>
+          {topic ? (
+            <p className="mt-1 line-clamp-1 text-[12px] text-slate-600">{topic}</p>
+          ) : null}
+          {description ? (
+            <p className="mt-1 line-clamp-2 text-[12px] text-slate-600">{description}</p>
+          ) : null}
+        </button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            leftIcon={<Eye size={14} aria-hidden />}
+            disabled={busy}
+            onClick={onOpen}
+          >
+            Prüfen
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            leftIcon={<Check size={14} aria-hidden />}
+            disabled={busy}
+            loading={isApproving}
+            onClick={onApprove}
+          >
+            Freigeben
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            leftIcon={<X size={14} aria-hidden />}
+            disabled={busy}
+            loading={isRejecting}
+            onClick={onReject}
+          >
+            Ablehnen
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-red-700 hover:bg-red-50"
+            leftIcon={<Trash2 size={14} aria-hidden />}
+            disabled={busy}
+            loading={isDeleting}
+            onClick={onDelete}
+          >
+            Löschen
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }

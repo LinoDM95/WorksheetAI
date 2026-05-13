@@ -91,6 +91,12 @@ class MeView(generics.RetrieveAPIView):
     serializer_class = UserSerializer
 
     def get_object(self):
+        from .services.subscription import grant_monthly_credits_if_due
+
+        try:
+            grant_monthly_credits_if_due(self.request.user)
+        except Exception:
+            logger.exception('grant_monthly_credits_if_due failed for user=%s', getattr(self.request.user, 'pk', None))
         return self.request.user
 
 

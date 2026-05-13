@@ -14,7 +14,12 @@ from .backoffice_views import (
     BackofficeWorksheetRejectView,
     BackofficeWorksheetUnpublishView,
 )
-from .stripe_views import StripeBillingPortalView, StripeCheckoutSessionView
+from .stripe_views import (
+    CreditPackageListView,
+    StripeBillingPortalView,
+    StripeCheckoutSessionView,
+    StripeCreditCheckoutView,
+)
 from .stripe_webhook import stripe_webhook_view
 from .views import (
     ChangeEmailView,
@@ -30,8 +35,10 @@ from .views import (
 
 urlpatterns = [
     path('stripe/checkout/', StripeCheckoutSessionView.as_view()),
+    path('stripe/credits-checkout/', StripeCreditCheckoutView.as_view()),
     path('stripe/portal/', StripeBillingPortalView.as_view()),
     path('stripe/webhook/', stripe_webhook_view),
+    path('credit-packages/', CreditPackageListView.as_view()),
     path('register/', RegisterView.as_view()),
     path('login/', CookieTokenObtainPairView.as_view()),
     path('logout/', LogoutView.as_view()),

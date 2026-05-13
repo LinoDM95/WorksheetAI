@@ -1,55 +1,55 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CreditCard, Loader2 } from 'lucide-react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { CreditCard, Loader2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../lib/authContext';
-import { Button, Card } from '../../components/ui';
+import { Alert, Button, Card } from '../../components/ui';
 import {
   openStripeCustomerPortal,
-  startStripeCheckout,
   stripeErrorMessage,
-  SUBSCRIPTION_PLANS,
-  type SubscriptionPlanSlug,
 } from '../../lib/stripeBilling';
+import { CreditPackagesSection } from './CreditPackagesSection';
+import { PlansSection } from './PlansSection';
+
+/* ============================================================== *
+ * SubscriptionPage — kombiniert Abo-Pläne + Credit-Aufladungen.
+ *
+ * Eine Seite, zwei Sektionen — über den Anker `#credits` direkt zu
+ * den Paketen springen (z. B. via Credits-Bubble in der Topbar).
+ * ============================================================== */
 
 export const SubscriptionPage = () => {
   const { user, refreshAuth, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [loadingSlug, setLoadingSlug] = useState<SubscriptionPlanSlug | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   const checkout = searchParams.get('checkout');
+  const purchase = searchParams.get('purchase');
 
   useEffect(() => {
-    if (checkout === 'success') {
+    if (checkout === 'success' || purchase === 'success') {
       void refreshAuth().then(() => {
         const next = new URLSearchParams(searchParams);
         next.delete('checkout');
+        next.delete('purchase');
         setSearchParams(next, { replace: true });
       });
     }
-  }, [checkout, refreshAuth, searchParams, setSearchParams]);
+  }, [checkout, purchase, refreshAuth, searchParams, setSearchParams]);
 
-  const startCheckout = useCallback(async (plan_slug: SubscriptionPlanSlug) => {
-    setError(null);
-    setLoadingSlug(plan_slug);
-    try {
-      const url = await startStripeCheckout(plan_slug);
-      if (url) {
-        window.location.href = url;
-        return;
+  useEffect(() => {
+    if (location.hash === '#credits') {
+      const el = document.getElementById('credits');
+      if (el) {
+        requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
-      setError('Keine Checkout-URL erhalten.');
-    } catch (e: unknown) {
-      setError(stripeErrorMessage(e, 'Checkout konnte nicht gestartet werden.'));
-    } finally {
-      setLoadingSlug(null);
     }
-  }, []);
+  }, [location.hash]);
 
-  const portal = useCallback(async () => {
-    setError(null);
+  const handlePortal = useCallback(async () => {
+    setPortalError(null);
     setPortalLoading(true);
     try {
       const url = await openStripeCustomerPortal('/app/abonnement');
@@ -57,101 +57,101 @@ export const SubscriptionPage = () => {
         window.location.href = url;
         return;
       }
-      setError('Keine Portal-URL erhalten.');
+      setPortalError('Keine Portal-URL erhalten.');
     } catch (e: unknown) {
-      setError(stripeErrorMessage(e, 'Kundenportal konnte nicht geöffnet werden.'));
+      setPortalError(stripeErrorMessage(e, 'Kundenportal konnte nicht geöffnet werden.'));
     } finally {
       setPortalLoading(false);
     }
   }, []);
 
   const hasAccess = user?.has_platform_access === true;
+  const currentPlanSlug = user?.subscription?.plan_slug ?? null;
+  const currentPlanName = user?.subscription?.plan_name || user?.subscription?.plan_slug || null;
+  const currentCredits = user?.credits_balance ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-10">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-slate-900">Abonnement</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Mit einem aktiven Abo nutzt du Arbeitsblätter, Smartboards und KI-Funktionen. Preise inkl. MwSt.,
-          sofern in Stripe entsprechend hinterlegt.
+    <div className="mx-auto w-full max-w-6xl space-y-10 px-2 py-4 sm:py-8">
+      <header className="mx-auto max-w-2xl text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-violet-50 to-indigo-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-violet-700 ring-1 ring-violet-100">
+          <Sparkles size={12} aria-hidden /> Plan & Credits
+        </span>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+          Wähle, womit du arbeitest.
+        </h1>
+        <p className="mx-auto mt-2 text-[14.5px] text-slate-600">
+          Monatlicher Plan mit festem Credit-Kontingent — oder spontan einmalig Credits aufladen.
+          Alles abrechenbar über Stripe, ohne Risiko.
         </p>
-      </div>
+      </header>
 
-      {checkout === 'canceled' && (
-        <Card className="border-amber-200 bg-amber-50/80 !p-4 text-sm text-amber-900">
-          Der Checkout wurde abgebrochen. Du kannst es jederzeit erneut versuchen.
-        </Card>
-      )}
-
-      {checkout === 'success' && (
-        <Card className="border-emerald-200 bg-emerald-50/80 !p-4 text-sm text-emerald-900">
-          Zahlung wird verarbeitet. Dein Konto wird gleich aktualisiert…
-        </Card>
-      )}
-
-      {error && (
-        <Card className="border-red-200 bg-red-50/80 !p-4 text-sm text-red-900">{error}</Card>
-      )}
+      {checkout === 'canceled' ? (
+        <Alert tone="warn">Der Checkout wurde abgebrochen. Du kannst es jederzeit erneut versuchen.</Alert>
+      ) : null}
+      {purchase === 'canceled' ? (
+        <Alert tone="warn">Der Credit-Kauf wurde abgebrochen. Kein Geld wurde abgebucht.</Alert>
+      ) : null}
+      {checkout === 'success' ? (
+        <Alert tone="success">Zahlung wird verarbeitet. Dein Konto wird gleich aktualisiert…</Alert>
+      ) : null}
+      {purchase === 'success' ? (
+        <Alert tone="success">
+          Aufladung erfolgreich — deine Credits sollten in wenigen Sekunden gutgeschrieben sein.
+        </Alert>
+      ) : null}
 
       {hasAccess ? (
         <Card className="!p-6">
-          <p className="text-slate-700">
-            Dein Abo ist aktiv ({user?.subscription?.plan_name || user?.subscription?.plan_slug || 'bezahlt'}
-            ). Du kannst die Plattform normal nutzen.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button as="link" variant="primary" to="/app/dashboard">
-              Zum Dashboard
-            </Button>
-            <Button
-              variant="secondary"
-              type="button"
-              leftIcon={
-                portalLoading ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <CreditCard size={16} aria-hidden />
-              }
-              loading={portalLoading}
-              onClick={() => void portal()}
-            >
-              Abo verwalten
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {SUBSCRIPTION_PLANS.map((p) => (
-            <Card key={p.slug} className="!p-6">
-              <h2 className="text-lg font-semibold text-slate-900">{p.title}</h2>
-              <p className="mt-1 text-2xl font-bold text-violet-700">{p.price}</p>
-              <p className="mt-2 text-sm text-slate-600">
-                {p.credits.toLocaleString('de-DE')} Credits pro Monat auf dein Konto
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                Dein aktiver Plan
               </p>
+              <p className="mt-1 text-xl font-bold text-slate-900">{currentPlanName}</p>
+              <p className="mt-1 text-[13px] text-slate-600">
+                Aktuelles Guthaben: <span className="font-semibold text-slate-900">{currentCredits.toLocaleString('de-DE')}</span> Credits
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
-                className="mt-6"
-                variant="primary"
-                fullWidth
+                variant="secondary"
                 type="button"
-                loading={loadingSlug === p.slug}
-                leftIcon={loadingSlug === p.slug ? <Loader2 className="animate-spin" size={16} aria-hidden /> : undefined}
-                onClick={() => void startCheckout(p.slug)}
+                leftIcon={
+                  portalLoading ? <Loader2 className="animate-spin" size={16} aria-hidden /> : <CreditCard size={16} aria-hidden />
+                }
+                loading={portalLoading}
+                onClick={() => void handlePortal()}
               >
-                Jetzt buchen
+                Abo verwalten
               </Button>
-            </Card>
-          ))}
-        </div>
-      )}
+            </div>
+          </div>
+          {portalError ? <Alert tone="error" className="mt-4">{portalError}</Alert> : null}
+        </Card>
+      ) : null}
 
-      <p className="text-center text-xs text-slate-500">
-        <button
-          type="button"
-          className="text-violet-700 hover:underline"
-          onClick={() => {
-            void logout().then(() => navigate('/login', { replace: true }));
-          }}
-        >
-          Abmelden
-        </button>
-      </p>
+      <PlansSection
+        currentPlanSlug={currentPlanSlug}
+        hasActiveSubscription={hasAccess && !!currentPlanSlug && currentPlanSlug !== 'free'}
+      />
+
+      <div id="credits" className="scroll-mt-24">
+        <CreditPackagesSection />
+      </div>
+
+      {!hasAccess ? (
+        <p className="text-center text-xs text-slate-500">
+          <button
+            type="button"
+            className="text-violet-700 hover:underline"
+            onClick={() => {
+              void logout().then(() => navigate('/login', { replace: true }));
+            }}
+          >
+            Abmelden
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 };

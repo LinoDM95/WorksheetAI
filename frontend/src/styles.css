@@ -641,6 +641,47 @@ input[type="range"]::-moz-range-thumb {
   .a4-page:last-child { page-break-after: auto; break-after: auto; }
   .page-content.worksheet-page-frame { overflow: hidden !important; position: relative !important; }
   .margin-guide { display: none !important; }
+
+  /* Backoffice-PDF: Drucken aus dem Review-Modal heraus.
+     ``body.ws-backoffice-printing`` wird nur kurz vor ``window.print()`` gesetzt.
+     Sichtbar bleibt ausschließlich ``.ws-backoffice-print-target``; sein Modal-Overlay,
+     Header, Tabs und alles andere wird unterdrückt. */
+  body.ws-backoffice-printing > *:not(.ws-backoffice-print-portal),
+  body.ws-backoffice-printing .ws-backoffice-print-portal > *:not(.ws-backoffice-print-target) {
+    display: none !important;
+  }
+  /* Portal-Wrapper als reiner Durchreich-Container — kein Fixed-Layout, kein Overlay-Hintergrund. */
+  body.ws-backoffice-printing .ws-backoffice-print-portal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    z-index: auto !important;
+  }
+  body.ws-backoffice-printing .ws-backoffice-print-target {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    z-index: auto !important;
+  }
+  body.ws-backoffice-printing .ws-backoffice-print-target .ws-backoffice-print-hide {
+    display: none !important;
+  }
 }
 
 .margin-guide {

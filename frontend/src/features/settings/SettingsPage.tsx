@@ -4,6 +4,7 @@ import { CreditCard, KeyRound, Loader2, Mail, UserCircle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/authContext';
 import {
+  formatPriceCents,
   openStripeCustomerPortal,
   startStripeCheckout,
   stripeErrorMessage,
@@ -309,7 +310,7 @@ export const SettingsPage = () => {
                   className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-sm"
                 >
                   <div className="font-semibold text-slate-900">{p.title}</div>
-                  <div className="mt-1 text-violet-700">{p.price}</div>
+                  <div className="mt-1 text-violet-700">{formatPriceCents(p.price_cents)} / Monat</div>
                   <div className="mt-1 text-slate-600">{p.credits.toLocaleString('de-DE')} Credits / Monat</div>
                   <Button
                     className="mt-3"

@@ -89,3 +89,83 @@ class UserCreditBalance(models.Model):
     class Meta:
         verbose_name = 'Credit-Konto'
         verbose_name_plural = 'Credit-Konten'
+
+
+class CreditPackage(models.Model):
+    """Einmalige Credit-Pakete (one-time purchase). 10k Credits ≙ 10 € + 30 % Marge ⇒ 13 €.
+
+    Größere Pakete erhalten zusätzlich einen Mengenrabatt (psychologischer Upsell).
+    """
+
+    slug = models.SlugField(max_length=64, unique=True)
+    name = models.CharField(max_length=128)
+    credits = models.PositiveIntegerField()
+    price_cents = models.PositiveIntegerField(help_text='Bruttopreis in Cent (z. B. 1299 = 12,99 €).')
+    currency = models.CharField(max_length=3, default='eur')
+    badge_label = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text='Optionales Label für die UI (z. B. "Beliebteste", "Bester Preis").',
+    )
+    highlighted = models.BooleanField(
+        default=False,
+        help_text='Visuelle Hervorhebung (gehighlighte Karte in der UI).',
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    stripe_price_id = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Optional: Stripe Price ID. Leer ⇒ Checkout nutzt price_data dynamisch.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sort_order', 'slug']
+        verbose_name = 'Credit-Paket'
+        verbose_name_plural = 'Credit-Pakete'
+
+    def __str__(self) -> str:
+        return f'{self.name} ({self.credits} Credits, {self.price_cents/100:.2f} {self.currency.upper()})'
+
+
+class CreditPurchase(models.Model):
+    """Audit-Log für einmalige Credit-Käufe (Stripe Checkout `mode=payment`).
+
+    Sichert Idempotenz pro Stripe-Session und macht Käufe nachvollziehbar.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Offen'
+        PAID = 'paid', 'Bezahlt'
+        FAILED = 'failed', 'Fehlgeschlagen'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='credit_purchases',
+    )
+    package = models.ForeignKey(
+        CreditPackage,
+        on_delete=models.PROTECT,
+        related_name='purchases',
+        null=True,
+        blank=True,
+    )
+    stripe_session_id = models.CharField(max_length=255, unique=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True)
+    credits = models.PositiveIntegerField()
+    price_cents = models.PositiveIntegerField()
+    currency = models.CharField(max_length=3, default='eur')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Credit-Kauf'
+        verbose_name_plural = 'Credit-Käufe'
+
+    def __str__(self) -> str:
+        return f'{self.user_id} · {self.credits} Credits · {self.status}'

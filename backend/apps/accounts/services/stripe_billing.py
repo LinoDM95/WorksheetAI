@@ -34,6 +34,8 @@ def resolve_stripe_price_id_for_plan_slug(plan_slug: str) -> str:
     plan = SubscriptionPlan.objects.filter(slug=plan_slug, is_active=True).first()
     if plan and plan.stripe_price_id:
         return str(plan.stripe_price_id)
+    if plan_slug == 'basic_5':
+        return getattr(settings, 'STRIPE_PRICE_BASIC_5', '') or ''
     if plan_slug == 'starter_10':
         return getattr(settings, 'STRIPE_PRICE_STARTER_10', '') or ''
     if plan_slug == 'pro_20':

@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, FileText, Book, Share2, Presentation, X, Shield, Settings } from 'lucide-react';
+import { Home, FileText, Book, Share2, Presentation, X, Shield, Settings, Sparkles } from 'lucide-react';
 import { Logo } from '../Logo';
 import { cn } from '../../lib/cn';
 import { useAuth } from '../../lib/authContext';
@@ -153,6 +153,16 @@ export const Sidebar = ({ open, isLg, onClose, shellVariant = 'default' }: Sideb
 
         <SectionLabel rail={railMode}>Konto</SectionLabel>
         <nav className="flex flex-col gap-0.5">
+          <NavItemLink
+            item={{
+              to: '/app/abonnement',
+              label: 'Plan & Credits',
+              icon: Sparkles,
+              matchPrefix: '/app/abonnement',
+            }}
+            railMode={railMode}
+            onNavigate={() => drawerMode && onClose()}
+          />
           <NavItemLink
             item={{ to: '/app/settings', label: 'Einstellungen', icon: Settings, matchPrefix: '/app/settings' }}
             railMode={railMode}

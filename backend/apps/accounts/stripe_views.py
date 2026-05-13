@@ -9,12 +9,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.services.credit_purchases import (
+    build_stripe_line_items,
+    get_active_credit_package,
+    list_active_credit_packages,
+    record_pending_purchase,
+)
 from apps.accounts.services.stripe_billing import get_stripe_module, resolve_stripe_price_id_for_plan_slug
 from apps.accounts.services.subscription import get_user_subscription
 
 logger = logging.getLogger(__name__)
 
-VALID_CHECKOUT_SLUGS = frozenset({'starter_10', 'pro_20'})
+VALID_CHECKOUT_SLUGS = frozenset({'basic_5', 'starter_10', 'pro_20'})
 
 
 class StripeCheckoutSessionView(APIView):
@@ -124,4 +130,87 @@ class StripeBillingPortalView(APIView):
                 {'detail': 'Keine Portal-URL von Stripe.'},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+        return Response({'url': url})
+
+
+class CreditPackageListView(APIView):
+    """Liste aktiver Credit-Pakete für die Frontend-Anzeige (öffentlich nutzbar)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response({'packages': list_active_credit_packages()})
+
+
+class StripeCreditCheckoutView(APIView):
+    """Einmalkauf eines Credit-Pakets (Stripe ``mode=payment``)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        slug = (request.data.get('package_slug') or '').strip()
+        package = get_active_credit_package(slug)
+        if package is None:
+            return Response({'detail': 'Ungültiges Paket.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        stripe_mod, _ = get_stripe_module()
+        if not stripe_mod:
+            return Response(
+                {'detail': 'Zahlungen nicht konfiguriert.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        frontend = str(getattr(settings, 'FRONTEND_PUBLIC_URL', '') or '').rstrip('/')
+        if not frontend:
+            frontend = 'http://localhost:5173'
+
+        sub_row = get_user_subscription(request.user)
+        cust_id = (sub_row.stripe_customer_id if sub_row else '') or ''
+
+        checkout_kwargs: dict = {
+            'mode': 'payment',
+            'line_items': build_stripe_line_items(package),
+            'success_url': f'{frontend}/app/credits?purchase=success',
+            'cancel_url': f'{frontend}/app/credits?purchase=canceled',
+            'metadata': {
+                'purpose': 'credit_purchase',
+                'user_id': str(request.user.pk),
+                'package_slug': package.slug,
+                'credits': str(int(package.credits)),
+            },
+            'payment_intent_data': {
+                'metadata': {
+                    'purpose': 'credit_purchase',
+                    'user_id': str(request.user.pk),
+                    'package_slug': package.slug,
+                    'credits': str(int(package.credits)),
+                },
+            },
+        }
+        if cust_id:
+            checkout_kwargs['customer'] = cust_id
+        else:
+            checkout_kwargs['customer_email'] = request.user.email
+
+        try:
+            session = stripe_mod.checkout.Session.create(**checkout_kwargs)
+        except Exception:
+            logger.exception('Stripe Credit Checkout Session create failed')
+            return Response(
+                {'detail': 'Checkout konnte nicht gestartet werden.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        url = getattr(session, 'url', None) or (session.get('url') if isinstance(session, dict) else None)
+        session_id = getattr(session, 'id', None) or (session.get('id') if isinstance(session, dict) else None)
+        if not url:
+            return Response(
+                {'detail': 'Keine Checkout-URL von Stripe.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if session_id:
+            try:
+                record_pending_purchase(user=request.user, package=package, stripe_session_id=str(session_id))
+            except Exception:
+                logger.exception('record_pending_purchase failed (session=%s)', session_id)
+
         return Response({'url': url})

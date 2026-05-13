@@ -19,6 +19,7 @@ import { PublicLoginPage } from './features/auth/PublicLoginPage';
 import { DatenschutzPage, ImpressumPage } from './features/legal/LegalNoticePages';
 import { BackofficePage } from './features/backoffice/BackofficePage';
 import { SubscriptionPage } from './features/subscription/SubscriptionPage';
+import { CreditsPage } from './features/subscription/CreditsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 
 const loginDisabled = import.meta.env.VITE_DISABLE_LOGIN === 'true';
@@ -163,10 +164,18 @@ const ProtectedAppLayout = () => {
   }
   const subscriptionPath =
     location.pathname === '/app/abonnement' || location.pathname.startsWith('/app/abonnement/');
+  const creditsPath =
+    location.pathname === '/app/credits' || location.pathname.startsWith('/app/credits/');
   const settingsPath =
     location.pathname === '/app/settings' || location.pathname.startsWith('/app/settings/');
   const bypassPaywall = user.is_staff || user.is_superuser;
-  if (!bypassPaywall && user.has_platform_access !== true && !subscriptionPath && !settingsPath) {
+  if (
+    !bypassPaywall &&
+    user.has_platform_access !== true &&
+    !subscriptionPath &&
+    !creditsPath &&
+    !settingsPath
+  ) {
     return <Navigate to="/app/abonnement" replace />;
   }
   return <Outlet />;
@@ -189,8 +198,16 @@ export default function App() {
         <Route
           path="abonnement"
           element={
-            <ShellRoute topbar={{ title: 'Abonnement', subtitle: 'Wähle ein Paket für volle Plattform-Nutzung' }}>
+            <ShellRoute topbar={{ title: 'Plan & Credits', subtitle: 'Abos und einmalige Aufladungen — alles an einem Ort' }}>
               <SubscriptionPage />
+            </ShellRoute>
+          }
+        />
+        <Route
+          path="credits"
+          element={
+            <ShellRoute topbar={{ title: 'Credits aufladen', subtitle: 'Einmalig mehr Credits — sofort verfügbar' }}>
+              <CreditsPage />
             </ShellRoute>
           }
         />

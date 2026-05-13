@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from apps.accounts.models import SubscriptionPlan, UserCreditBalance, UserSubscription
+from apps.accounts.models import (
+    CreditPackage,
+    CreditPurchase,
+    SubscriptionPlan,
+    UserCreditBalance,
+    UserSubscription,
+)
 
 
 @admin.register(SubscriptionPlan)
@@ -23,3 +29,19 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
 class UserCreditBalanceAdmin(admin.ModelAdmin):
     list_display = ('user', 'balance', 'last_monthly_grant_key', 'updated_at')
     search_fields = ('user__email',)
+
+
+@admin.register(CreditPackage)
+class CreditPackageAdmin(admin.ModelAdmin):
+    list_display = ('slug', 'name', 'credits', 'price_cents', 'badge_label', 'highlighted', 'is_active', 'sort_order')
+    list_filter = ('is_active', 'highlighted')
+    search_fields = ('slug', 'name')
+    ordering = ('sort_order', 'slug')
+
+
+@admin.register(CreditPurchase)
+class CreditPurchaseAdmin(admin.ModelAdmin):
+    list_display = ('user', 'credits', 'price_cents', 'status', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('user__email', 'stripe_session_id', 'stripe_payment_intent_id')
+    raw_id_fields = ('user', 'package')
